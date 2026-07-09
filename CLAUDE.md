@@ -37,3 +37,23 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
   de compile-time a runtime.
 * La validación estructural de las descripciones (FK que apuntan a entidades existentes,
   PK sobre campos declarados, etc.) se expresa preferentemente en el sistema de tipos.
+
+## Convención de nombres: Def e Info
+
+Para cada concepto descriptivo hay al menos dos versiones, distinguidas por sufijo:
+
+* `XxxDef` (definition): lo que escribe el humano. Contiene solo lo mínimo necesario para
+  tener sentido semántico; todo lo que tiene un default razonable se puede omitir
+  (por ejemplo, si un campo es nulleable o no).
+* `XxxInfo`: lo que produce el framework completando la Def con los defaults. Ahí está todo
+  explícito; es lo que consumen los generadores.
+
+Ambas versiones son serializables. La Info se deriva determinísticamente de la Def.
+
+Nombres ya elegidos:
+
+* La descripción del registro de una entidad (el elemento fundamental) es `RecordDef` / `RecordInfo`.
+  El identificador pelado `Record` no se usa nunca, para no competir con el tipo utilitario
+  `Record<K, V>` de TypeScript.
+* `Entity` queda reservado para el nivel contenedor (la unidad representable como grilla,
+  como la llama el documento SSOTIGAD), si más adelante hace falta describirlo.
