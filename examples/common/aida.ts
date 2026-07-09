@@ -13,7 +13,7 @@ var typeDefs = {
     email: commonTypeDefs.text
 }
 
-type RecordsDef = Record<string, RecordDef<typeof typeDefs>>
+type RecordsDef = RecordDef<typeof typeDefs>
 
 const cargo = {
     cargo            : {type: 'text' },

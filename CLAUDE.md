@@ -55,5 +55,7 @@ Nombres ya elegidos:
 * La descripción del registro de una entidad (el elemento fundamental) es `RecordDef` / `RecordInfo`.
   El identificador pelado `Record` no se usa nunca, para no competir con el tipo utilitario
   `Record<K, V>` de TypeScript.
+* La descripción de un campo es `FieldDef` / `FieldInfo`. `RecordDef` es el mapa de campos:
+  `Record<string, FieldDef>`.
 * `Entity` queda reservado para el nivel contenedor (la unidad representable como grilla,
   como la llama el documento SSOTIGAD), si más adelante hace falta describirlo.
