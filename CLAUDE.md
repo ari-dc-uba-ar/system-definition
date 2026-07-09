@@ -23,6 +23,16 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
 * `src/common`: el framework descriptor. No conoce ningún sistema concreto.
   (Más adelante podrían aparecer `src/backend` y `src/frontend`, o aplanarse todo a `src` si no hacen falta.)
 * `examples/common`: un sistema de ejemplo (sistema de alumnos) descripto con el framework.
+* `test/`: tests con mocha que importan las definiciones de los ejemplos (los ejemplos implican tests).
+  `npm test` compila con tsc y corre mocha sobre `dist/test/`; no se usa ts-node ni loaders.
+
+## Herramientas
+
+* TypeScript 7 (el compilador nativo). Ojo: 6 quedó en beta y no salió estable; 7 quitó
+  `baseUrl` y `moduleResolution: node`, y ya no incluye los `@types` automáticamente
+  (van listados en `types` del tsconfig).
+* Cobertura: pendiente. nyc reportaba cobertura vacía bajo mocha con Node 24 (causa no
+  determinada); el candidato natural si se retoma es c8.
 
 ## Decisiones de diseño acordadas
 

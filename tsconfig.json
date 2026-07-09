@@ -2,15 +2,15 @@
     "compilerOptions": {
         "declaration": true,
         "outDir": "dist",
-        "module": "commonjs",
+        "module": "nodenext",
         "target": "es2022",
         "sourceMap": true,
-        "moduleResolution": "node",
         "strict": true,
-        "baseUrl": "."
+        "types": ["node", "mocha"]
     },
     "include": [
         "src/**/*.ts",
-        "examples/**/*.ts"
+        "examples/**/*.ts",
+        "test/**/*.ts"
     ]
 }
