@@ -31,8 +31,11 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
 * TypeScript 7 (el compilador nativo). Ojo: 6 quedó en beta y no salió estable; 7 quitó
   `baseUrl` y `moduleResolution: node`, y ya no incluye los `@types` automáticamente
   (van listados en `types` del tsconfig).
-* Cobertura: pendiente. nyc reportaba cobertura vacía bajo mocha con Node 24 (causa no
-  determinada); el candidato natural si se retoma es c8.
+* Cobertura: c8 (`npm run test-cov`, configuración en `.c8rc.json`). Ojo: los tests que solo
+  verifican tipos no cargan nada en runtime (tsc elide los imports usados solo en posiciones
+  de tipo), así que la cobertura es 0% hasta que haya comportamiento runtime que ejercitar;
+  por eso `all: true`, para que los archivos aparezcan igual en el reporte.
+  (Esa elisión fue también la causa de que nyc reportara vacío: no era un bug de nyc.)
 
 ## Decisiones de diseño acordadas
 

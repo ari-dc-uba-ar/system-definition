@@ -28,8 +28,6 @@ Este módulo cubre solo la parte descriptiva de los sistemas: no genera nada por
 
 ## Goal
 
-Descriptive layer for systems designed around a Single Source of Truth (SSOT).
-
 This module provides the vocabulary to describe a system — domain types, entities, fields,
 procedures — as strongly typed, serializable values. From those descriptions, code generators
 or on-the-fly implementations can derive the table creation scripts, the CRUD endpoints with

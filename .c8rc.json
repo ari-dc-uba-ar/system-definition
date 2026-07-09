@@ -1,0 +1,6 @@
+{
+    "all": true,
+    "src": ["dist/src", "dist/examples"],
+    "exclude": ["dist/test/**", "**/*.d.ts"],
+    "reporter": ["text", "html"]
+}

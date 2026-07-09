@@ -5,11 +5,13 @@
   "license": "MIT",
   "scripts": {
     "build": "tsc",
-    "test": "tsc && mocha --exit dist/test/"
+    "test": "tsc && mocha --exit dist/test/",
+    "test-cov": "tsc && c8 mocha dist/test/"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.9.1",
+    "c8": "^11.0.0",
     "mocha": "^11.7.5",
     "typescript": "^7.0.2"
   }
