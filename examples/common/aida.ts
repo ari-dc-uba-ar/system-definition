@@ -9,7 +9,7 @@ type Fecha = {año: number, mes: number, día:number}
 
 var typeDefs = {
     ...commonTypeDefs,
-    fecha: {tsType: () => boxType<Fecha>()},
+    fecha: {tsType: boxType<Fecha>()},
     email: commonTypeDefs.text
 }
 

@@ -22,5 +22,5 @@ export type RecordDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> =
 export type RecordInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Required<RecordDef<TypeDefs>>
 
 export type RecordInstanceType<TTypeCollection extends TypeCollection, TRecordDef extends Record<string,RecordDef<TTypeCollection>>> = {
-    TODO: string
+    [K in keyof TRecordDef]: TTypeCollection[TRecordDef[K]['type']]['tsType']
 }
