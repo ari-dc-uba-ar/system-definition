@@ -1,7 +1,7 @@
 import * as assert from "assert";
 
-import { RecordInstanceType, completeRecord, defineEntity, extractPk, mergePk } from "../src/common/system-design";
-import { typeDefs, cargo, materia, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias } from "../examples/common/aida";
+import { RecordInstanceType, completeRecord, defineEntity, defineEntities, extractPk, mergePk } from "../src/common/system-design";
+import { typeDefs, cargo, materia, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs } from "../examples/common/aida";
 
 describe("aida example", function(){
     it("deduces the record instance type", function(){
@@ -27,8 +27,8 @@ describe("aida example", function(){
     it("completes a record def into a record info", function(){
         var materiaInfo = completeRecord(materia);
         assert.deepStrictEqual(materiaInfo, {
-            materia      : {type: 'text', label: 'materia'     , nullable: true , description: ''},
-            denominacion : {type: 'text', label: 'denominación', nullable: false, description: 'si corresponde a más de una carrera, aclarar en el nombre'},
+            materia      : {type: 'text', label: 'materia'     , nullable: true , description: '', isName: false},
+            denominacion : {type: 'text', label: 'denominación', nullable: false, description: 'si corresponde a más de una carrera, aclarar en el nombre', isName: true},
         });
     })
     it("completes preserving the field set and the type literals", function(){
@@ -43,10 +43,10 @@ describe("aida example", function(){
             var dummy = cargoInfo.inexistente.type
         })
         type CargoInfoExpected = {
-            cargo        : {type: 'text'   , label: string, nullable: boolean, description: string},
-            denominacion : {type: 'text'   , label: string, nullable: boolean, description: string},
-            orden        : {type: 'integer', label: string, nullable: boolean, description: string},
-            puede_dirigir: {type: 'boolean', label: string, nullable: boolean, description: string},
+            cargo        : {type: 'text'   , label: string, nullable: boolean, description: string, isName: boolean},
+            denominacion : {type: 'text'   , label: string, nullable: boolean, description: string, isName: boolean},
+            orden        : {type: 'integer', label: string, nullable: boolean, description: string, isName: boolean},
+            puede_dirigir: {type: 'boolean', label: string, nullable: boolean, description: string, isName: boolean},
         }
         // both assignments must compile: expected and deduced are mutually assignable
         // (this also checks that label, nullable and description are required, not optional)
@@ -128,5 +128,68 @@ describe("aida entities", function(){
         var unaPresencia: Presencia = {periodo: '2026-1c', materia: 'AlgoI', alumno: 'L1234', orden: 1};
         var presenciaBack: {periodo: string, materia: string, alumno: string, orden: number} = unaPresencia;
         assert.deepStrictEqual(presenciaBack, unaPresencia);
+    })
+})
+
+describe("aida fks, uks and isName", function(){
+    it("keeps the fks with their literal types, in both directions", function(){
+        type PresenciasFksExpected = {
+            inscripciones: {entity: 'inscripciones', fields: readonly ['periodo', 'materia', 'alumno']},
+            clases       : {entity: 'clases'       , fields: readonly ['periodo', 'materia', 'orden']},
+        }
+        var expected: PresenciasFksExpected = presencias.fks;
+        var fksBack: typeof presencias.fks = expected;
+        assert.deepStrictEqual(fksBack, {
+            inscripciones: {entity: 'inscripciones', fields: ['periodo', 'materia', 'alumno']},
+            clases       : {entity: 'clases'       , fields: ['periodo', 'materia', 'orden']},
+        });
+    })
+    it("represents a reflexive fk with renamed fields (jefe → docente)", function(){
+        var jefeFk: {entity: 'docentes', fields: {jefe: 'docente'}} = docentes.fks.jefe;
+        var jefeFkBack: typeof docentes.fks.jefe = jefeFk;
+        assert.deepStrictEqual(jefeFkBack, {entity: 'docentes', fields: {jefe: 'docente'}});
+    })
+    it("represents two fks to the same entity (mesas: presidente y vocal)", function(){
+        assert.deepStrictEqual(mesas.fks.presidente, {entity: 'docentes', fields: {presidente: 'docente'}});
+        assert.deepStrictEqual(mesas.fks.vocal     , {entity: 'docentes', fields: {vocal: 'docente'}});
+        var presidenteTarget: 'docente' = mesas.fks.presidente.fields.presidente;
+        assert.equal(presidenteTarget, 'docente');
+    })
+    it("marks the isName field and completes it as false elsewhere", function(){
+        var denominacionIsName: true = materia.denominacion.isName;
+        // @ts-expect-error the code field has no isName mark
+        var codigoIsName = materia.materia.isName;
+        assert.equal(denominacionIsName, true);
+        assert.equal(codigoIsName, undefined);
+    })
+    it("rejects fk source fields and uk fields that are not fields", function(){
+        // @ts-expect-error 'inexistente' is not a field (array form)
+        var wrongFk = defineEntity({pk: ['materia'], fks: {x: {entity: 'materias', fields: ['inexistente']}}, fields: materia});
+        // @ts-expect-error 'inexistente' is not a field (map form: the source is the key)
+        var wrongFkMap = defineEntity({pk: ['materia'], fks: {x: {entity: 'materias', fields: {inexistente: 'materia'}}}, fields: materia});
+        // @ts-expect-error uk fields must be fields too
+        var wrongUk = defineEntity({pk: ['materia'], uks: {u: ['inexistente']}, fields: materia});
+        // (the checks are compile-time only)
+        assert.equal(wrongFk.fks.x.entity, 'materias');
+        assert.deepStrictEqual(wrongUk.uks, {u: ['inexistente']});
+        assert.equal(wrongFkMap.fks.x.entity, 'materias');
+    })
+    it("cross-checks the fks of the whole system", function(){
+        // the aida entityDefs already went through defineEntities; spot-check it kept everything:
+        assert.deepStrictEqual(Object.keys(entityDefs).length, 11);
+        assert.equal(entityDefs.presencias, presencias);
+        // a fk against a uk of the target entity is accepted:
+        const apuntes = defineEntity({pk: ['apunte'], fks: {materia_por_nombre: {entity: 'materias', fields: {denominacion_materia: 'denominacion'}}}, fields: {apunte: {type: 'text'}, denominacion_materia: {type: 'text'}}});
+        const miniSystem = defineEntities({materias, apuntes});
+        assert.deepStrictEqual(Object.keys(miniSystem), ['materias', 'apuntes']);
+        // a fk to an entity that is not part of the system is rejected:
+        const huerfanos = defineEntity({pk: ['x'], fks: {rota: {entity: 'inexistentes', fields: {x: 'algo'}}}, fields: {x: {type: 'text'}}});
+        // @ts-expect-error 'inexistentes' is not an entity of the system
+        defineEntities({huerfanos});
+        // a fk that references only a part of a composite pk (and no uk) is rejected:
+        const franjas = defineEntity({pk: ['dia', 'hora'], fields: {dia: {type: 'text'}, hora: {type: 'integer'}}});
+        const eventos = defineEntity({pk: ['evento'], fks: {franja: {entity: 'franjas', fields: {dia: 'dia'}}}, fields: {evento: {type: 'text'}, dia: {type: 'text'}}});
+        // @ts-expect-error 'hora' is missing: the fk must reference the complete pk or a uk
+        defineEntities({franjas, eventos});
     })
 })

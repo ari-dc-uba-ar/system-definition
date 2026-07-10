@@ -89,6 +89,19 @@ Nombres ya elegidos:
   deduplicando también a nivel de tipos (tupla recursiva), preservando el orden de primera
   aparición. Es para pks combinadas (`presencias.pk = mergePk(inscripciones.pk, clases.pk)`);
   para los `fields` no hace falta: el spread ya deduplica keys solo.
+* `isName?: true` en `FieldDef` (solo `true`, así el literal sobrevive al `satisfies`);
+  `completeRecord` lo completa a `false` en la Info.
+* `EntityDef` tiene además `uks` (uniques con nombre: `{denominacion: ['denominacion']}`) y
+  `fks`. Una `FkDef` es `{entity, fields}` donde `entity` es el **nombre** de la entidad
+  destino (string, no el objeto: mantiene la serializabilidad y permite fks circulares y
+  reflexivas), y `fields` tiene dos formas: array de nombres cuando origen y destino se
+  llaman igual (`fields: cursos.pk`), o mapa `{origen: 'destino'}` cuando no
+  (`{jefe: 'docente'}`). La key del mapa de `fks` es el nombre de la fk (permite dos fks a
+  la misma entidad: `presidente` y `vocal` → docentes).
+* Los chequeos de fks tienen dos niveles: `defineEntity` chequea lo local (campos origen y
+  de uks existen en `fields`); `defineEntities(entityDefs)` chequea lo global del sistema
+  (la entidad destino existe, y los campos destino son su pk completa o una de sus uks).
+  El error de `defineEntities` es críptico (mapped type a `never`), pero señala la fk mala.
 * `RecordInfoOf<TRecordDef>`: la Info precisa que corresponde a una Def concreta (conserva
   las claves y los literales de `type`); es lo que devuelve `completeRecord`. El sufijo `Of`
   marca "tipo derivado de una definición concreta".
