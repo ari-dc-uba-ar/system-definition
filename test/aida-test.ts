@@ -42,5 +42,16 @@ describe("aida example", function(){
             // @ts-expect-error Must know which fields exists
             var dummy = cargoInfo.inexistente.type
         })
+        type CargoInfoExpected = {
+            cargo        : {type: 'text'   , label: string, nullable: boolean, description: string},
+            denominacion : {type: 'text'   , label: string, nullable: boolean, description: string},
+            orden        : {type: 'integer', label: string, nullable: boolean, description: string},
+            puede_dirigir: {type: 'boolean', label: string, nullable: boolean, description: string},
+        }
+        // both assignments must compile: expected and deduced are mutually assignable
+        // (this also checks that label, nullable and description are required, not optional)
+        var expected: CargoInfoExpected = cargoInfo;
+        var deducedBack: typeof cargoInfo = expected;
+        assert.deepStrictEqual(deducedBack, expected);
     })
 })
