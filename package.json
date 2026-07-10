@@ -9,6 +9,7 @@
     "test-cov": "tsc && c8 mocha --node-option enable-source-maps dist/test/"
   },
   "devDependencies": {
+    "@toon-format/toon": "^2.3.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.9.1",
     "c8": "^11.0.0",

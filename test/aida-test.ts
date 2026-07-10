@@ -1,4 +1,7 @@
 import * as assert from "assert";
+import * as fs from "fs";
+import * as path from "path";
+import { encode } from "@toon-format/toon";
 
 import { RecordInstanceType, completeRecord, defineEntity, defineEntities, extractPk, mergePk } from "../src/common/system-design";
 import { typeDefs, cargo, materia, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs } from "../examples/common/aida";
@@ -191,5 +194,21 @@ describe("aida fks, uks and isName", function(){
         const eventos = defineEntity({pk: ['evento'], fks: {franja: {entity: 'franjas', fields: {dia: 'dia'}}}, fields: {evento: {type: 'text'}, dia: {type: 'text'}}});
         // @ts-expect-error 'hora' is missing: the fk must reference the complete pk or a uk
         defineEntities({franjas, eventos});
+    })
+})
+
+describe("aida design snapshot", function(){
+    it("matches aida-design.toon", function(){
+        var design = Object.fromEntries(Object.entries(entityDefs).map(([name, entityDef]) => [name, {
+            pk: entityDef.pk,
+            uks: entityDef.uks,
+            fks: entityDef.fks,
+            fields: completeRecord(entityDef.fields),
+        }]));
+        var generated = encode(design) + '\n';
+        var snapshotPath = (prefix:string) => path.join(__dirname, '..', '..', 'test', prefix+'aida-design.toon');
+        fs.writeFileSync(snapshotPath('local-'), generated);
+        var expected = fs.readFileSync(snapshotPath(''), 'utf8').replace(/\r\n/g, '\n');
+        assert.equal(generated, expected);
     })
 })

@@ -14,10 +14,10 @@ export const commonTypeDefs = {
 
 export type FieldDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
     type: keyof TypeDefs
-    label?: string
-    nullable?: boolean
-    description?: string
     isName?: true
+    nullable?: boolean
+    label?: string
+    description?: string
 }
 
 export type FieldInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Required<Omit<FieldDef<TypeDefs>, 'isName'>> & {isName: boolean}
@@ -33,11 +33,13 @@ export type RecordInfoOf<TRecordDef extends RecordDef<TypeCollection>> = {
 
 export function completeRecord<TRecordDef extends RecordDef<TypeCollection>>(recordDef: TRecordDef): RecordInfoOf<TRecordDef>{
     return Object.fromEntries(Object.entries(recordDef).map(([name, fieldDef]) => ([name, {
+        // @ts-expect-error type is specified because we need to guaranty the order in the completed type
+        type: null,
+        isName: false,
+        nullable: true,
+        label: name.replace(/_/g,' '),
+        description: '',
         ...fieldDef,
-        label: fieldDef.label ?? name.replace(/_/g,' '),
-        nullable: fieldDef.nullable ?? true,
-        description: fieldDef.description ?? '',
-        isName: fieldDef.isName ?? false,
     }]))) as RecordInfoOf<TRecordDef>;
 }
 
