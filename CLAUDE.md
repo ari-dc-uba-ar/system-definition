@@ -33,7 +33,7 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
 
 ## Herramientas
 
-* TypeScript 7 (el compilador nativo). Ojo: 6 quedó en beta y no salió estable; 7 quitó
+* TypeScript 7 (el compilador nativo). Que quitó
   `baseUrl` y `moduleResolution: node`, y ya no incluye los `@types` automáticamente
   (van listados en `types` del tsconfig).
 * Cobertura: c8 (`npm run test-cov`, configuración en `.c8rc.json`). Ojo: los tests que solo
