@@ -31,4 +31,16 @@ describe("aida example", function(){
             denominacion : {type: 'text', label: 'denominación', nullable: false, description: 'si corresponde a más de una carrera, aclarar en el nombre'},
         });
     })
+    it("completes preserving the field set and the type literals", function(){
+        var cargoInfo = completeRecord(cargo);
+        // the type literals from the def must survive the completion:
+        var cargoType: 'text' = cargoInfo.cargo.type;
+        // @ts-expect-error
+        cargoInfo.cargo.type = 'integer'
+        assert.equal(cargoType, 'text');
+        assert.throws(()=>{
+            // @ts-expect-error Must know which fields exists
+            var dummy = cargoInfo.inexistente.type
+        })
+    })
 })

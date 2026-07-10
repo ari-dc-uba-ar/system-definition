@@ -12,6 +12,11 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
 ## Forma de trabajo
 
 * Avanzamos de a pasos chicos, guiados por el programador. Acordar antes de programar.
+* Enfoque TDD: primero el test que muestra el problema. Mostrar los rojos (errores de
+  compilación o tests fallando) y **esperar la revisión del programador antes de corregir**.
+* Los tests de tipos no deben ser flojos: probar asignabilidad **en ambos sentidos**, y
+  también los rechazos con `// @ts-expect-error` (que no se pueda asignar un valor de un
+  tipo que no corresponde, ni acceder a campos que no existen en la definición).
 * Código e identificadores dentro de `src` y `examples` en inglés.
 * Los planes y este archivo, en castellano.
 * Documentación multilingüe con la herramienta `multilang` (disponible en el PATH):
@@ -72,3 +77,6 @@ Nombres ya elegidos:
   `Record<string, FieldDef>`.
 * `Entity` queda reservado para el nivel contenedor (la unidad representable como grilla,
   como la llama el documento SSOTIGAD), si más adelante hace falta describirlo.
+* `RecordInfoOf<TRecordDef>`: la Info precisa que corresponde a una Def concreta (conserva
+  las claves y los literales de `type`); es lo que devuelve `completeRecord`. El sufijo `Of`
+  marca "tipo derivado de una definición concreta".
