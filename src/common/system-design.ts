@@ -110,6 +110,53 @@ export function mergePk<const TPks extends readonly (readonly string[])[]>(...pk
     return merged as unknown as MergedPk<TPks>;
 }
 
+/* the Info side of an entity: everything explicit, and in only one form. The fks lose the
+   array shorthand: fields is always the source → target map. The pk is deduplicated, so
+   overlapping pks can be spread in the Def without mergePk. */
+export type FkInfo = {
+    entity: string
+    fields: Readonly<Record<string, string>>
+}
+
+export type FkInfoOf<TFk extends FkDef> = {
+    entity: TFk['entity']
+    fields: TFk['fields'] extends readonly (infer TNames extends string)[] ? {[K in TNames]: K} : TFk['fields']
+}
+
+export type EntityInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
+    pk: readonly string[]
+    uks: Readonly<Record<string, readonly string[]>>
+    fks: Readonly<Record<string, FkInfo>>
+    fields: RecordInfo<TypeDefs>
+}
+
+export type EntityInfoOf<TEntityDef extends EntityDef<TypeCollection>> = {
+    pk: DedupPk<TEntityDef['pk']>
+    uks: TEntityDef['uks'] extends Readonly<Record<string, readonly string[]>> ? TEntityDef['uks'] : {}
+    fks: TEntityDef['fks'] extends Readonly<Record<string, FkDef>>
+        ? {[F in keyof TEntityDef['fks']]: FkInfoOf<TEntityDef['fks'][F]>}
+        : {}
+    fields: RecordInfoOf<TEntityDef['fields']>
+}
+
+function completeFk(fkDef: FkDef): FkInfo {
+    return {
+        entity: fkDef.entity,
+        fields: Array.isArray(fkDef.fields)
+            ? Object.fromEntries(fkDef.fields.map(name => [name, name]))
+            : fkDef.fields,
+    };
+}
+
+export function completeEntity<const TEntityDef extends EntityDef<TypeCollection>>(entityDef: TEntityDef): EntityInfoOf<TEntityDef> {
+    return {
+        pk: mergePk(entityDef.pk),
+        uks: entityDef.uks ?? {},
+        fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
+        fields: completeRecord(entityDef.fields),
+    } as EntityInfoOf<TEntityDef>;
+}
+
 type SameKeySet<TA extends string, TB extends string> = [TA] extends [TB] ? ([TB] extends [TA] ? true : false) : false
 
 type FkTargetFields<TFk extends FkDef> =

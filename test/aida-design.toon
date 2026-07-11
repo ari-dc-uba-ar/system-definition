@@ -34,13 +34,16 @@ cursos:
   fks:
     periodos:
       entity: periodos
-      fields[1]: periodo
+      fields:
+        periodo: periodo
     materias:
       entity: materias
-      fields[1]: materia
+      fields:
+        materia: materia
     responsable:
       entity: docentes
-      fields[1]: docente
+      fields:
+        docente: docente
   fields[3]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
@@ -51,7 +54,9 @@ clases:
   fks:
     cursos:
       entity: cursos
-      fields[2]: periodo,materia
+      fields:
+        periodo: periodo
+        materia: materia
   fields[5]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
@@ -73,7 +78,10 @@ preguntas:
   fks:
     clases:
       entity: clases
-      fields[3]: periodo,materia,orden
+      fields:
+        periodo: periodo
+        materia: materia
+        orden: orden
   fields[7]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
@@ -88,7 +96,11 @@ opciones:
   fks:
     preguntas:
       entity: preguntas
-      fields[4]: periodo,materia,orden,pregunta
+      fields:
+        periodo: periodo
+        materia: materia
+        orden: orden
+        pregunta: pregunta
   fields[6]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
@@ -102,10 +114,13 @@ inscripciones:
   fks:
     cursos:
       entity: cursos
-      fields[2]: periodo,materia
+      fields:
+        periodo: periodo
+        materia: materia
     alumnos:
       entity: alumnos
-      fields[1]: alumno
+      fields:
+        alumno: alumno
   fields[3]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
@@ -116,10 +131,16 @@ presencias:
   fks:
     inscripciones:
       entity: inscripciones
-      fields[3]: periodo,materia,alumno
+      fields:
+        periodo: periodo
+        materia: materia
+        alumno: alumno
     clases:
       entity: clases
-      fields[3]: periodo,materia,orden
+      fields:
+        periodo: periodo
+        materia: materia
+        orden: orden
   fields[4]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
@@ -131,7 +152,9 @@ mesas:
   fks:
     cursos:
       entity: cursos
-      fields[2]: periodo,materia
+      fields:
+        periodo: periodo
+        materia: materia
     presidente:
       entity: docentes
       fields:

@@ -2,10 +2,9 @@ import * as assert from "assert";
 import * as fs from "fs";
 import * as path from "path";
 import { encode } from "@toon-format/toon";
-import { changing } from "best-globals";
 import { strict as LikeAr } from "like-ar";
 
-import { RecordInstanceType, completeRecord, defineEntity, defineEntities, extractPk, mergePk,
+import { RecordInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
     EntityDef, TypeCollection
 } from "../src/common/system-design";
 import { typeDefs, cargo, materia, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs } from "../examples/common/aida";
@@ -201,24 +200,76 @@ describe("aida fks, uks and isName", function(){
     })
 })
 
+describe("aida entity completion (Def → Info)", function(){
+    it("normalizes array-form fks to the source→target map form", function(){
+        var cursosInfo = completeEntity(cursos);
+        type CursosFksExpected = {
+            periodos   : {entity: 'periodos', fields: {periodo: 'periodo'}},
+            materias   : {entity: 'materias', fields: {materia: 'materia'}},
+            responsable: {entity: 'docentes', fields: {docente: 'docente'}},
+        }
+        // both assignments must compile: expected and completed are mutually assignable
+        var expected: CursosFksExpected = cursosInfo.fks;
+        var fksBack: typeof cursosInfo.fks = expected;
+        // @ts-expect-error 'inexistente' is not a fk
+        var noFk = cursosInfo.fks.inexistente;
+        // @ts-expect-error the target field literal is preserved, not widened to string
+        var wrongTarget: 'materia' = cursosInfo.fks.periodos.fields.periodo;
+        assert.deepStrictEqual(fksBack, {
+            periodos   : {entity: 'periodos', fields: {periodo: 'periodo'}},
+            materias   : {entity: 'materias', fields: {materia: 'materia'}},
+            responsable: {entity: 'docentes', fields: {docente: 'docente'}},
+        });
+        assert.equal(noFk, undefined);
+        assert.equal(wrongTarget, 'periodo');
+    })
+    it("keeps map-form fks as they are", function(){
+        var mesasInfo = completeEntity(mesas);
+        var presidenteFk: {entity: 'docentes', fields: {presidente: 'docente'}} = mesasInfo.fks.presidente;
+        var presidenteFkBack: typeof mesasInfo.fks.presidente = presidenteFk;
+        // @ts-expect-error after completion the array form is gone: fields is always a map
+        var noArray: readonly string[] = mesasInfo.fks.cursos.fields;
+        assert.deepStrictEqual(presidenteFkBack, {entity: 'docentes', fields: {presidente: 'docente'}});
+        assert.deepStrictEqual(mesasInfo.fks.cursos.fields, {periodo: 'periodo', materia: 'materia'});
+        assert.deepStrictEqual(noArray, {periodo: 'periodo', materia: 'materia'});
+    })
+    it("dedups the pk, so overlapping pks can be spread without mergePk", function(){
+        var presenciasAlt = defineEntity({
+            // periodo and materia appear twice in the spread:
+            pk: [...inscripciones.pk, ...clases.pk],
+            fields: presencia,
+        });
+        var presenciasAltInfo = completeEntity(presenciasAlt);
+        var pkExpected: readonly ['periodo', 'materia', 'alumno', 'orden'] = presenciasAltInfo.pk;
+        var pkBack: typeof presenciasAltInfo.pk = pkExpected;
+        assert.deepStrictEqual(presenciasAltInfo.pk, ['periodo', 'materia', 'alumno', 'orden']);
+        assert.deepStrictEqual(pkBack, pkExpected);
+    })
+    it("completes the fields and keeps the uks", function(){
+        var materiasInfo = completeEntity(materias);
+        assert.deepStrictEqual(materiasInfo.fields, completeRecord(materia));
+        var uksExpected: {denominacion: readonly ['denominacion']} = materiasInfo.uks;
+        var uksBack: typeof materiasInfo.uks = uksExpected;
+        assert.deepStrictEqual(uksBack, {denominacion: ['denominacion']});
+        // the defaulted empty fks stay explicit and empty:
+        assert.deepStrictEqual(materiasInfo.fks, {});
+    })
+})
+
 describe("aida design snapshot", function(){
     it("matches aida-design.toon", function(){
-        var completed = Object.fromEntries(Object.entries(entityDefs).map(([name, entityDef]) => [name, {
-            pk: entityDef.pk,
-            uks: entityDef.uks,
-            fks: entityDef.fks,
-            fields: completeRecord(entityDef.fields),
-        }]));
-        function designSnapshot(eds: Record<string, EntityDef>){
-            var completed = changing(eds, {}); // deep copy
-            LikeAr(completed).forEach(ed => {
-                // @ts-ignore
-                ed.fields = LikeAr(ed.fields).map((fieldDef, name)=>({name, ...fieldDef})).array()
-            })
-            return completed;
+        /* provisional flattening until TOLON exists: toon only formats arrays of uniform
+           objects as tables, so the fields map becomes an array with the name inside */
+        function designSnapshot(eds: Record<string, EntityDef<TypeCollection>>){
+            return LikeAr(eds).map(ed => {
+                var entityInfo = completeEntity(ed);
+                return {
+                    ...entityInfo,
+                    fields: LikeAr(entityInfo.fields).map((fieldInfo, name)=>({name, ...fieldInfo})).array(),
+                };
+            }).plain();
         }
-        // @ts-ignore
-        var design = designSnapshot(completed);
+        var design = designSnapshot(entityDefs);
         var generated = encode(design) + '\n';
         var snapshotPath = (prefix:string) => path.join(__dirname, '..', '..', 'test', prefix+'aida-design.toon');
         fs.writeFileSync(snapshotPath('local-'), generated);
