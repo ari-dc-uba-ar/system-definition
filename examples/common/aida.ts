@@ -2,7 +2,7 @@
 
 import {
     boxType, commonTypeDefs,
-    RecordDef, defineEntity, defineEntities, extractPk, mergePk
+    RecordDef, RecordInstanceType, defineEntity, defineEntities, extractPk, mergePk
 } from "../../src/common/system-design";
 
 type Fecha = {año: number, mes: number, día:number}
@@ -14,6 +14,10 @@ export var typeDefs = {
 }
 
 type RecordsDef = RecordDef<typeof typeDefs>
+
+/* the instance type of a record def, bound to this system's typeDefs:
+   DefinedType<typeof cargo> = {cargo: string, orden: number, ...} */
+export type DefinedType<TRecordDef extends RecordsDef> = RecordInstanceType<typeof typeDefs, TRecordDef>
 
 export const cargo = {
     cargo            : {type: 'text' },
@@ -207,3 +211,9 @@ export const entityDefs = defineEntities({
     presencias,
     mesas,
 })
+
+export function validarCargo(cargoSinValidar: DefinedType<typeof cargo>){
+    if (cargoSinValidar.puede_dirigir && cargoSinValidar.denominacion.match(/ayudante/i)) {
+        throw new Error('Los ayudantes no pueden dirigir. Recibido:"' + cargoSinValidar.denominacion + '"');
+    }
+}

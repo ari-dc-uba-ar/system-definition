@@ -7,7 +7,7 @@ import { strict as LikeAr } from "like-ar";
 import { RecordInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
     EntityDef, TypeCollection
 } from "../src/common/system-design";
-import { typeDefs, cargo, materia, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs } from "../examples/common/aida";
+import { typeDefs, cargo, materia, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo } from "../examples/common/aida";
 
 describe("aida example", function(){
     it("deduces the record instance type", function(){
@@ -29,6 +29,26 @@ describe("aida example", function(){
         var obtained: Cargo = cargoDeducido;
         assert.deepStrictEqual(cargoDeducido, jtp);
         assert.deepStrictEqual(obtained, jtp);
+    })
+    it("types record instances anywhere with DefinedType", function(){
+        var titular: DefinedType<typeof cargo> = {
+            cargo        : 'TIT',
+            denominacion : 'Titular',
+            orden        : 1,
+            puede_dirigir: true,
+        };
+        // a valid instance compiles and passes the validation:
+        assert.doesNotThrow(() => validarCargo(titular));
+        // and the validation logic runs over the typed instance:
+        assert.throws(() => validarCargo({cargo: 'AY1', denominacion: 'Ayudante de primera', orden: 5, puede_dirigir: true}));
+        // @ts-expect-error a field with the wrong type is rejected
+        var malTipado: DefinedType<typeof cargo> = {cargo: 'TIT', denominacion: 'Titular', orden: '1', puede_dirigir: true};
+        // @ts-expect-error a missing field is rejected
+        validarCargo({cargo: 'ADJ', denominacion: 'Adjunto', orden: 2});
+        // @ts-expect-error fields outside the def cannot be accessed
+        var noField = titular.inexistente;
+        assert.equal(noField, undefined);
+        assert.equal(malTipado.orden, '1');
     })
     it("completes a record def into a record info", function(){
         var materiaInfo = completeRecord(materia);

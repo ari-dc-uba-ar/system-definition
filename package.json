@@ -1,7 +1,7 @@
 {
-  "name": "system-design",
-  "description": "Designing based on SSOT",
-  "version": "0.0.1",
+  "name": "system-definition",
+  "description": "Defining system based on SSOT",
+  "version": "0.0.2",
   "license": "MIT",
   "scripts": {
     "build": "tsc",
