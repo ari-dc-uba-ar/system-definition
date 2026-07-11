@@ -3,10 +3,17 @@
   "description": "Defining system based on SSOT",
   "version": "0.0.2",
   "license": "MIT",
+  "repository": "ari-dc-uba-ar/system-definition",
+  "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "test": "tsc && mocha --exit --node-option enable-source-maps dist/test/",
-    "test-cov": "tsc && c8 mocha --node-option enable-source-maps dist/test/"
+    "test-ci": "tsc && c8 mocha --node-option enable-source-maps dist/test/"
+  },
+  "overrides": {
+    "diff": ">=8.0.2",
+    "serialize-javascript": ">=7.0.0",
+    "uuid": ">=14.0.0"
   },
   "devDependencies": {
     "@toon-format/toon": "^2.3.0",
@@ -16,6 +23,12 @@
     "c8": "^11.0.0",
     "like-ar": "^0.5.3",
     "mocha": "^11.7.5",
+    "qa-control": "^0.7.5",
     "typescript": "^7.0.2"
+  },
+  "qa-control": {
+    "gha": "all",
+    "run-in": "both",
+    "type":"lib"
   }
 }

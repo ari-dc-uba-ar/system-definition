@@ -2,6 +2,13 @@
 Descriptive layer for systems designed around a Single Source of Truth (SSOT).
 
 
+[![npm-version](https://img.shields.io/npm/v/system-definition.svg)](https://npmjs.org/package/system-definition)
+[![downloads](https://img.shields.io/npm/dm/system-definition.svg)](https://npmjs.org/package/system-definition)
+[![build](https://github.com/ari-dc-uba-ar/system-definition/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/ari-dc-uba-ar/system-definition/actions/workflows/build-and-test.yml)
+[![security](https://socket.dev/api/badge/npm/package/system-definition)](https://socket.dev/npm/package/system-definition)
+[![qa-control](https://github.com/ari-dc-uba-ar/system-definition/actions/workflows/qa-control.yml/badge.svg)](https://github.com/ari-dc-uba-ar/system-definition/actions/workflows/qa-control.yml)
+
+
 language: ![English](https://raw.githubusercontent.com/codenautas/multilang/master/img/lang-en.png)
 also available in:
 [![Spanish](https://raw.githubusercontent.com/codenautas/multilang/master/img/lang-es.png)](LEEME.md)
