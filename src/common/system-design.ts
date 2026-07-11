@@ -56,10 +56,10 @@ export type FkDef = {
 }
 
 export type EntityDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
-    pk: readonly string[]
     fields: RecordDef<TypeDefs>
-    uks?: Readonly<Record<string, readonly string[]>>
+    pk: readonly string[]
     fks?: Readonly<Record<string, FkDef>>
+    uks?: Readonly<Record<string, readonly string[]>>
 }
 
 export function defineEntity<
@@ -68,13 +68,13 @@ export function defineEntity<
     const TUks extends Readonly<Record<string, readonly (keyof TFields & string)[]>> = {},
     const TFks extends Readonly<Record<string, {entity: string, fields: readonly (keyof TFields & string)[] | {readonly [K in keyof TFields]?: string}}>> = {},
 >(
-    entityDef: {pk: TPk, fields: TFields, uks?: TUks, fks?: TFks}
-): {pk: TPk, fields: TFields, uks: TUks, fks: TFks} {
+    entityDef: {fields: TFields, pk: TPk, fks?: TFks, uks?: TUks}
+): {fields: TFields, pk: TPk, fks: TFks, uks: TUks} {
     return {
-        pk: entityDef.pk,
         fields: entityDef.fields,
-        uks: entityDef.uks ?? {} as TUks,
+        pk: entityDef.pk,
         fks: entityDef.fks ?? {} as TFks,
+        uks: entityDef.uks ?? {} as TUks,
     };
 }
 
@@ -124,19 +124,19 @@ export type FkInfoOf<TFk extends FkDef> = {
 }
 
 export type EntityInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
-    pk: readonly string[]
-    uks: Readonly<Record<string, readonly string[]>>
-    fks: Readonly<Record<string, FkInfo>>
     fields: RecordInfo<TypeDefs>
+    pk: readonly string[]
+    fks: Readonly<Record<string, FkInfo>>
+    uks: Readonly<Record<string, readonly string[]>>
 }
 
 export type EntityInfoOf<TEntityDef extends EntityDef<TypeCollection>> = {
+    fields: RecordInfoOf<TEntityDef['fields']>
     pk: DedupPk<TEntityDef['pk']>
-    uks: TEntityDef['uks'] extends Readonly<Record<string, readonly string[]>> ? TEntityDef['uks'] : {}
     fks: TEntityDef['fks'] extends Readonly<Record<string, FkDef>>
         ? {[F in keyof TEntityDef['fks']]: FkInfoOf<TEntityDef['fks'][F]>}
         : {}
-    fields: RecordInfoOf<TEntityDef['fields']>
+    uks: TEntityDef['uks'] extends Readonly<Record<string, readonly string[]>> ? TEntityDef['uks'] : {}
 }
 
 function completeFk(fkDef: FkDef): FkInfo {
@@ -150,10 +150,10 @@ function completeFk(fkDef: FkDef): FkInfo {
 
 export function completeEntity<const TEntityDef extends EntityDef<TypeCollection>>(entityDef: TEntityDef): EntityInfoOf<TEntityDef> {
     return {
-        pk: mergePk(entityDef.pk),
-        uks: entityDef.uks ?? {},
-        fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
         fields: completeRecord(entityDef.fields),
+        pk: mergePk(entityDef.pk),
+        fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
+        uks: entityDef.uks ?? {},
     } as EntityInfoOf<TEntityDef>;
 }
 

@@ -1,11 +1,4 @@
 docentes:
-  pk[1]: docente
-  uks:
-  fks:
-    jefe:
-      entity: docentes
-      fields:
-        jefe: docente
   fields[7]{name,type,isName,nullable,label,description}:
     docente,text,false,true,docente,""
     apellido,text,false,false,apellido,""
@@ -14,23 +7,33 @@ docentes:
     email,email,false,true,email,""
     email_alternativo,email,false,true,email alternativo,""
     jefe,text,false,true,jefe,jefe de cátedra (otro docente)
-materias:
-  pk[1]: materia
-  uks:
-    denominacion[1]: denominacion
+  pk[1]: docente
   fks:
+    jefe:
+      entity: docentes
+      fields:
+        jefe: docente
+  uks:
+materias:
   fields[2]{name,type,isName,nullable,label,description}:
     materia,text,false,true,materia,""
     denominacion,text,true,false,denominación,"si corresponde a más de una carrera, aclarar en el nombre"
-periodos:
-  pk[1]: periodo
-  uks:
+  pk[1]: materia
   fks:
+  uks:
+    denominacion[1]: denominacion
+periodos:
   fields[1]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
-cursos:
-  pk[2]: periodo,materia
+  pk[1]: periodo
+  fks:
   uks:
+cursos:
+  fields[3]{name,type,isName,nullable,label,description}:
+    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
+    materia,text,false,true,materia,""
+    docente,text,false,true,docente,""
+  pk[2]: periodo,materia
   fks:
     periodos:
       entity: periodos
@@ -44,44 +47,32 @@ cursos:
       entity: docentes
       fields:
         docente: docente
-  fields[3]{name,type,isName,nullable,label,description}:
-    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,true,materia,""
-    docente,text,false,true,docente,""
-clases:
-  pk[3]: periodo,materia,orden
   uks:
-  fks:
-    cursos:
-      entity: cursos
-      fields:
-        periodo: periodo
-        materia: materia
+clases:
   fields[5]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
     orden,integer,false,true,orden,""
     fecha,fecha,false,true,fecha,""
     tema,text,false,true,tema,""
-alumnos:
-  pk[1]: alumno
-  uks:
+  pk[3]: periodo,materia,orden
   fks:
+    cursos:
+      entity: cursos
+      fields:
+        periodo: periodo
+        materia: materia
+  uks:
+alumnos:
   fields[4]{name,type,isName,nullable,label,description}:
     alumno,text,false,true,alumno,""
     apellido,text,false,false,apellido,""
     nombres,text,false,false,nombres,""
     email,email,false,true,email,""
-preguntas:
-  pk[4]: periodo,materia,orden,pregunta
-  uks:
+  pk[1]: alumno
   fks:
-    clases:
-      entity: clases
-      fields:
-        periodo: periodo
-        materia: materia
-        orden: orden
+  uks:
+preguntas:
   fields[7]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
@@ -90,9 +81,24 @@ preguntas:
     formulacion,text,false,false,formulación,texto principal de la pregunta
     aclaraciones,text,false,true,aclaraciones,"texto que no necesita repetirse cuando se quiera referir a una pregunta por su formulación, pero que es necesario para aclarar el contexto o posibles ambigüedades de la pregunta"
     tipo_respuesta,text,false,false,tipo,""
-opciones:
-  pk[5]: periodo,materia,orden,pregunta,opcion
+  pk[4]: periodo,materia,orden,pregunta
+  fks:
+    clases:
+      entity: clases
+      fields:
+        periodo: periodo
+        materia: materia
+        orden: orden
   uks:
+opciones:
+  fields[6]{name,type,isName,nullable,label,description}:
+    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
+    materia,text,false,true,materia,""
+    orden,integer,false,true,orden,""
+    pregunta,integer,false,true,pregunta,""
+    opcion,text,false,true,opcion,""
+    detalle,text,false,true,detalle,""
+  pk[5]: periodo,materia,orden,pregunta,opcion
   fks:
     preguntas:
       entity: preguntas
@@ -101,16 +107,13 @@ opciones:
         materia: materia
         orden: orden
         pregunta: pregunta
-  fields[6]{name,type,isName,nullable,label,description}:
+  uks:
+inscripciones:
+  fields[3]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
-    orden,integer,false,true,orden,""
-    pregunta,integer,false,true,pregunta,""
-    opcion,text,false,true,opcion,""
-    detalle,text,false,true,detalle,""
-inscripciones:
+    alumno,text,false,true,alumno,""
   pk[3]: periodo,materia,alumno
-  uks:
   fks:
     cursos:
       entity: cursos
@@ -121,13 +124,14 @@ inscripciones:
       entity: alumnos
       fields:
         alumno: alumno
-  fields[3]{name,type,isName,nullable,label,description}:
+  uks:
+presencias:
+  fields[4]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
     alumno,text,false,true,alumno,""
-presencias:
+    orden,integer,false,true,orden,""
   pk[4]: periodo,materia,alumno,orden
-  uks:
   fks:
     inscripciones:
       entity: inscripciones
@@ -141,14 +145,15 @@ presencias:
         periodo: periodo
         materia: materia
         orden: orden
-  fields[4]{name,type,isName,nullable,label,description}:
+  uks:
+mesas:
+  fields[5]{name,type,isName,nullable,label,description}:
     periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
     materia,text,false,true,materia,""
-    alumno,text,false,true,alumno,""
-    orden,integer,false,true,orden,""
-mesas:
+    fecha,fecha,false,true,fecha,""
+    presidente,text,false,true,presidente,""
+    vocal,text,false,true,vocal,""
   pk[3]: periodo,materia,fecha
-  uks:
   fks:
     cursos:
       entity: cursos
@@ -163,9 +168,4 @@ mesas:
       entity: docentes
       fields:
         vocal: docente
-  fields[5]{name,type,isName,nullable,label,description}:
-    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,true,materia,""
-    fecha,fecha,false,true,fecha,""
-    presidente,text,false,true,presidente,""
-    vocal,text,false,true,vocal,""
+  uks:
