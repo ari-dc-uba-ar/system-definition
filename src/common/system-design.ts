@@ -188,4 +188,3 @@ export function defineEntities<const TEntities extends Readonly<Record<string, E
 ): TEntities {
     return entityDefs;
 }
-
