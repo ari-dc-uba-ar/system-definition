@@ -6,7 +6,18 @@
   "repository": "ari-dc-uba-ar/system-definition",
   "main": "dist/src/common/index.js",
   "types": "dist/src/common/index.d.ts",
-  "files": ["dist/src"],
+  "exports": {
+    ".": {
+      "types": "./dist/src/common/index.d.ts",
+      "default": "./dist/src/common/index.js"
+    },
+    "./examples": {
+      "types": "./dist/examples/common/index.d.ts",
+      "default": "./dist/examples/common/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist/src", "dist/examples"],
   "scripts": {
     "build": "tsc",
     "test": "tsc && mocha --exit --node-option enable-source-maps dist/test/",
