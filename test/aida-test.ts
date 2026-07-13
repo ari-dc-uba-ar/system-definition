@@ -5,7 +5,7 @@ import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
 import { RecordInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
-    EntityDef, TypeCollection
+    EntityDef, TypeCollection, RecordDef
 } from "../src/common/system-design";
 import { typeDefs, cargo, materia, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo } from "../examples/common/aida";
 
@@ -53,9 +53,28 @@ describe("aida example", function(){
     it("completes a record def into a record info", function(){
         var materiaInfo = completeRecord(materia);
         assert.deepStrictEqual(materiaInfo, {
-            materia      : {type: 'text', label: 'materia'     , nullable: true , description: '', isName: false},
-            denominacion : {type: 'text', label: 'denominación', nullable: false, description: 'si corresponde a más de una carrera, aclarar en el nombre', isName: true},
+            materia      : {type: 'text', label: 'materia'     , nullable: true , editable: true, description: '', isName: false},
+            denominacion : {type: 'text', label: 'denominación', nullable: false, editable: true, description: 'si corresponde a más de una carrera, aclarar en el nombre', isName: true},
         });
+    })
+    it("defaults editable to true, and keeps it false when declared read-only", function(){
+        var record = {
+            nombre: {type: 'text'},
+            total : {type: 'integer', editable: false},
+        } satisfies RecordDef<typeof typeDefs>
+        var info = completeRecord(record);
+        assert.equal(info.nombre.editable, true);
+        assert.equal(info.total.editable, false);
+        type InfoExpected = {
+            nombre: {type: 'text'   , editable: boolean, isName: boolean, nullable: boolean, label: string, description: string},
+            total : {type: 'integer', editable: boolean, isName: boolean, nullable: boolean, label: string, description: string},
+        }
+        // both assignments must compile: expected and completed are mutually assignable
+        var expected: InfoExpected = info;
+        var infoBack: typeof info = expected;
+        assert.deepStrictEqual(infoBack, expected);
+        // @ts-expect-error editable must be a boolean
+        var wrong: RecordDef<typeof typeDefs> = {x: {type: 'text', editable: 'yes'}};
     })
     it("completes preserving the field set and the type literals", function(){
         var cargoInfo = completeRecord(cargo);
@@ -69,10 +88,10 @@ describe("aida example", function(){
             var dummy = cargoInfo.inexistente.type
         })
         type CargoInfoExpected = {
-            cargo        : {type: 'text'   , label: string, nullable: boolean, description: string, isName: boolean},
-            denominacion : {type: 'text'   , label: string, nullable: boolean, description: string, isName: boolean},
-            orden        : {type: 'integer', label: string, nullable: boolean, description: string, isName: boolean},
-            puede_dirigir: {type: 'boolean', label: string, nullable: boolean, description: string, isName: boolean},
+            cargo        : {type: 'text'   , label: string, nullable: boolean, editable: boolean, description: string, isName: boolean},
+            denominacion : {type: 'text'   , label: string, nullable: boolean, editable: boolean, description: string, isName: boolean},
+            orden        : {type: 'integer', label: string, nullable: boolean, editable: boolean, description: string, isName: boolean},
+            puede_dirigir: {type: 'boolean', label: string, nullable: boolean, editable: boolean, description: string, isName: boolean},
         }
         // both assignments must compile: expected and deduced are mutually assignable
         // (this also checks that label, nullable and description are required, not optional)

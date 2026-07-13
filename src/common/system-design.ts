@@ -16,6 +16,7 @@ export type FieldDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = 
     type: keyof TypeDefs
     isName?: true
     nullable?: boolean
+    editable?: boolean
     label?: string
     description?: string
 }
@@ -37,6 +38,7 @@ export function completeRecord<TRecordDef extends RecordDef<TypeCollection>>(rec
         type: null,
         isName: false,
         nullable: true,
+        editable: true,
         label: name.replace(/_/g,' '),
         description: '',
         ...fieldDef,
