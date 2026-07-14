@@ -1,7 +1,7 @@
 {
   "name": "system-definition",
   "description": "Defining system based on SSOT",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "repository": "ari-dc-uba-ar/system-definition",
   "main": "dist/src/common/index.js",
