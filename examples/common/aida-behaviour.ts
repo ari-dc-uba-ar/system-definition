@@ -6,7 +6,13 @@ import { typeDefs } from "./aida";
 /* aida declares its own types in aida.ts; this is what reading and writing each of them
    looks like. The two halves are apart on purpose — a description stays serializable and
    a behaviour is code — but they belong to the same system and they are kept in the same
-   place, so nobody has to write `fecha` twice. */
+   place, so nobody has to write `fecha` twice.
+
+   `typeDefs` is imported here only as a type, so this module carries no entity definition
+   at runtime. That is what the `system-definition/examples/behaviour` entry point is for:
+   a browser that already receives the description it needs over the wire imports the
+   behaviour — which cannot travel, because it is functions — without dragging the whole
+   description of the system along with it. */
 
 type Fecha = typeof typeDefs['fecha']['tsType']
 

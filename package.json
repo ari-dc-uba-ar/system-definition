@@ -15,6 +15,10 @@
       "types": "./dist/examples/common/index.d.ts",
       "default": "./dist/examples/common/index.js"
     },
+    "./examples/behaviour": {
+      "types": "./dist/examples/common/aida-behaviour.d.ts",
+      "default": "./dist/examples/common/aida-behaviour.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
