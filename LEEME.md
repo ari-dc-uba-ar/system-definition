@@ -120,6 +120,31 @@ preserva los literales (`pk` queda tipado como tupla exacta, no como `string[]`)
   deduplicando también a nivel de tipos (preserva el orden de primera aparición). Se usa
   para pks combinadas, como la de `presencias`, que junta las de `inscripciones` y `clases`.
 
+### Comportamiento de los tipos: `TypeProvider`
+
+Una descripción dice que un campo es una `fecha`; cómo se lee y cómo se escribe una `fecha`
+es parte de lo que una `fecha` **es**. Por eso el comportamiento vive acá, junto a la
+definición de los tipos, y no en cada implementación: si cada una lo escribiera de nuevo,
+cada una lo escribiría distinto y la fuente de verdad dejaría de ser única.
+
+* `TypeBehaviour<TsType>` es el par `parse` / `format` de un tipo: de texto a valor y de
+  valor a texto. Texto, y no otro formato de intercambio, porque es lo que ya llevan todos
+  los bordes de afuera del dominio (un body http, un parámetro de url, un input de un
+  formulario, una celda de un csv).
+* `parse` devuelve un `ParseResult<TsType>`: o el valor, o una **clave de mensaje**
+  (`type.integer`, `type.date`) y nunca un texto, así la redacción se resuelve donde se
+  conoce el idioma. Se construyen con `parsed(valor)` y `notParsed(clave)`.
+* `TypeProvider<TTypeDefs>` es el mapa completo de una colección de tipos a su
+  comportamiento, exhaustivo por construcción: agregar un tipo a la colección sin declarar
+  cómo se lee no compila.
+* `commonTypeBehaviours` trae el de `text`, `integer` y `boolean`. Un sistema agrega el de
+  sus tipos propios y puede especializar uno común: en el ejemplo, el `boolean` de aida lee
+  además `sí` y `no`.
+
+Esto no rompe la regla de que las descripciones son serializables: un `TypeDef` sigue sin
+llevar funciones. El `TypeProvider` es exactamente el registro aparte que esa regla supone,
+y el nombre del tipo que lleva la descripción es la clave para buscar en él.
+
 <!--lang:en--]
 
 ## Vocabulary
@@ -169,6 +194,31 @@ the literals (`pk` ends up typed as an exact tuple, not as `string[]`).
   deduplicating at the type level too (preserving the order of first appearance). It's used
   for combined pks, like the one for `presencias` (attendance), which joins the pks of
   `inscripciones` (enrollments) and `clases` (classes).
+
+### Type behaviour: `TypeProvider`
+
+A description says that a field is a `fecha` (a date); what a `fecha` reads like and writes
+like is part of what a `fecha` **is**. That's why behaviour lives here, next to the
+definition of the types, and not in each implementation: if every implementation wrote it
+again, every one would write it differently and the source of truth would stop being
+single.
+
+* `TypeBehaviour<TsType>` is a type's `parse` / `format` pair: text to value and value to
+  text. Text, and no other interchange format, because it's what every boundary outside the
+  domain already carries (an http body, a url parameter, a form input, a csv cell).
+* `parse` returns a `ParseResult<TsType>`: either the value, or a **message key**
+  (`type.integer`, `type.date`) and never a text, so the wording is resolved where the
+  language is known. They're built with `parsed(value)` and `notParsed(key)`.
+* `TypeProvider<TTypeDefs>` is the complete map from a type collection to its behaviour,
+  exhaustive by construction: adding a type to the collection without saying how it reads
+  does not compile.
+* `commonTypeBehaviours` provides it for `text`, `integer` and `boolean`. A system adds the
+  behaviour of its own types and may specialize a common one: in the example, aida's
+  `boolean` also reads `sí` and `no`.
+
+This doesn't break the rule that descriptions are serializable: a `TypeDef` still carries no
+functions. The `TypeProvider` is exactly the separate registry that rule assumes, and the
+type name a description carries is the key into it.
 
 [!--lang:es-->
 
@@ -221,7 +271,8 @@ have, reassigning a literal `type`, and so on.
 ## Estructura
 
 * `src/common`: el framework descriptor; no conoce ningún sistema concreto.
-* `examples/common`: un sistema de ejemplo (sistema de alumnos) descripto con el framework.
+* `examples/common`: un sistema de ejemplo (sistema de alumnos) descripto con el framework,
+  con el comportamiento de sus tipos.
 * `test/`: tests con mocha que importan las definiciones de los ejemplos (los ejemplos
   implican tests).
 
@@ -230,7 +281,8 @@ have, reassigning a literal `type`, and so on.
 ## Structure
 
 * `src/common`: the descriptive framework; it knows nothing about any concrete system.
-* `examples/common`: an example system (a students system) described with the framework.
+* `examples/common`: an example system (a students system) described with the framework,
+  with the behaviour of its types.
 * `test/`: mocha tests that import the example definitions (the examples double as tests).
 
 [!--lang:es-->

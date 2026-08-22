@@ -1,7 +1,7 @@
 {
   "name": "system-definition",
   "description": "Defining system based on SSOT",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "license": "MIT",
   "repository": "ari-dc-uba-ar/system-definition",
   "main": "dist/src/common/index.js",
@@ -14,6 +14,10 @@
     "./examples": {
       "types": "./dist/examples/common/index.d.ts",
       "default": "./dist/examples/common/index.js"
+    },
+    "./examples/behaviour": {
+      "types": "./dist/examples/common/aida-behaviour.d.ts",
+      "default": "./dist/examples/common/aida-behaviour.js"
     },
     "./package.json": "./package.json"
   },

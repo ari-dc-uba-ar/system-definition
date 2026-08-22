@@ -86,6 +86,31 @@ the literals (`pk` ends up typed as an exact tuple, not as `string[]`).
   for combined pks, like the one for `presencias` (attendance), which joins the pks of
   `inscripciones` (enrollments) and `clases` (classes).
 
+### Type behaviour: `TypeProvider`
+
+A description says that a field is a `fecha` (a date); what a `fecha` reads like and writes
+like is part of what a `fecha` **is**. That's why behaviour lives here, next to the
+definition of the types, and not in each implementation: if every implementation wrote it
+again, every one would write it differently and the source of truth would stop being
+single.
+
+* `TypeBehaviour<TsType>` is a type's `parse` / `format` pair: text to value and value to
+  text. Text, and no other interchange format, because it's what every boundary outside the
+  domain already carries (an http body, a url parameter, a form input, a csv cell).
+* `parse` returns a `ParseResult<TsType>`: either the value, or a **message key**
+  (`type.integer`, `type.date`) and never a text, so the wording is resolved where the
+  language is known. They're built with `parsed(value)` and `notParsed(key)`.
+* `TypeProvider<TTypeDefs>` is the complete map from a type collection to its behaviour,
+  exhaustive by construction: adding a type to the collection without saying how it reads
+  does not compile.
+* `commonTypeBehaviours` provides it for `text`, `integer` and `boolean`. A system adds the
+  behaviour of its own types and may specialize a common one: in the example, aida's
+  `boolean` also reads `sí` and `no`.
+
+This doesn't break the rule that descriptions are serializable: a `TypeDef` still carries no
+functions. The `TypeProvider` is exactly the separate registry that rule assumes, and the
+type name a description carries is the key into it.
+
 
 ## Example: student system
 
@@ -113,7 +138,8 @@ have, reassigning a literal `type`, and so on.
 ## Structure
 
 * `src/common`: the descriptive framework; it knows nothing about any concrete system.
-* `examples/common`: an example system (a students system) described with the framework.
+* `examples/common`: an example system (a students system) described with the framework,
+  with the behaviour of its types.
 * `test/`: mocha tests that import the example definitions (the examples double as tests).
 
 
