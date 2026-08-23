@@ -5,7 +5,7 @@ import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
 import { RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
-    EntityDef, TypeCollection
+    EntityDef, EntityInfoOf, TypeCollection
 } from "../src/common/system-design";
 import { typeDefs, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo } from "../examples/common/aida";
 
@@ -340,20 +340,37 @@ describe("aida design snapshot", function(){
     it("matches aida-design.toon", function(){
         /* provisional flattening until TOLON exists: toon only formats arrays of uniform
            objects as tables, so the fields map becomes an array with the name inside */
-        function designSnapshot(eds: Record<string, EntityDef<TypeCollection>>){
+        type FieldInfoRow<TEntityDef extends EntityDef<TypeCollection>> = {
+            [K in keyof EntityInfoOf<TEntityDef>['fields']]: {name: K} & EntityInfoOf<TEntityDef>['fields'][K]
+        }[keyof TEntityDef['fields']]
+        type DesignSnapshot<TEntities extends Record<string, EntityDef<TypeCollection>>> = {
+            [E in keyof TEntities]: Omit<EntityInfoOf<TEntities[E]>, 'fields'> & {fields: FieldInfoRow<TEntities[E]>[]}
+        }
+        function designSnapshot<const TEntities extends Record<string, EntityDef<TypeCollection>>>(eds: TEntities): DesignSnapshot<TEntities> {
             return LikeAr(eds).map(ed => {
                 var entityInfo = completeEntity(ed);
                 return {
                     ...entityInfo,
                     fields: LikeAr(entityInfo.fields).map((fieldInfo, name)=>({name, ...fieldInfo})).array(),
                 };
-            }).plain();
+            /* the cast recovers what LikeAr's map loses: its signature collapses the values
+               into a union, while the mapping is done key by key */
+            }).plain() as DesignSnapshot<TEntities>;
         }
         var design = designSnapshot(entityDefs);
+        /* the snapshot must be built with the precise type of each entity: with the wide
+           EntityDef the pk is readonly string[], and then nothing of the pk survives */
+        var clasesPk: readonly ['periodo', 'materia', 'orden'] = design.clases.pk;
+        var docentesFieldName: 'docente' | 'apellido' | 'nombres' | 'cargo' | 'email' | 'email_alternativo' | 'jefe' = design.docentes.fields[0].name;
+        // @ts-expect-error the entities of the system are known
+        var noEntity = design.inexistente;
         var generated = encode(design) + '\n';
         var snapshotPath = (prefix:string) => path.join(__dirname, '..', '..', 'test', prefix+'aida-design.toon');
         fs.writeFileSync(snapshotPath('local-'), generated);
         var expected = fs.readFileSync(snapshotPath(''), 'utf8').replace(/\r\n/g, '\n');
+        assert.deepStrictEqual(clasesPk, ['periodo', 'materia', 'orden']);
+        assert.equal(docentesFieldName, 'docente');
+        assert.equal(noEntity, undefined);
         assert.equal(generated, expected);
     })
 })
