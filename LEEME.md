@@ -82,7 +82,9 @@ Cada sistema define su propia colección de tipos (`TypeCollection`), asociando 
 tipo (por ejemplo `"texto"`, `"legajo"`) con el tipo TypeScript que le corresponde en
 tiempo de ejecución. El framework aporta unos pocos tipos comunes (`text`, `integer`,
 `boolean`) como punto de partida; cada sistema puede agregar los suyos (en el ejemplo,
-`fecha`, `email`).
+`plaindate`, `email`). Un campo también puede llevar lo que el framework no conoce: al
+`FieldDef` se le pueden agregar las propiedades que el sistema necesite (en el ejemplo,
+`defaultValue`, `options` y `secreto`).
 
 ### Campos: `FieldDef` / `FieldInfo`
 
@@ -109,6 +111,8 @@ valores que tomaría cada campo en tiempo de ejecución).
 forman la clave primaria (admite pk compuesta). Se construye con `defineEntity`, que
 chequea en tiempo de compilación que cada elemento de `pk` sea una key de `fields`, y
 preserva los literales (`pk` queda tipado como tupla exacta, no como `string[]`).
+Las propiedades que el framework no conoce pasan de largo: cada sistema le puede agregar a
+sus entidades lo que necesite, igual que a sus campos.
 
 ### Reutilización de claves: `extractPk` / `mergePk`
 
@@ -129,7 +133,9 @@ preserva los literales (`pk` queda tipado como tupla exacta, no como `string[]`)
 Each system defines its own type collection (`TypeCollection`), associating a type name
 (e.g. `"text"`, `"student id"`) with the TypeScript type it maps to at runtime. The
 framework provides a few common types (`text`, `integer`, `boolean`) as a starting point;
-each system can add its own (in the example, `fecha` — date — and `email`).
+each system can add its own (in the example, `plaindate` and `email`). A field can also
+carry what the framework does not know about: `FieldDef` can be extended with whatever
+properties the system needs (in the example, `defaultValue`, `options` and `secreto`).
 
 ### Fields: `FieldDef` / `FieldInfo`
 
@@ -157,6 +163,8 @@ values each field would hold at runtime).
 make up the primary key (composite keys are supported). It's built with `defineEntity`,
 which checks at compile time that every element of `pk` is a key of `fields`, and preserves
 the literals (`pk` ends up typed as an exact tuple, not as `string[]`).
+The properties the framework does not know about are passed through: each system can add to
+its entities whatever it needs, the same way it does with its fields.
 
 ### Reusing keys: `extractPk` / `mergePk`
 

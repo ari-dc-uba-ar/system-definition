@@ -7,7 +7,8 @@ import { strict as LikeAr } from "like-ar";
 import { RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
     EntityDef, EntityInfoOf, ExpandType, FieldDef, Optional, TypeCollection
 } from "../src/common/system-design";
-import { typeDefs, cargo, cargos, docente, docentes, periodo, sede, curso, cursos, comision, comisiones,
+import { typeDefs, cargo, cargos, docente, docentes, periodo, periodos, sede, curso, cursos, comision, comisiones,
+    respuestas_selecciones,
     clase, clases, pregunta, preguntas, opcion, opciones, inscripciones, presente, presentes,
     entityDefs, DefinedType, validarCargo, validarPregunta, PlainDate
 } from "../examples/common/aida";
@@ -448,6 +449,25 @@ describe("aida entity completion (Def → Info)", function(){
 })
 
 describe("extended declaractions", function(){
+    it("defineEntity passes through the properties it does not know", function(){
+        const cosas = defineEntity({
+            pk: ['cosa'],
+            fields: {cosa: {type: 'text'}},
+            title: 'las cosas',
+            skipCrud: true,
+        });
+        // the properties the framework does not know must survive, with their literals:
+        var title: 'las cosas' = cosas.title;
+        var skipCrud: true = cosas.skipCrud;
+        // and what the framework does know keeps working:
+        var pk: readonly ['cosa'] = cosas.pk;
+        assert.equal(title, 'las cosas');
+        assert.equal(skipCrud, true);
+        assert.deepStrictEqual(cosas.pk, ['cosa']);
+        assert.deepStrictEqual(cosas.fks, {});
+        assert.deepStrictEqual(pk, cosas.pk);
+    })
+
     type MyFieldDef = FieldDef<typeof typeDefs> & {otherText?:string, otherBool:boolean};
     const extendedCargo = {
         cargo            : {type: 'text'    , otherBool:true},
@@ -459,6 +479,17 @@ describe("extended declaractions", function(){
         fields: extendedCargo,
         pk: ['cargo']
     });
+    it("keeps the properties this system added to its entities", function(){
+        var titulo: 'períodos' = periodos.title;
+        var skipCrud: true = respuestas_selecciones.skipCrud;
+        assert.equal(titulo, 'períodos');
+        assert.equal(skipCrud, true);
+        assert.equal(cursos.description, 'materias por período lectivo');
+        // the Info side still keeps only what the framework knows:
+        // @ts-expect-error
+        var noTitle = completeEntity(periodos).title;
+        assert.equal(noTitle, undefined);
+    })
     it("all ok with extended", function(){
         var miCargo = {cargo: '7'}
         var expected: ExpandType<Optional<DefinedType<typeof extendedCargos>>>;

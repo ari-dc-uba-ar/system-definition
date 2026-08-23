@@ -45,7 +45,9 @@ as plain JSON, with no embedded functions).
 Each system defines its own type collection (`TypeCollection`), associating a type name
 (e.g. `"text"`, `"student id"`) with the TypeScript type it maps to at runtime. The
 framework provides a few common types (`text`, `integer`, `boolean`) as a starting point;
-each system can add its own (in the example, `fecha` — date — and `email`).
+each system can add its own (in the example, `plaindate` and `email`). A field can also
+carry what the framework does not know about: `FieldDef` can be extended with whatever
+properties the system needs (in the example, `defaultValue`, `options` and `secreto`).
 
 ### Fields: `FieldDef` / `FieldInfo`
 
@@ -73,6 +75,8 @@ values each field would hold at runtime).
 make up the primary key (composite keys are supported). It's built with `defineEntity`,
 which checks at compile time that every element of `pk` is a key of `fields`, and preserves
 the literals (`pk` ends up typed as an exact tuple, not as `string[]`).
+The properties the framework does not know about are passed through: each system can add to
+its entities whatever it needs, the same way it does with its fields.
 
 ### Reusing keys: `extractPk` / `mergePk`
 

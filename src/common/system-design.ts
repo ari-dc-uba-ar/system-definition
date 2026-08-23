@@ -83,20 +83,28 @@ export type EntityDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> =
     uks?: Readonly<Record<string, readonly string[]>>
 }
 
+/* what the framework does not know about an entity is passed through untouched, the same
+   way each system can add what it needs to the definition of a field */
+export type EntityDefOf<TFields extends RecordDef<TypeCollection>, TPk extends readonly string[], TFks, TUks, TRest> =
+    {fields: TFields, pk: TPk, fks: TFks, uks: TUks} & Omit<TRest, keyof EntityDef<TypeCollection>>
+
 export function defineEntity<
     const TPk extends readonly (keyof TFields & string)[],
     const TFields extends RecordDef<TypeCollection>,
     const TUks extends Readonly<Record<string, readonly (keyof TFields & string)[]>> = {},
     const TFks extends Readonly<Record<string, {entity: string, fields: readonly (keyof TFields & string)[] | {readonly [K in keyof TFields]?: string}}>> = {},
+    const TRest extends Readonly<Record<string, unknown>> = {},
 >(
-    entityDef: {fields: TFields, pk: TPk, fks?: TFks, uks?: TUks}
-): {fields: TFields, pk: TPk, fks: TFks, uks: TUks} {
+    entityDef: {fields: TFields, pk: TPk, fks?: TFks, uks?: TUks} & TRest
+): EntityDefOf<TFields, TPk, TFks, TUks, TRest> {
+    const {fields, pk, fks, uks, ...rest} = entityDef;
     return {
-        fields: entityDef.fields,
-        pk: entityDef.pk,
-        fks: entityDef.fks ?? {} as TFks,
-        uks: entityDef.uks ?? {} as TUks,
-    };
+        fields,
+        pk,
+        fks: fks ?? {} as TFks,
+        uks: uks ?? {} as TUks,
+        ...rest,
+    } as EntityDefOf<TFields, TPk, TFks, TUks, TRest>;
 }
 
 export type PkFieldsOf<TEntityDef extends EntityDef<TypeCollection>> =

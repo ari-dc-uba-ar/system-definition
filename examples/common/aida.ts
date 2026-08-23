@@ -54,15 +54,18 @@ export const cargos = defineEntity({
 
 /* --- tablas estables --- */
 
-/* períodos: cuatrimestres, bimestres, etc... */
 export const periodo = {
     periodo : {type: 'text', label: 'período'},
     cerrado : {type: 'boolean', nullable: false, defaultValue: false},
 } satisfies RecordsDef
 
-export const periodos = defineEntity({pk: ['periodo'], fields: periodo})
+export const periodos = defineEntity({
+    title: 'períodos',
+    description: 'períodos: cuatrimestres, bimestres, etc...',
+    pk: ['periodo'],
+    fields: periodo,
+})
 
-/* materias por período lectivo */
 export const curso = {
     ...extractPk(periodos),
     cod_mat        : {type: 'text'},
@@ -71,12 +74,12 @@ export const curso = {
 } satisfies RecordsDef
 
 export const cursos = defineEntity({
+    description: 'materias por período lectivo',
     pk: [...periodos.pk, 'cod_mat'],
     fks: {periodos: {entity: 'periodos', fields: periodos.pk}},
     fields: curso,
 })
 
-/* comisiones de cada curso (teórica, práctica, laboratorio, ...) */
 export const comision = {
     ...extractPk(cursos),
     comision     : {type: 'text', label: 'comisión'},
@@ -86,20 +89,24 @@ export const comision = {
 } satisfies RecordsDef
 
 export const comisiones = defineEntity({
+    title: 'comisiones',
+    description: 'comisiones de cada curso (teórica, práctica, laboratorio, ...)',
     pk: [...cursos.pk, 'comision'],
     fks: {cursos: {entity: 'cursos', fields: cursos.pk}},
     fields: comision,
 })
 
-/* sedes */
 export const sede = {
     sede   : {type: 'text'},
     nombre : {type: 'text', nullable: false, isName: true},
 } satisfies RecordsDef
 
-export const sedes = defineEntity({pk: ['sede'], fields: sede})
+export const sedes = defineEntity({
+    description: 'sedes',
+    pk: ['sede'],
+    fields: sede,
+})
 
-/* aulas disponibles */
 export const aula = {
     ...extractPk(sedes),
     aula              : {type: 'text'},
@@ -111,6 +118,7 @@ export const aula = {
 } satisfies RecordsDef
 
 export const aulas = defineEntity({
+    description: 'aulas disponibles',
     pk: [...sedes.pk, 'aula'],
     fks: {sedes: {entity: 'sedes', fields: sedes.pk}},
     fields: aula,
@@ -137,7 +145,6 @@ const credenciales = {
     last_pass_change  : {type: 'plaindate', label: 'último cambio de contraseña'},
 } satisfies RecordsDef
 
-/* las personas que entran al sistema: el mail es la identidad */
 export const alumno = {
     email : {type: 'email'},
     /* La inscripción con la que el alumno se muestra. Arranca en la primera que lo creó
@@ -157,6 +164,7 @@ export const alumno = {
 } satisfies RecordsDef
 
 export const alumnos = defineEntity({
+    description: 'las personas que entran al sistema: el mail es la identidad',
     pk: ['email'],
     /* circular con la fk alumnos de inscripciones: en la base tiene que ser DEFERRABLE.
        Acá la fk nombra a la entidad destino en vez de referenciar el objeto, así que las
@@ -165,7 +173,6 @@ export const alumnos = defineEntity({
     fields: alumno,
 })
 
-/* inscripciones a cada curso, tal como las manda el sistema de inscripciones */
 export const inscripcion = {
     ...inscripcion_pk,
     /* Tal como vino en la lista del otro sistema. No se corrige para que dos
@@ -184,6 +191,7 @@ export const inscripcion = {
 } satisfies RecordsDef
 
 export const inscripciones = defineEntity({
+    description: 'inscripciones a cada curso, tal como las manda el sistema de inscripciones',
     pk: [...cursos.pk, 'libreta'],
     fks: {
         cursos : {entity: 'cursos' , fields: cursos.pk},
@@ -192,7 +200,6 @@ export const inscripciones = defineEntity({
     fields: inscripcion,
 })
 
-/* docentes */
 export const docente = {
     legajo   : {type: 'text'},
     username : {type: 'text' , nullable: false},
@@ -203,15 +210,19 @@ export const docente = {
     ...credenciales,
 } satisfies RecordsDef
 
-export const docentes = defineEntity({pk: ['legajo'], fields: docente})
+export const docentes = defineEntity({
+    description: 'docentes',
+    pk: ['legajo'],
+    fields: docente,
+})
 
-/* docentes asignados a cada curso */
 export const asignacion = {
     ...extractPk(cursos),
     ...extractPk(docentes),
 } satisfies RecordsDef
 
 export const asignacion_docente = defineEntity({
+    description: 'docentes asignados a cada curso',
     pk: [...cursos.pk, ...docentes.pk],
     fks: {cursos: {entity: 'cursos', fields: cursos.pk}},
     fields: asignacion,
@@ -232,7 +243,6 @@ const datos_clase = {
     ...extractPk(aulas),
 } satisfies RecordsDef
 
-/* clases dictadas */
 export const clase = {
     ...extractPk(comisiones),
     fecha : {type: 'plaindate'},
@@ -240,6 +250,7 @@ export const clase = {
 } satisfies RecordsDef
 
 export const clases = defineEntity({
+    description: 'clases dictadas',
     pk: [...comisiones.pk, 'fecha'],
     fks: {
         comisiones: {entity: 'comisiones', fields: comisiones.pk},
@@ -248,7 +259,6 @@ export const clases = defineEntity({
     fields: clase,
 })
 
-/* preguntas realizadas en clase */
 export const pregunta = {
     ...extractPk(clases),
     id_pregunta        : {type: 'integer'},
@@ -261,12 +271,12 @@ export const pregunta = {
 } satisfies RecordsDef
 
 export const preguntas = defineEntity({
+    description: 'preguntas realizadas en clase',
     pk: [...clases.pk, 'id_pregunta'],
     fks: {clases: {entity: 'clases', fields: clases.pk}},
     fields: pregunta,
 })
 
-/* opciones de las preguntas (simples o múltiples) */
 export const opcion = {
     ...extractPk(preguntas),
     id_opcion : {type: 'text', label: 'opción'},
@@ -274,12 +284,12 @@ export const opcion = {
 } satisfies RecordsDef
 
 export const opciones = defineEntity({
+    description: 'opciones de las preguntas (simples o múltiples)',
     pk: [...preguntas.pk, 'id_opcion'],
     fks: {preguntas: {entity: 'preguntas', fields: preguntas.pk}},
     fields: opcion,
 })
 
-/* respuestas de alumnos a preguntas */
 export const respuesta = {
     ...extractPk(preguntas),
     ...extractPk(inscripciones),
@@ -288,6 +298,7 @@ export const respuesta = {
 } satisfies RecordsDef
 
 export const respuestas = defineEntity({
+    description: 'respuestas de alumnos a preguntas',
     pk: mergePk(preguntas.pk, inscripciones.pk),
     fks: {
         preguntas    : {entity: 'preguntas'    , fields: preguntas.pk},
@@ -296,7 +307,6 @@ export const respuestas = defineEntity({
     fields: respuesta,
 })
 
-/* opciones elegidas en las respuestas múltiples o simples (tabla interna, sin CRUD) */
 export const respuesta_seleccion = {
     ...extractPk(respuestas),
     seleccion : opcion.id_opcion,
@@ -306,6 +316,8 @@ export const respuesta_seleccion = {
 } satisfies RecordsDef
 
 export const respuestas_selecciones = defineEntity({
+    description: 'opciones elegidas en las respuestas múltiples o simples',
+    skipCrud: true,
     pk: [...respuestas.pk, 'seleccion'],
     fks: {
         respuestas: {entity: 'respuestas', fields: respuestas.pk},
@@ -318,19 +330,18 @@ export const respuestas_selecciones = defineEntity({
    (`clases.sede`, `clases.aula`) y no entra en estas pk. Si entrara habría que mostrar
    varias aulas a la vez, que es justamente lo que no queremos. */
 
-/* filas de asientos disponibles en cada clase */
 export const clase_fila = {
     ...extractPk(clases),
     fila : {type: 'positive_integer'},
 } satisfies RecordsDef
 
 export const clase_filas = defineEntity({
+    description: 'filas de asientos disponibles en cada clase',
     pk: [...clases.pk, 'fila'],
     fks: {clases: {entity: 'clases', fields: clases.pk}},
     fields: clase_fila,
 })
 
-/* asientos disponibles por fila y clase */
 export const clase_asiento = {
     ...extractPk(clase_filas),
     asiento : {type: 'positive_integer'},
@@ -338,6 +349,7 @@ export const clase_asiento = {
 } satisfies RecordsDef
 
 export const clase_asientos = defineEntity({
+    description: 'asientos disponibles por fila y clase',
     pk: [...clase_filas.pk, 'asiento'],
     fks: {clase_filas: {entity: 'clase_filas', fields: clase_filas.pk}},
     fields: clase_asiento,
@@ -352,7 +364,6 @@ const ubicacion = {
     asiento  : {type: 'positive_integer'},
 } satisfies RecordsDef
 
-/* asistencia de alumnos a clase */
 export const presente = {
     ...extractPk(clases),
     ...extractPk(inscripciones),
@@ -363,6 +374,7 @@ export const presente = {
 } satisfies RecordsDef
 
 export const presentes = defineEntity({
+    description: 'asistencia de alumnos a clase',
     pk: mergePk(clases.pk, inscripciones.pk),
     fks: {
         clases       : {entity: 'clases'       , fields: clases.pk},
@@ -383,15 +395,18 @@ export const presentes = defineEntity({
    (`snapshots_presentes`, hija de `snapshots_clases` igual que `presentes` lo es de
    `clases`): eso es el control del aula del docente. */
 
-/* cada foto de un momento; lo fotografiado va en las tablas snapshots_* */
 export const snapshot = {
     snapshot : {type: 'serial'},
     momento  : {type: 'timestamptz', nullable: false},
 } satisfies RecordsDef
 
-export const snapshots = defineEntity({pk: ['snapshot'], fields: snapshot})
+export const snapshots = defineEntity({
+    title: 'snapshots',
+    description: 'cada foto de un momento; lo fotografiado va en las tablas snapshots_*',
+    pk: ['snapshot'],
+    fields: snapshot,
+})
 
-/* de qué clase es cada snapshot (y cómo estaba la clase en ese momento) */
 export const snapshot_clase = {
     ...extractPk(snapshots),
     ...extractPk(clases),
@@ -399,6 +414,7 @@ export const snapshot_clase = {
 } satisfies RecordsDef
 
 export const snapshots_clases = defineEntity({
+    description: 'de qué clase es cada snapshot (y cómo estaba la clase en ese momento)',
     pk: mergePk(snapshots.pk, clases.pk),
     fks: {
         snapshots: {entity: 'snapshots', fields: snapshots.pk},
@@ -407,8 +423,7 @@ export const snapshots_clases = defineEntity({
     fields: snapshot_clase,
 })
 
-/* ubicaciones de los alumnos en un snapshot (el control del aula del docente).
-   Las mismas columnas que `presentes` menos `horarios`: el snapshot es la foto de las
+/* Las mismas columnas que `presentes` menos `horarios`: el snapshot es la foto de las
    ubicaciones en un momento, y la historia de tramos ya la lleva presentes.horarios. */
 export const snapshot_presente = {
     ...extractPk(snapshots_clases),
@@ -417,6 +432,7 @@ export const snapshot_presente = {
 } satisfies RecordsDef
 
 export const snapshots_presentes = defineEntity({
+    description: 'ubicaciones de los alumnos en un snapshot (el control del aula del docente)',
     pk: mergePk(snapshots_clases.pk, inscripciones.pk),
     fks: {
         snapshots_clases: {entity: 'snapshots_clases', fields: snapshots_clases.pk},
@@ -425,7 +441,6 @@ export const snapshots_presentes = defineEntity({
     fields: snapshot_presente,
 })
 
-/* docentes presentes en clase */
 export const docente_presente = {
     ...extractPk(clases),
     ...extractPk(asignacion_docente),
@@ -433,6 +448,7 @@ export const docente_presente = {
 } satisfies RecordsDef
 
 export const docentes_presentes = defineEntity({
+    description: 'docentes presentes en clase',
     pk: mergePk(clases.pk, asignacion_docente.pk),
     fks: {
         clases            : {entity: 'clases'            , fields: clases.pk},
@@ -443,16 +459,18 @@ export const docentes_presentes = defineEntity({
 
 /* --- parámetros y usuarios --- */
 
-/* parámetros globales de la aplicación (una sola fila: unique_row = true siempre) */
 export const parameter = {
     unique_row : {type: 'boolean', options: [true], defaultValue: true},
     app_name   : {type: 'text'     , nullable: false, label: 'nombre de la app'},
     fecha_test : {type: 'plaindate', label: 'fecha de prueba'},
 } satisfies RecordsDef
 
-export const parameters = defineEntity({pk: ['unique_row'], fields: parameter})
+export const parameters = defineEntity({
+    description: 'parámetros globales de la aplicación (una sola fila: unique_row = true siempre)',
+    pk: ['unique_row'],
+    fields: parameter,
+})
 
-/* usuarios del sistema */
 export const user = {
     username   : {type: 'text'},
     first_name : {type: 'text'},
@@ -464,9 +482,12 @@ export const user = {
     rol        : {type: 'text', nullable: false, options: ['admin']},
 } satisfies RecordsDef
 
-export const users = defineEntity({pk: ['username'], fields: user})
+export const users = defineEntity({
+    description: 'usuarios del sistema',
+    pk: ['username'],
+    fields: user,
+})
 
-/* tokens de recuperación de contraseña (tabla interna, sin CRUD) */
 export const password_reset_token = {
     token      : {type: 'text'},
     rol        : {type: 'text'       , nullable: false, options: ['alumno', 'docente', 'admin']},
@@ -475,7 +496,12 @@ export const password_reset_token = {
     used_at    : {type: 'timestamptz'},
 } satisfies RecordsDef
 
-export const password_reset_tokens = defineEntity({pk: ['token'], fields: password_reset_token})
+export const password_reset_tokens = defineEntity({
+    description: 'tokens de recuperación de contraseña',
+    skipCrud: true,
+    pk: ['token'],
+    fields: password_reset_token,
+})
 
 export const recordDefs = {
     cargo,
