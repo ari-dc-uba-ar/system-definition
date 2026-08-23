@@ -87,9 +87,15 @@ tiempo de ejecución. El framework aporta unos pocos tipos comunes (`text`, `int
 ### Campos: `FieldDef` / `FieldInfo`
 
 Un campo se describe con `FieldDef`: el `type` (una key de la `TypeCollection`) y,
-opcionalmente, `label`, `nullable` y `description`. `completeRecord` produce el `FieldInfo`
-correspondiente, con esos tres campos siempre presentes (defaults: `label` derivado del
-nombre, `nullable: true`, `description: ''`), preservando el literal de `type`.
+opcionalmente, `label`, `nullable`, `description` y `defaultValue`. `completeRecord` produce
+el `FieldInfo` correspondiente, con los primeros tres siempre presentes (defaults: `label`
+derivado del nombre, `nullable: true`, `description: ''`), preservando el literal de `type`.
+
+El `defaultValue` es la excepción: no tiene default, así que la propiedad aparece en el
+`FieldInfo` solamente si el `FieldDef` la trae. Su tipo es el del campo (el `tsType` del
+`type`), y admite `null` solo si el campo es nulleable: `{type: 'integer', defaultValue: 1}`
+compila, `{type: 'integer', defaultValue: 'uno'}` y `{type: 'integer', nullable: false,
+defaultValue: null}` no.
 
 ### Records: `RecordDef` / `RecordInfo`
 
@@ -134,10 +140,16 @@ each system can add its own (in the example, `fecha` — date — and `email`).
 ### Fields: `FieldDef` / `FieldInfo`
 
 A field is described with `FieldDef`: its `type` (a key of the `TypeCollection`) and,
-optionally, `label`, `nullable` and `description`. `completeRecord` produces the
-corresponding `FieldInfo`, with those three fields always present (defaults: `label`
+optionally, `label`, `nullable`, `description` and `defaultValue`. `completeRecord` produces
+the corresponding `FieldInfo`, with the first three always present (defaults: `label`
 derived from the field name, `nullable: true`, `description: ''`), preserving the `type`
 literal.
+
+`defaultValue` is the exception: it has no default, so the property shows up in the
+`FieldInfo` only when the `FieldDef` carries one. Its type is the type of the field (the
+`tsType` of its `type`), and it admits `null` only if the field is nullable:
+`{type: 'integer', defaultValue: 1}` compiles, `{type: 'integer', defaultValue: 'uno'}` and
+`{type: 'integer', nullable: false, defaultValue: null}` do not.
 
 ### Records: `RecordDef` / `RecordInfo`
 

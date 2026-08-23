@@ -50,10 +50,16 @@ each system can add its own (in the example, `fecha` — date — and `email`).
 ### Fields: `FieldDef` / `FieldInfo`
 
 A field is described with `FieldDef`: its `type` (a key of the `TypeCollection`) and,
-optionally, `label`, `nullable` and `description`. `completeRecord` produces the
-corresponding `FieldInfo`, with those three fields always present (defaults: `label`
+optionally, `label`, `nullable`, `description` and `defaultValue`. `completeRecord` produces
+the corresponding `FieldInfo`, with the first three always present (defaults: `label`
 derived from the field name, `nullable: true`, `description: ''`), preserving the `type`
 literal.
+
+`defaultValue` is the exception: it has no default, so the property shows up in the
+`FieldInfo` only when the `FieldDef` carries one. Its type is the type of the field (the
+`tsType` of its `type`), and it admits `null` only if the field is nullable:
+`{type: 'integer', defaultValue: 1}` compiles, `{type: 'integer', defaultValue: 'uno'}` and
+`{type: 'integer', nullable: false, defaultValue: null}` do not.
 
 ### Records: `RecordDef` / `RecordInfo`
 

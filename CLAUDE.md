@@ -89,6 +89,12 @@ Nombres ya elegidos:
   deduplicando también a nivel de tipos (tupla recursiva), preservando el orden de primera
   aparición. Es para pks combinadas (`presencias.pk = mergePk(inscripciones.pk, clases.pk)`);
   para los `fields` no hace falta: el spread ya deduplica keys solo.
+* `defaultValue?` en `FieldDef`: el valor por default del campo, por ahora pura info (nada lo
+  usa todavía). Está tipado con el `tsType` del `type` del campo, y admite `null` solo si el
+  campo es nulleable; para eso `FieldDef` es una unión con una rama por tipo de la colección,
+  partida en dos por `nullable` (el tipo de una propiedad no puede mirar el valor de su
+  hermana). Es la única propiedad sin default: `completeRecord` **no la agrega** si el Def no
+  la trae, ni en el valor ni en el tipo (`RecordInfoOf` la intersecta condicionalmente).
 * `isName?: true` en `FieldDef` (solo `true`, así el literal sobrevive al `satisfies`);
   `completeRecord` lo completa a `false` en la Info.
 * `EntityDef` tiene además `uks` (uniques con nombre: `{denominacion: ['denominacion']}`) y

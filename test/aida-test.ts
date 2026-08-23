@@ -403,7 +403,7 @@ describe("aida design snapshot", function(){
                 };
             /* the cast recovers what LikeAr's map loses: its signature collapses the values
                into a union, while the mapping is done key by key */
-            }).plain() as DesignSnapshot<TEntities>;
+            }).plain() as unknown as DesignSnapshot<TEntities>;
         }
         var design = designSnapshot(entityDefs);
         /* the snapshot must be built with the precise type of each entity: with the wide

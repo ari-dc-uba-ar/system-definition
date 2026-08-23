@@ -12,15 +12,28 @@ export const commonTypeDefs = {
     boolean    : {tsType: boxType<boolean>()},
 } satisfies TypeCollection;
 
-export type FieldDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
-    type: keyof TypeDefs
+type FieldDefCommon = {
     isName?: true
-    nullable?: boolean
     label?: string
     description?: string
 }
 
-export type FieldInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Required<Omit<FieldDef<TypeDefs>, 'isName'>> & {isName: boolean}
+/* a def is a union with one branch per type of the collection, so the defaultValue can be
+   typed with the tsType of the type of the field. Each branch is split in two by nullable,
+   because the type of defaultValue cannot look at the value of its sibling property: a not
+   nullable field is the one that cannot default to null. */
+export type FieldDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
+    [K in keyof TypeDefs]: FieldDefCommon & {type: K} & (
+        | {nullable?: true , defaultValue?: TypeDefs[K]['tsType'] | null}
+        | {nullable: false , defaultValue?: TypeDefs[K]['tsType']}
+    )
+}[keyof TypeDefs]
+
+/* defaultValue is the only property that stays optional in the Info: there is no default
+   for it, a field simply may have no default value at all */
+export type FieldInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> =
+    Required<Omit<FieldDef<TypeDefs>, 'isName' | 'defaultValue'>>
+    & {isName: boolean, defaultValue?: TypeDefs[keyof TypeDefs]['tsType'] | null}
 
 export type RecordDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Record<string, FieldDef<TypeDefs>>
 
@@ -28,11 +41,12 @@ export type RecordDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> =
 export type RecordInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Record<string, FieldInfo<TypeDefs>>
 
 export type RecordInfoOf<TRecordDef extends RecordDef<TypeCollection>> = {
-    [K in keyof TRecordDef]: Omit<FieldInfo<TypeCollection>, 'type' | 'nullable'> & {
+    [K in keyof TRecordDef]: Omit<FieldInfo<TypeCollection>, 'type' | 'nullable' | 'defaultValue'> & {
         type: TRecordDef[K]['type']
         // what is known statically is only the explicit nullable:false; the default stays boolean
         nullable: TRecordDef[K] extends {nullable: false} ? false : boolean
-    }
+    // the completion adds no defaultValue: the field of the Info exists only if the Def has one
+    } & (TRecordDef[K] extends {defaultValue: infer TDefault} ? {defaultValue: TDefault} : {})
 }
 
 export function completeRecord<TRecordDef extends RecordDef<TypeCollection>>(recordDef: TRecordDef): RecordInfoOf<TRecordDef>{
@@ -44,7 +58,9 @@ export function completeRecord<TRecordDef extends RecordDef<TypeCollection>>(rec
         label: name.replace(/_/g,' '),
         description: '',
         ...fieldDef,
-    }]))) as RecordInfoOf<TRecordDef>;
+    /* through unknown because RecordInfoOf carries a conditional (the defaultValue that
+       exists only if the def has one) and tsc cannot relate it to what is built here */
+    }]))) as unknown as RecordInfoOf<TRecordDef>;
 }
 
 /* the fields default to nullable (that is the default completeRecord writes into the Info),
@@ -64,7 +80,7 @@ export type NotNullableFieldsOf<TTypeCollection extends TypeCollection, TRecordD
 
 function notNullableFields(recordDef: RecordDef<TypeCollection>, names: readonly string[]): RecordDef<TypeCollection> {
     return Object.fromEntries(Object.entries(recordDef).map(([name, fieldDef]) =>
-        [name, names.includes(name) ? {...fieldDef, nullable: false} : fieldDef]
+        [name, names.includes(name) ? {...fieldDef, nullable: false as const} : fieldDef]
     ));
 }
 
