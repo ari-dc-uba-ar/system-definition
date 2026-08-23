@@ -102,6 +102,11 @@ Nombres ya elegidos:
   de uks existen en `fields`); `defineEntities(entityDefs)` chequea lo global del sistema
   (la entidad destino existe, y los campos destino son su pk completa o una de sus uks).
   El error de `defineEntities` es críptico (mapped type a `never`), pero señala la fk mala.
+* Nulleabilidad: un campo admite null salvo que esté marcado `nullable: false` (el default que
+  completa `completeRecord` es `nullable: true`), y `RecordInstanceType` lo refleja (`string | null`).
+  Los campos de la pk no son nulleables, pero eso lo sabe la entidad y no el record: `completeEntity`
+  los completa con `nullable: false` y `EntityInstanceType<TypeDefs, TEntityDef>` deduce el tipo de la
+  fila con la pk no nulleable (el nivel record sigue dando la pk nulleable, porque no conoce la pk).
 * `RecordInfoOf<TRecordDef>`: la Info precisa que corresponde a una Def concreta (conserva
   las claves y los literales de `type`); es lo que devuelve `completeRecord`. El sufijo `Of`
   marca "tipo derivado de una definición concreta".

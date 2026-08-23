@@ -28,7 +28,11 @@ export type RecordDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> =
 export type RecordInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Record<string, FieldInfo<TypeDefs>>
 
 export type RecordInfoOf<TRecordDef extends RecordDef<TypeCollection>> = {
-    [K in keyof TRecordDef]: FieldInfo<TypeCollection> & {type: TRecordDef[K]['type']}
+    [K in keyof TRecordDef]: Omit<FieldInfo<TypeCollection>, 'type' | 'nullable'> & {
+        type: TRecordDef[K]['type']
+        // what is known statically is only the explicit nullable:false; the default stays boolean
+        nullable: TRecordDef[K] extends {nullable: false} ? false : boolean
+    }
 }
 
 export function completeRecord<TRecordDef extends RecordDef<TypeCollection>>(recordDef: TRecordDef): RecordInfoOf<TRecordDef>{
@@ -43,8 +47,25 @@ export function completeRecord<TRecordDef extends RecordDef<TypeCollection>>(rec
     }]))) as RecordInfoOf<TRecordDef>;
 }
 
+/* the fields default to nullable (that is the default completeRecord writes into the Info),
+   so only the ones explicitly marked nullable:false stay free of null */
+export type NullPart<TFieldDef> = TFieldDef extends {nullable: false} ? never : null
+
 export type RecordInstanceType<TTypeCollection extends TypeCollection, TRecordDef extends RecordDef<TTypeCollection>> = {
-    [K in keyof TRecordDef]: TTypeCollection[TRecordDef[K]['type']]['tsType']
+    [K in keyof TRecordDef]: TTypeCollection[TRecordDef[K]['type']]['tsType'] | NullPart<TRecordDef[K]>
+}
+
+/* the pk fields are not nullable, but a record def alone does not know which fields are its
+   pk: only the entity level does. Marking them is what turns a record def into the def the
+   entity actually completes (and the instance type of a row of the entity). */
+export type NotNullableFieldsOf<TTypeCollection extends TypeCollection, TRecordDef extends RecordDef<TTypeCollection>, TNames extends string> = {
+    [K in keyof TRecordDef]: K extends TNames ? TRecordDef[K] & {nullable: false} : TRecordDef[K]
+}
+
+function notNullableFields(recordDef: RecordDef<TypeCollection>, names: readonly string[]): RecordDef<TypeCollection> {
+    return Object.fromEntries(Object.entries(recordDef).map(([name, fieldDef]) =>
+        [name, names.includes(name) ? {...fieldDef, nullable: false} : fieldDef]
+    ));
 }
 
 /* fks reference the target entity BY NAME (a string, not the object): that keeps the defs
@@ -131,7 +152,7 @@ export type EntityInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> 
 }
 
 export type EntityInfoOf<TEntityDef extends EntityDef<TypeCollection>> = {
-    fields: RecordInfoOf<TEntityDef['fields']>
+    fields: RecordInfoOf<NotNullableFieldsOf<TypeCollection, TEntityDef['fields'], TEntityDef['pk'][number]>>
     pk: DedupPk<TEntityDef['pk']>
     fks: TEntityDef['fks'] extends Readonly<Record<string, FkDef>>
         ? {[F in keyof TEntityDef['fks']]: FkInfoOf<TEntityDef['fks'][F]>}
@@ -150,12 +171,17 @@ function completeFk(fkDef: FkDef): FkInfo {
 
 export function completeEntity<const TEntityDef extends EntityDef<TypeCollection>>(entityDef: TEntityDef): EntityInfoOf<TEntityDef> {
     return {
-        fields: completeRecord(entityDef.fields),
+        fields: completeRecord(notNullableFields(entityDef.fields, entityDef.pk)),
         pk: mergePk(entityDef.pk),
         fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
         uks: entityDef.uks ?? {},
     } as EntityInfoOf<TEntityDef>;
 }
+
+/* the instance type of a row of the entity: like the record one, but the pk fields
+   are not nullable */
+export type EntityInstanceType<TTypeCollection extends TypeCollection, TEntityDef extends EntityDef<TTypeCollection>> =
+    RecordInstanceType<TTypeCollection, NotNullableFieldsOf<TTypeCollection, TEntityDef['fields'], TEntityDef['pk'][number]>>
 
 type SameKeySet<TA extends string, TB extends string> = [TA] extends [TB] ? ([TB] extends [TA] ? true : false) : false
 

@@ -1,6 +1,6 @@
 docentes:
   fields[7]{name,type,isName,nullable,label,description}:
-    docente,text,false,true,docente,""
+    docente,text,false,false,docente,""
     apellido,text,false,false,apellido,""
     nombres,text,false,false,nombres,""
     cargo,text,false,true,cargo,""
@@ -16,7 +16,7 @@ docentes:
   uks:
 materias:
   fields[2]{name,type,isName,nullable,label,description}:
-    materia,text,false,true,materia,""
+    materia,text,false,false,materia,""
     denominacion,text,true,false,denominación,"si corresponde a más de una carrera, aclarar en el nombre"
   pk[1]: materia
   fks:
@@ -24,14 +24,14 @@ materias:
     denominacion[1]: denominacion
 periodos:
   fields[1]{name,type,isName,nullable,label,description}:
-    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
+    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
   pk[1]: periodo
   fks:
   uks:
 cursos:
   fields[3]{name,type,isName,nullable,label,description}:
-    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,true,materia,""
+    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
+    materia,text,false,false,materia,""
     docente,text,false,true,docente,""
   pk[2]: periodo,materia
   fks:
@@ -50,9 +50,9 @@ cursos:
   uks:
 clases:
   fields[5]{name,type,isName,nullable,label,description}:
-    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,true,materia,""
-    orden,integer,false,true,orden,""
+    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
+    materia,text,false,false,materia,""
+    orden,integer,false,false,orden,""
     fecha,fecha,false,true,fecha,""
     tema,text,false,true,tema,""
   pk[3]: periodo,materia,orden
@@ -65,7 +65,7 @@ clases:
   uks:
 alumnos:
   fields[4]{name,type,isName,nullable,label,description}:
-    alumno,text,false,true,alumno,""
+    alumno,text,false,false,alumno,""
     apellido,text,false,false,apellido,""
     nombres,text,false,false,nombres,""
     email,email,false,true,email,""
@@ -74,10 +74,10 @@ alumnos:
   uks:
 preguntas:
   fields[7]{name,type,isName,nullable,label,description}:
-    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,true,materia,""
-    orden,integer,false,true,orden,""
-    pregunta,integer,false,true,pregunta,""
+    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
+    materia,text,false,false,materia,""
+    orden,integer,false,false,orden,""
+    pregunta,integer,false,false,pregunta,""
     formulacion,text,false,false,formulación,texto principal de la pregunta
     aclaraciones,text,false,true,aclaraciones,"texto que no necesita repetirse cuando se quiera referir a una pregunta por su formulación, pero que es necesario para aclarar el contexto o posibles ambigüedades de la pregunta"
     tipo_respuesta,text,false,false,tipo,""
@@ -92,11 +92,11 @@ preguntas:
   uks:
 opciones:
   fields[6]{name,type,isName,nullable,label,description}:
-    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,true,materia,""
-    orden,integer,false,true,orden,""
-    pregunta,integer,false,true,pregunta,""
-    opcion,text,false,true,opcion,""
+    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
+    materia,text,false,false,materia,""
+    orden,integer,false,false,orden,""
+    pregunta,integer,false,false,pregunta,""
+    opcion,text,false,false,opcion,""
     detalle,text,false,true,detalle,""
   pk[5]: periodo,materia,orden,pregunta,opcion
   fks:
@@ -110,9 +110,9 @@ opciones:
   uks:
 inscripciones:
   fields[3]{name,type,isName,nullable,label,description}:
-    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,true,materia,""
-    alumno,text,false,true,alumno,""
+    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
+    materia,text,false,false,materia,""
+    alumno,text,false,false,alumno,""
   pk[3]: periodo,materia,alumno
   fks:
     cursos:
@@ -127,10 +127,10 @@ inscripciones:
   uks:
 presencias:
   fields[4]{name,type,isName,nullable,label,description}:
-    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,true,materia,""
-    alumno,text,false,true,alumno,""
-    orden,integer,false,true,orden,""
+    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
+    materia,text,false,false,materia,""
+    alumno,text,false,false,alumno,""
+    orden,integer,false,false,orden,""
   pk[4]: periodo,materia,alumno,orden
   fks:
     inscripciones:
@@ -148,9 +148,9 @@ presencias:
   uks:
 mesas:
   fields[5]{name,type,isName,nullable,label,description}:
-    periodo,text,false,true,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,true,materia,""
-    fecha,fecha,false,true,fecha,""
+    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
+    materia,text,false,false,materia,""
+    fecha,fecha,false,false,fecha,""
     presidente,text,false,true,presidente,""
     vocal,text,false,true,vocal,""
   pk[3]: periodo,materia,fecha

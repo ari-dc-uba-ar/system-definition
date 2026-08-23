@@ -4,18 +4,19 @@ import * as path from "path";
 import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
-import { RecordInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
+import { RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
     EntityDef, TypeCollection
 } from "../src/common/system-design";
-import { typeDefs, cargo, materia, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo } from "../examples/common/aida";
+import { typeDefs, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo } from "../examples/common/aida";
 
 describe("aida example", function(){
     it("deduces the record instance type", function(){
+        // no field of cargo is marked nullable:false, so they all default to nullable
         type Cargo = {
-            cargo        : string,
-            denominacion : string,
-            orden        : number,
-            puede_dirigir: boolean
+            cargo        : string  | null,
+            denominacion : string  | null,
+            orden        : number  | null,
+            puede_dirigir: boolean | null
         }
         type CargoDeducido = RecordInstanceType<typeof typeDefs, typeof cargo>
         var jtp: Cargo = {
@@ -49,6 +50,28 @@ describe("aida example", function(){
         var noField = titular.inexistente;
         assert.equal(noField, undefined);
         assert.equal(malTipado.orden, '1');
+    })
+    it("reflects the nullability of the fields in the record instance type", function(){
+        type Docente = RecordInstanceType<typeof typeDefs, typeof docente>
+        var pepe: Docente = {
+            docente          : 'pepe',
+            apellido         : 'Pérez',
+            nombres          : 'José',
+            cargo            : null,  // the fields without an explicit nullable default to nullable
+            email            : null,
+            email_alternativo: null,
+            jefe             : null,
+        };
+        // nullable:false fields are plain values:
+        var apellido: string = pepe.apellido;
+        // @ts-expect-error a field that can be null is not assignable to a plain string
+        var email: string = pepe.email;
+        var emailOrNull: string | null = pepe.email;
+        // @ts-expect-error null is not assignable to a nullable:false field
+        pepe.apellido = null;
+        assert.equal(apellido, 'Pérez');
+        assert.equal(email, null);
+        assert.equal(emailOrNull, null);
     })
     it("completes a record def into a record info", function(){
         var materiaInfo = completeRecord(materia);
@@ -152,7 +175,9 @@ describe("aida entities", function(){
         // the whole chain still deduces the instance type:
         type Presencia = RecordInstanceType<typeof typeDefs, typeof presencia>
         var unaPresencia: Presencia = {periodo: '2026-1c', materia: 'AlgoI', alumno: 'L1234', orden: 1};
-        var presenciaBack: {periodo: string, materia: string, alumno: string, orden: number} = unaPresencia;
+        // the inherited pk fields are nullable like any other field: the record def alone does
+        // not know which fields are part of the pk (that is what EntityInstanceType is for)
+        var presenciaBack: {periodo: string | null, materia: string | null, alumno: string | null, orden: number | null} = unaPresencia;
         assert.deepStrictEqual(presenciaBack, unaPresencia);
     })
 })
@@ -265,9 +290,44 @@ describe("aida entity completion (Def → Info)", function(){
         assert.deepStrictEqual(presenciasAltInfo.pk, ['periodo', 'materia', 'alumno', 'orden']);
         assert.deepStrictEqual(pkBack, pkExpected);
     })
+    it("completes the pk fields as not nullable", function(){
+        var clasesInfo = completeEntity(clases);
+        /* the type checks come first: assert.deepStrictEqual is an assertion signature, so it
+           narrows the type of what it receives and any type check after it would be vacuous */
+        var periodoNullable: false = clasesInfo.fields.periodo.nullable;
+        var temaNullable: boolean = clasesInfo.fields.tema.nullable;
+        // @ts-expect-error a pk field is known to be not nullable
+        var wrongNullable: true = clasesInfo.fields.periodo.nullable;
+        // the pk fields of the entity are not nullable, whatever the record def says:
+        assert.equal(clasesInfo.fields.periodo.nullable, false);
+        assert.equal(clasesInfo.fields.orden.nullable, false);
+        // the fields outside the pk keep the default:
+        assert.equal(clasesInfo.fields.tema.nullable, true);
+        assert.equal(periodoNullable, false);
+        assert.equal(temaNullable, true);
+        assert.equal(wrongNullable, false);
+    })
+    it("deduces the entity instance type with the pk fields not nullable", function(){
+        type Clase = EntityInstanceType<typeof typeDefs, typeof clases>
+        var unaClase: Clase = {
+            periodo: '2026-1c', materia: 'AlgoI', orden: 1,  // the pk admits no null
+            fecha  : null, tema: null,                       // the rest keeps its nullability
+        };
+        var pkExpected: {periodo: string, materia: string, orden: number} = unaClase;
+        // @ts-expect-error null is not assignable to a pk field
+        unaClase.orden = null;
+        // @ts-expect-error a field outside the pk is nullable
+        var tema: string = unaClase.tema;
+        assert.deepStrictEqual(pkExpected, unaClase);
+        assert.equal(tema, null);
+    })
     it("completes the fields and keeps the uks", function(){
         var materiasInfo = completeEntity(materias);
-        assert.deepStrictEqual(materiasInfo.fields, completeRecord(materia));
+        // the pk field completes as not nullable; the rest, as the plain record does:
+        assert.deepStrictEqual(materiasInfo.fields, {
+            ...completeRecord(materia),
+            materia: {...completeRecord(materia).materia, nullable: false},
+        });
         var uksExpected: {denominacion: readonly ['denominacion']} = materiasInfo.uks;
         var uksBack: typeof materiasInfo.uks = uksExpected;
         assert.deepStrictEqual(uksBack, {denominacion: ['denominacion']});
