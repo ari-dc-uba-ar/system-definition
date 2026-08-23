@@ -1,171 +1,941 @@
-docentes:
-  fields[7]{name,type,isName,nullable,label,description}:
-    docente,text,false,false,docente,""
-    apellido,text,false,false,apellido,""
-    nombres,text,false,false,nombres,""
-    cargo,text,false,true,cargo,""
-    email,email,false,true,email,""
-    email_alternativo,email,false,true,email alternativo,""
-    jefe,text,false,true,jefe,jefe de cátedra (otro docente)
-  pk[1]: docente
-  fks:
-    jefe:
-      entity: docentes
-      fields:
-        jefe: docente
-  uks:
-materias:
-  fields[2]{name,type,isName,nullable,label,description}:
-    materia,text,false,false,materia,""
-    denominacion,text,true,false,denominación,"si corresponde a más de una carrera, aclarar en el nombre"
-  pk[1]: materia
-  fks:
-  uks:
-    denominacion[1]: denominacion
 periodos:
-  fields[1]{name,type,isName,nullable,label,description}:
-    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
+  fields[2]:
+    - name: periodo
+      type: text
+      isName: false
+      nullable: false
+      label: período
+      description: ""
+    - name: cerrado
+      type: boolean
+      isName: false
+      nullable: false
+      label: cerrado
+      description: ""
+      defaultValue: false
   pk[1]: periodo
   fks:
   uks:
+sedes:
+  fields[2]{name,type,isName,nullable,label,description}:
+    sede,text,false,false,sede,""
+    nombre,text,true,false,nombre,""
+  pk[1]: sede
+  fks:
+  uks:
 cursos:
-  fields[3]{name,type,isName,nullable,label,description}:
-    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,false,materia,""
-    docente,text,false,true,docente,""
-  pk[2]: periodo,materia
+  fields[4]:
+    - name: periodo
+      type: text
+      isName: false
+      nullable: false
+      label: período
+      description: ""
+    - name: cod_mat
+      type: text
+      isName: false
+      nullable: false
+      label: cod mat
+      description: ""
+    - name: nombre_materia
+      type: text
+      isName: false
+      nullable: false
+      label: nombre materia
+      description: ""
+    - name: abierto
+      type: boolean
+      isName: false
+      nullable: false
+      label: abierto
+      description: ""
+      defaultValue: false
+  pk[2]: periodo,cod_mat
   fks:
     periodos:
       entity: periodos
       fields:
         periodo: periodo
-    materias:
-      entity: materias
-      fields:
-        materia: materia
-    responsable:
-      entity: docentes
-      fields:
-        docente: docente
   uks:
-clases:
-  fields[5]{name,type,isName,nullable,label,description}:
-    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,false,materia,""
-    orden,integer,false,false,orden,""
-    fecha,fecha,false,true,fecha,""
-    tema,text,false,true,tema,""
-  pk[3]: periodo,materia,orden
+comisiones:
+  fields[6]{name,type,isName,nullable,label,description}:
+    periodo,text,false,false,período,""
+    cod_mat,text,false,false,cod mat,""
+    comision,text,false,false,comisión,""
+    denominacion,text,true,false,denominación,""
+    hora_desde,time,false,true,hora desde,""
+    hora_hasta,time,false,true,hora hasta,""
+  pk[3]: periodo,cod_mat,comision
   fks:
     cursos:
       entity: cursos
       fields:
         periodo: periodo
-        materia: materia
+        cod_mat: cod_mat
   uks:
 alumnos:
-  fields[4]{name,type,isName,nullable,label,description}:
-    alumno,text,false,false,alumno,""
-    apellido,text,false,false,apellido,""
-    nombres,text,false,false,nombres,""
-    email,email,false,true,email,""
-  pk[1]: alumno
-  fks:
-  uks:
-preguntas:
-  fields[7]{name,type,isName,nullable,label,description}:
-    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,false,materia,""
-    orden,integer,false,false,orden,""
-    pregunta,integer,false,false,pregunta,""
-    formulacion,text,false,false,formulación,texto principal de la pregunta
-    aclaraciones,text,false,true,aclaraciones,"texto que no necesita repetirse cuando se quiera referir a una pregunta por su formulación, pero que es necesario para aclarar el contexto o posibles ambigüedades de la pregunta"
-    tipo_respuesta,text,false,false,tipo,""
-  pk[4]: periodo,materia,orden,pregunta
-  fks:
-    clases:
-      entity: clases
-      fields:
-        periodo: periodo
-        materia: materia
-        orden: orden
-  uks:
-opciones:
-  fields[6]{name,type,isName,nullable,label,description}:
-    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,false,materia,""
-    orden,integer,false,false,orden,""
-    pregunta,integer,false,false,pregunta,""
-    opcion,text,false,false,opcion,""
-    detalle,text,false,true,detalle,""
-  pk[5]: periodo,materia,orden,pregunta,opcion
-  fks:
-    preguntas:
-      entity: preguntas
-      fields:
-        periodo: periodo
-        materia: materia
-        orden: orden
-        pregunta: pregunta
-  uks:
-inscripciones:
-  fields[3]{name,type,isName,nullable,label,description}:
-    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,false,materia,""
-    alumno,text,false,false,alumno,""
-  pk[3]: periodo,materia,alumno
-  fks:
-    cursos:
-      entity: cursos
-      fields:
-        periodo: periodo
-        materia: materia
-    alumnos:
-      entity: alumnos
-      fields:
-        alumno: alumno
-  uks:
-presencias:
-  fields[4]{name,type,isName,nullable,label,description}:
-    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,false,materia,""
-    alumno,text,false,false,alumno,""
-    orden,integer,false,false,orden,""
-  pk[4]: periodo,materia,alumno,orden
+  fields[9]:
+    - name: email
+      type: email
+      isName: false
+      nullable: false
+      label: email
+      description: ""
+    - name: periodo
+      type: text
+      isName: false
+      nullable: false
+      label: período
+      description: ""
+    - name: cod_mat
+      type: text
+      isName: false
+      nullable: false
+      label: cod mat
+      description: ""
+    - name: libreta
+      type: text
+      isName: false
+      nullable: false
+      label: libreta
+      description: ""
+    - name: username
+      type: text
+      isName: false
+      nullable: true
+      label: username
+      description: ""
+    - name: email_alternativo
+      type: email
+      isName: false
+      nullable: true
+      label: email alternativo
+      description: ""
+    - name: hash_pass
+      type: text
+      isName: false
+      nullable: true
+      label: hash pass
+      description: ""
+      secreto: true
+    - name: hash_type
+      type: text
+      isName: false
+      nullable: false
+      label: tipo de hash
+      description: ""
+      options[2]: scram-sha-256,bcrypt
+      defaultValue: scram-sha-256
+    - name: last_pass_change
+      type: plaindate
+      isName: false
+      nullable: true
+      label: último cambio de contraseña
+      description: ""
+  pk[1]: email
   fks:
     inscripciones:
       entity: inscripciones
       fields:
         periodo: periodo
-        materia: materia
-        alumno: alumno
-    clases:
-      entity: clases
-      fields:
-        periodo: periodo
-        materia: materia
-        orden: orden
+        cod_mat: cod_mat
+        libreta: libreta
   uks:
-mesas:
-  fields[5]{name,type,isName,nullable,label,description}:
-    periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
-    materia,text,false,false,materia,""
-    fecha,fecha,false,false,fecha,""
-    presidente,text,false,true,presidente,""
-    vocal,text,false,true,vocal,""
-  pk[3]: periodo,materia,fecha
+inscripciones:
+  fields[8]{name,type,isName,nullable,label,description}:
+    periodo,text,false,false,período,""
+    cod_mat,text,false,false,cod mat,""
+    libreta,text,false,false,libreta,""
+    apellido,text,false,false,apellido,""
+    nombres,text,false,false,nombres,""
+    email,email,false,false,email,""
+    plan,text,false,true,plan,""
+    email_normalizado,email,false,true,mail del alumno,""
+  pk[3]: periodo,cod_mat,libreta
   fks:
     cursos:
       entity: cursos
       fields:
         periodo: periodo
-        materia: materia
-    presidente:
-      entity: docentes
+        cod_mat: cod_mat
+    alumnos:
+      entity: alumnos
       fields:
-        presidente: docente
-    vocal:
-      entity: docentes
+        email_normalizado: email
+  uks:
+docentes:
+  fields[10]:
+    - name: legajo
+      type: text
+      isName: false
+      nullable: false
+      label: legajo
+      description: ""
+    - name: username
+      type: text
+      isName: false
+      nullable: false
+      label: username
+      description: ""
+    - name: apellido
+      type: text
+      isName: false
+      nullable: false
+      label: apellido
+      description: ""
+    - name: nombres
+      type: text
+      isName: false
+      nullable: false
+      label: nombres
+      description: ""
+    - name: cargo
+      type: text
+      isName: false
+      nullable: true
+      label: cargo
+      description: ""
+    - name: email
+      type: email
+      isName: false
+      nullable: false
+      label: email
+      description: ""
+    - name: email_alternativo
+      type: email
+      isName: false
+      nullable: true
+      label: email alternativo
+      description: ""
+    - name: hash_pass
+      type: text
+      isName: false
+      nullable: true
+      label: hash pass
+      description: ""
+      secreto: true
+    - name: hash_type
+      type: text
+      isName: false
+      nullable: false
+      label: tipo de hash
+      description: ""
+      options[2]: scram-sha-256,bcrypt
+      defaultValue: scram-sha-256
+    - name: last_pass_change
+      type: plaindate
+      isName: false
+      nullable: true
+      label: último cambio de contraseña
+      description: ""
+  pk[1]: legajo
+  fks:
+  uks:
+asignacion_docente:
+  fields[3]{name,type,isName,nullable,label,description}:
+    periodo,text,false,false,período,""
+    cod_mat,text,false,false,cod mat,""
+    legajo,text,false,false,legajo,""
+  pk[3]: periodo,cod_mat,legajo
+  fks:
+    cursos:
+      entity: cursos
       fields:
-        vocal: docente
+        periodo: periodo
+        cod_mat: cod_mat
+  uks:
+parameters:
+  fields[3]:
+    - name: unique_row
+      type: boolean
+      isName: false
+      nullable: false
+      label: unique row
+      description: ""
+      options[1]: true
+      defaultValue: true
+    - name: app_name
+      type: text
+      isName: false
+      nullable: false
+      label: nombre de la app
+      description: ""
+    - name: fecha_test
+      type: plaindate
+      isName: false
+      nullable: true
+      label: fecha de prueba
+      description: ""
+  pk[1]: unique_row
+  fks:
+  uks:
+users:
+  fields[9]:
+    - name: username
+      type: text
+      isName: false
+      nullable: false
+      label: username
+      description: ""
+    - name: first_name
+      type: text
+      isName: false
+      nullable: true
+      label: first name
+      description: ""
+    - name: last_name
+      type: text
+      isName: false
+      nullable: true
+      label: last name
+      description: ""
+    - name: email
+      type: email
+      isName: false
+      nullable: true
+      label: email
+      description: ""
+    - name: email_alternativo
+      type: email
+      isName: false
+      nullable: true
+      label: email alternativo
+      description: ""
+    - name: hash_pass
+      type: text
+      isName: false
+      nullable: true
+      label: hash pass
+      description: ""
+      secreto: true
+    - name: hash_type
+      type: text
+      isName: false
+      nullable: true
+      label: tipo de hash
+      description: ""
+      options[2]: scram-sha-256,bcrypt
+      defaultValue: scram-sha-256
+    - name: last_pass_change
+      type: plaindate
+      isName: false
+      nullable: true
+      label: último cambio de contraseña
+      description: ""
+    - name: rol
+      type: text
+      isName: false
+      nullable: false
+      label: rol
+      description: ""
+      options[1]: admin
+  pk[1]: username
+  fks:
+  uks:
+aulas:
+  fields[7]{name,type,isName,nullable,label,description}:
+    sede,text,false,false,sede,""
+    aula,text,false,false,aula,""
+    descripcion,text,false,true,descripción,""
+    filas,positive_integer,false,true,filas,""
+    asientos_por_fila,positive_integer,false,true,asientos por fila,""
+    escritorios,text,false,true,escritorios,""
+    puertas,text,false,true,puertas,""
+  pk[2]: sede,aula
+  fks:
+    sedes:
+      entity: sedes
+      fields:
+        sede: sede
+  uks:
+clases:
+  fields[11]:
+    - name: periodo
+      type: text
+      isName: false
+      nullable: false
+      label: período
+      description: ""
+    - name: cod_mat
+      type: text
+      isName: false
+      nullable: false
+      label: cod mat
+      description: ""
+    - name: comision
+      type: text
+      isName: false
+      nullable: false
+      label: comisión
+      description: ""
+    - name: fecha
+      type: plaindate
+      isName: false
+      nullable: false
+      label: fecha
+      description: ""
+    - name: tema
+      type: text
+      isName: false
+      nullable: false
+      label: tema
+      description: ""
+    - name: filas
+      type: positive_integer
+      isName: false
+      nullable: true
+      label: filas
+      description: ""
+    - name: asientos_por_fila
+      type: positive_integer
+      isName: false
+      nullable: true
+      label: asientos por fila
+      description: ""
+    - name: empezada
+      type: boolean
+      isName: false
+      nullable: false
+      label: empezada
+      description: ""
+      defaultValue: false
+    - name: escritorios
+      type: text
+      isName: false
+      nullable: true
+      label: escritorios
+      description: ""
+    - name: sede
+      type: text
+      isName: false
+      nullable: true
+      label: sede
+      description: ""
+    - name: aula
+      type: text
+      isName: false
+      nullable: true
+      label: aula
+      description: ""
+  pk[4]: periodo,cod_mat,comision,fecha
+  fks:
+    comisiones:
+      entity: comisiones
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+    aulas:
+      entity: aulas
+      fields:
+        sede: sede
+        aula: aula
+  uks:
+preguntas:
+  fields[10]:
+    - name: periodo
+      type: text
+      isName: false
+      nullable: false
+      label: período
+      description: ""
+    - name: cod_mat
+      type: text
+      isName: false
+      nullable: false
+      label: cod mat
+      description: ""
+    - name: comision
+      type: text
+      isName: false
+      nullable: false
+      label: comisión
+      description: ""
+    - name: fecha
+      type: plaindate
+      isName: false
+      nullable: false
+      label: fecha
+      description: ""
+    - name: id_pregunta
+      type: integer
+      isName: false
+      nullable: false
+      label: id pregunta
+      description: ""
+    - name: pregunta
+      type: text
+      isName: false
+      nullable: false
+      label: pregunta
+      description: ""
+    - name: aclaracion
+      type: text
+      isName: false
+      nullable: true
+      label: aclaración
+      description: ""
+    - name: tipo
+      type: text
+      isName: false
+      nullable: false
+      label: tipo
+      description: ""
+      defaultValue: texto
+      options[4]: int,texto,opciones,multiple_opcion
+    - name: abierta
+      type: boolean
+      isName: false
+      nullable: false
+      label: abierta
+      description: ""
+      defaultValue: false
+    - name: respuesta_correcta
+      type: text
+      isName: false
+      nullable: true
+      label: respuesta correcta
+      description: ""
+  pk[5]: periodo,cod_mat,comision,fecha,id_pregunta
+  fks:
+    clases:
+      entity: clases
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+  uks:
+opciones:
+  fields[7]{name,type,isName,nullable,label,description}:
+    periodo,text,false,false,período,""
+    cod_mat,text,false,false,cod mat,""
+    comision,text,false,false,comisión,""
+    fecha,plaindate,false,false,fecha,""
+    id_pregunta,integer,false,false,id pregunta,""
+    id_opcion,text,false,false,opción,""
+    detalle,text,false,false,detalle,""
+  pk[6]: periodo,cod_mat,comision,fecha,id_pregunta,id_opcion
+  fks:
+    preguntas:
+      entity: preguntas
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+        id_pregunta: id_pregunta
+  uks:
+respuestas:
+  fields[8]{name,type,isName,nullable,label,description}:
+    periodo,text,false,false,período,""
+    cod_mat,text,false,false,cod mat,""
+    comision,text,false,false,comisión,""
+    fecha,plaindate,false,false,fecha,""
+    id_pregunta,integer,false,false,id pregunta,""
+    libreta,text,false,false,libreta,""
+    respuesta,text,false,false,respuesta,""
+    momento,timestamp,false,false,momento,""
+  pk[6]: periodo,cod_mat,comision,fecha,id_pregunta,libreta
+  fks:
+    preguntas:
+      entity: preguntas
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+        id_pregunta: id_pregunta
+    inscripciones:
+      entity: inscripciones
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        libreta: libreta
+  uks:
+respuestas_selecciones:
+  fields[10]{name,type,isName,nullable,label,description}:
+    periodo,text,false,false,período,""
+    cod_mat,text,false,false,cod mat,""
+    comision,text,false,false,comisión,""
+    fecha,plaindate,false,false,fecha,""
+    id_pregunta,integer,false,false,id pregunta,""
+    libreta,text,false,false,libreta,""
+    seleccion,text,false,false,opción,""
+    id_opcion,text,false,true,opción,""
+    es_unica,boolean,false,true,es unica,""
+    texto,text,false,true,texto,""
+  pk[7]: periodo,cod_mat,comision,fecha,id_pregunta,libreta,seleccion
+  fks:
+    respuestas:
+      entity: respuestas
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+        id_pregunta: id_pregunta
+        libreta: libreta
+    opciones:
+      entity: opciones
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+        id_pregunta: id_pregunta
+        id_opcion: id_opcion
+  uks:
+clase_filas:
+  fields[5]{name,type,isName,nullable,label,description}:
+    periodo,text,false,false,período,""
+    cod_mat,text,false,false,cod mat,""
+    comision,text,false,false,comisión,""
+    fecha,plaindate,false,false,fecha,""
+    fila,positive_integer,false,false,fila,""
+  pk[5]: periodo,cod_mat,comision,fecha,fila
+  fks:
+    clases:
+      entity: clases
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+  uks:
+clase_asientos:
+  fields[7]{name,type,isName,nullable,label,description}:
+    periodo,text,false,false,período,""
+    cod_mat,text,false,false,cod mat,""
+    comision,text,false,false,comisión,""
+    fecha,plaindate,false,false,fecha,""
+    fila,positive_integer,false,false,fila,""
+    asiento,positive_integer,false,false,asiento,""
+    uso,text,false,true,uso,""
+  pk[6]: periodo,cod_mat,comision,fecha,fila,asiento
+  fks:
+    clase_filas:
+      entity: clase_filas
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+        fila: fila
+  uks:
+presentes:
+  fields[10]:
+    - name: periodo
+      type: text
+      isName: false
+      nullable: false
+      label: período
+      description: ""
+    - name: cod_mat
+      type: text
+      isName: false
+      nullable: false
+      label: cod mat
+      description: ""
+    - name: comision
+      type: text
+      isName: false
+      nullable: false
+      label: comisión
+      description: ""
+    - name: fecha
+      type: plaindate
+      isName: false
+      nullable: false
+      label: fecha
+      description: ""
+    - name: libreta
+      type: text
+      isName: false
+      nullable: false
+      label: libreta
+      description: ""
+    - name: presente
+      type: boolean
+      isName: false
+      nullable: false
+      label: presente
+      description: ""
+    - name: retiro
+      type: boolean
+      isName: false
+      nullable: false
+      label: retiro
+      description: ""
+      defaultValue: false
+    - name: fila
+      type: positive_integer
+      isName: false
+      nullable: true
+      label: fila
+      description: ""
+    - name: asiento
+      type: positive_integer
+      isName: false
+      nullable: true
+      label: asiento
+      description: ""
+    - name: horarios
+      type: tstzmultirange
+      isName: false
+      nullable: false
+      label: horarios
+      description: ""
+      defaultValue: []
+  pk[5]: periodo,cod_mat,comision,fecha,libreta
+  fks:
+    clases:
+      entity: clases
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+    inscripciones:
+      entity: inscripciones
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        libreta: libreta
+  uks:
+snapshots:
+  fields[2]{name,type,isName,nullable,label,description}:
+    snapshot,serial,false,false,snapshot,""
+    momento,timestamptz,false,false,momento,""
+  pk[1]: snapshot
+  fks:
+  uks:
+snapshots_clases:
+  fields[12]:
+    - name: snapshot
+      type: serial
+      isName: false
+      nullable: false
+      label: snapshot
+      description: ""
+    - name: periodo
+      type: text
+      isName: false
+      nullable: false
+      label: período
+      description: ""
+    - name: cod_mat
+      type: text
+      isName: false
+      nullable: false
+      label: cod mat
+      description: ""
+    - name: comision
+      type: text
+      isName: false
+      nullable: false
+      label: comisión
+      description: ""
+    - name: fecha
+      type: plaindate
+      isName: false
+      nullable: false
+      label: fecha
+      description: ""
+    - name: tema
+      type: text
+      isName: false
+      nullable: false
+      label: tema
+      description: ""
+    - name: filas
+      type: positive_integer
+      isName: false
+      nullable: true
+      label: filas
+      description: ""
+    - name: asientos_por_fila
+      type: positive_integer
+      isName: false
+      nullable: true
+      label: asientos por fila
+      description: ""
+    - name: empezada
+      type: boolean
+      isName: false
+      nullable: false
+      label: empezada
+      description: ""
+      defaultValue: false
+    - name: escritorios
+      type: text
+      isName: false
+      nullable: true
+      label: escritorios
+      description: ""
+    - name: sede
+      type: text
+      isName: false
+      nullable: true
+      label: sede
+      description: ""
+    - name: aula
+      type: text
+      isName: false
+      nullable: true
+      label: aula
+      description: ""
+  pk[5]: snapshot,periodo,cod_mat,comision,fecha
+  fks:
+    snapshots:
+      entity: snapshots
+      fields:
+        snapshot: snapshot
+    clases:
+      entity: clases
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+  uks:
+snapshots_presentes:
+  fields[10]:
+    - name: snapshot
+      type: serial
+      isName: false
+      nullable: false
+      label: snapshot
+      description: ""
+    - name: periodo
+      type: text
+      isName: false
+      nullable: false
+      label: período
+      description: ""
+    - name: cod_mat
+      type: text
+      isName: false
+      nullable: false
+      label: cod mat
+      description: ""
+    - name: comision
+      type: text
+      isName: false
+      nullable: false
+      label: comisión
+      description: ""
+    - name: fecha
+      type: plaindate
+      isName: false
+      nullable: false
+      label: fecha
+      description: ""
+    - name: libreta
+      type: text
+      isName: false
+      nullable: false
+      label: libreta
+      description: ""
+    - name: presente
+      type: boolean
+      isName: false
+      nullable: false
+      label: presente
+      description: ""
+    - name: retiro
+      type: boolean
+      isName: false
+      nullable: false
+      label: retiro
+      description: ""
+      defaultValue: false
+    - name: fila
+      type: positive_integer
+      isName: false
+      nullable: true
+      label: fila
+      description: ""
+    - name: asiento
+      type: positive_integer
+      isName: false
+      nullable: true
+      label: asiento
+      description: ""
+  pk[6]: snapshot,periodo,cod_mat,comision,fecha,libreta
+  fks:
+    snapshots_clases:
+      entity: snapshots_clases
+      fields:
+        snapshot: snapshot
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+    inscripciones:
+      entity: inscripciones
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        libreta: libreta
+  uks:
+docentes_presentes:
+  fields[6]{name,type,isName,nullable,label,description}:
+    periodo,text,false,false,período,""
+    cod_mat,text,false,false,cod mat,""
+    comision,text,false,false,comisión,""
+    fecha,plaindate,false,false,fecha,""
+    legajo,text,false,false,legajo,""
+    tema,text,false,true,tema,""
+  pk[5]: periodo,cod_mat,comision,fecha,legajo
+  fks:
+    clases:
+      entity: clases
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        comision: comision
+        fecha: fecha
+    asignacion_docente:
+      entity: asignacion_docente
+      fields:
+        periodo: periodo
+        cod_mat: cod_mat
+        legajo: legajo
+  uks:
+password_reset_tokens:
+  fields[5]:
+    - name: token
+      type: text
+      isName: false
+      nullable: false
+      label: token
+      description: ""
+    - name: rol
+      type: text
+      isName: false
+      nullable: false
+      label: rol
+      description: ""
+      options[3]: alumno,docente,admin
+    - name: identity
+      type: text
+      isName: false
+      nullable: false
+      label: identity
+      description: ""
+    - name: created_at
+      type: timestamptz
+      isName: false
+      nullable: false
+      label: created at
+      description: ""
+    - name: used_at
+      type: timestamptz
+      isName: false
+      nullable: true
+      label: used at
+      description: ""
+  pk[1]: token
+  fks:
   uks:

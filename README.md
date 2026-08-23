@@ -78,30 +78,40 @@ the literals (`pk` ends up typed as an exact tuple, not as `string[]`).
 
 * `extractPk(entityDef)` returns an entity's pk fields as a `RecordDef` with the exact type
   (`PkFieldsOf<TEntityDef>`), so they can be inherited by spreading them into another entity
-  (for example, `curso` — course — inherits the pks of `periodos`, `materias` and
-  `docentes`). The rest of the fields need no special function: spreading objects already
-  dedups keys.
+  (for example, `curso` — course — inherits the pk of `periodos` — terms —, and `comision`
+  the pk of `cursos`). The rest of the fields need no special function: spreading objects
+  already dedups keys.
 * `mergePk(...pks)` merges several pks that may overlap, without repeating elements and
   deduplicating at the type level too (preserving the order of first appearance). It's used
-  for combined pks, like the one for `presencias` (attendance), which joins the pks of
-  `inscripciones` (enrollments) and `clases` (classes).
+  for combined pks, like the one for `presentes` (attendance), which joins the pks of
+  `clases` (classes) and `inscripciones` (enrollments).
 
 
 ## Example: student system
 
 `examples/common/aida.ts` describes a student system using this vocabulary. It includes
-independent entities (`docentes` — instructors, `materias` — subjects, `periodos` — terms,
-`alumnos` — students) and entities that inherit keys from others:
+independent entities (`periodos` — terms, `sedes` — campuses, `docentes` — instructors,
+`cargos` — positions) and entities that inherit keys from others:
 
-* `cursos` (courses) inherits the pks of `periodos`, `materias` and `docentes` (the
-  instructor in charge of the course).
-* `clases` (classes) extends the `cursos` pk by adding `orden` (sequence number).
-* `preguntas` (questions) extends the `clases` pk by adding `pregunta`, and `opciones`
-  (options) extends the `preguntas` pk by adding `opcion` (pk inheritance chained across
-  several levels).
-* `inscripciones` (enrollments) inherits the pks of `cursos` and `alumnos`.
-* `presencias` (attendance) combines, with `mergePk`, the pks of `inscripciones` and
-  `clases`, which share `periodo` and `materia`: those fields aren't repeated.
+* `cursos` (courses) inherits the `periodos` pk by adding `cod_mat` (subject code), and
+  `comisiones` (course groups) inherits the `cursos` pk by adding `comision`.
+* `clases` (classes) extends the `comisiones` pk by adding `fecha` (date); `preguntas`
+  (questions) extends the `clases` pk by adding `id_pregunta`, and `opciones` (options)
+  extends the `preguntas` pk by adding `id_opcion` (pk inheritance chained across several
+  levels).
+* `inscripciones` (enrollments) inherits the `cursos` pk by adding `libreta` (student
+  number), and `alumnos` (students) repeats those three fields as regular fields: the fk
+  between them is circular, and it can be written on both sides because a fk names its
+  target entity instead of referencing the object.
+* `presentes` (attendance) combines, with `mergePk`, the pks of `clases` and
+  `inscripciones`, which share `periodo` and `cod_mat`: those fields aren't repeated. The
+  same goes for `respuestas` (answers: `preguntas` + `inscripciones`) and
+  `docentes_presentes` (`clases` + `asignacion_docente`).
+* the system's domain types (`plaindate`, `time`, `timestamptz`, `tstzmultirange`,
+  `serial`, `positive_integer`) are defined in the example, not in the framework. Whatever
+  a field needs beyond what `FieldDef` brings (its default value, the fixed options of a
+  field, whether it is secret) is added by extending `FieldDef`, without touching the
+  framework.
 
 The tests in `test/aida-test.ts` import these definitions and check, for each part of the
 vocabulary, both two-way assignability (a hand-written expected `Info` and the deduced one
