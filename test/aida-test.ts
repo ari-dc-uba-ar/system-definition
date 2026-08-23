@@ -4,7 +4,7 @@ import * as path from "path";
 import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
-import { RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
+import { RecordDef, RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
     EntityDef, EntityInfoOf, TypeCollection
 } from "../src/common/system-design";
 import { typeDefs, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo } from "../examples/common/aida";
@@ -102,6 +102,54 @@ describe("aida example", function(){
         var expected: CargoInfoExpected = cargoInfo;
         var deducedBack: typeof cargoInfo = expected;
         assert.deepStrictEqual(deducedBack, expected);
+    })
+    it("accepts a defaultValue of the type of the field", function(){
+        var withDefaults = {
+            cargo        : {type: 'text'   , defaultValue: 'JTP'},
+            orden        : {type: 'integer', defaultValue: 1},
+            puede_dirigir: {type: 'boolean', defaultValue: false},
+            desde        : {type: 'fecha'  , defaultValue: {año: 2026, mes: 3, día: 15}},
+        } satisfies RecordDef<typeof typeDefs>
+        // the default is a value of the type of the field:
+        var cargoDefault: string = withDefaults.cargo.defaultValue;
+        var ordenDefault: number = withDefaults.orden.defaultValue;
+        var wrongTyped = {
+            // @ts-expect-error the default must be a value of the type of the field
+            orden: {type: 'integer', defaultValue: 'primero'},
+        } satisfies RecordDef<typeof typeDefs>
+        assert.equal(cargoDefault, 'JTP');
+        assert.equal(ordenDefault, 1);
+        assert.equal(wrongTyped.orden.defaultValue, 'primero');
+    })
+    it("admits a null default only in the nullable fields", function(){
+        var nullableDefault = {
+            // the fields default to nullable, so null is a valid default for them
+            email: {type: 'email', defaultValue: null},
+        } satisfies RecordDef<typeof typeDefs>
+        var notNullableDefault = {
+            // @ts-expect-error a nullable:false field cannot default to null
+            orden: {type: 'integer', nullable: false, defaultValue: null},
+        } satisfies RecordDef<typeof typeDefs>
+        assert.equal(nullableDefault.email.defaultValue, null);
+        assert.equal(notNullableDefault.orden.defaultValue, null);
+    })
+    it("keeps the defaultValue in the info and does not add it when there is none", function(){
+        var recordDef = {
+            cargo: {type: 'text'   },
+            orden: {type: 'integer', defaultValue: 1},
+        } satisfies RecordDef<typeof typeDefs>
+        var info = completeRecord(recordDef);
+        var ordenDefault: number = info.orden.defaultValue;
+        // @ts-expect-error the field without a default has no defaultValue in its info
+        var noDefault = info.cargo.defaultValue;
+        // the completion adds no defaultValue where the def has none (absent, not undefined):
+        assert.deepStrictEqual(info, {
+            cargo: {type: 'text'   , label: 'cargo', nullable: true, description: '', isName: false},
+            orden: {type: 'integer', label: 'orden', nullable: true, description: '', isName: false, defaultValue: 1},
+        });
+        assert.ok(!('defaultValue' in info.cargo));
+        assert.equal(ordenDefault, 1);
+        assert.equal(noDefault, undefined);
     })
 })
 
