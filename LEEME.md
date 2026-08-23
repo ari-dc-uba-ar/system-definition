@@ -24,8 +24,8 @@ también disponible en:
 
 ## Objetivo
 
-Este módulo provee el vocabulario para describir un sistema — tipos de dominio, entidades,
-campos, procedimientos — como valores fuertemente tipados y serializables. A partir de esas
+Este módulo provee el vocabulario para describir un sistema —tipos de dominio, entidades,
+campos, procedimientos— como valores fuertemente tipados y serializables. A partir de esas
 descripciones, generadores de código o implementaciones on-the-fly pueden derivar los scripts
 de creación de tablas, los endpoints CRUD con su capa de base de datos, las pantallas del
 frontend, los serializadores en ambos sentidos, los validadores de tipo, etc.
