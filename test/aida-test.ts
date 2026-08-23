@@ -5,9 +5,11 @@ import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
 import { RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
-    EntityDef, EntityInfoOf, TypeCollection
+    EntityDef, EntityInfoOf, ExpandType, FieldDef, Optional, TypeCollection
 } from "../src/common/system-design";
-import { typeDefs, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo } from "../examples/common/aida";
+import { typeDefs, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
+    cargos
+} from "../examples/common/aida";
 
 describe("aida example", function(){
     it("deduces the record instance type", function(){
@@ -32,7 +34,7 @@ describe("aida example", function(){
         assert.deepStrictEqual(obtained, jtp);
     })
     it("types record instances anywhere with DefinedType", function(){
-        var titular: DefinedType<typeof cargo> = {
+        var titular: DefinedType<typeof cargos> = {
             cargo        : 'TIT',
             denominacion : 'Titular',
             orden        : 1,
@@ -43,13 +45,20 @@ describe("aida example", function(){
         // and the validation logic runs over the typed instance:
         assert.throws(() => validarCargo({cargo: 'AY1', denominacion: 'Ayudante de primera', orden: 5, puede_dirigir: true}));
         // @ts-expect-error a field with the wrong type is rejected
-        var malTipado: DefinedType<typeof cargo> = {cargo: 'TIT', denominacion: 'Titular', orden: '1', puede_dirigir: true};
+        var malTipado: DefinedType<typeof cargos> = {cargo: 'TIT', denominacion: 'Titular', orden: '1', puede_dirigir: true};
         // @ts-expect-error a missing field is rejected
         validarCargo({cargo: 'ADJ', denominacion: 'Adjunto', orden: 2});
         // @ts-expect-error fields outside the def cannot be accessed
         var noField = titular.inexistente;
         assert.equal(noField, undefined);
         assert.equal(malTipado.orden, '1');
+    })
+    it("can deduce the type from DefinedType", function(){
+        var miCargo = {cargo: 'A1'}
+        // var expected: ExpandType<Optional<DefinedType<typeof cargo>>>;
+        var expected: ExpandType<Optional<EntityInstanceType<typeof typeDefs, typeof cargos>>>;
+        expected = miCargo;
+        assert.equal(expected, miCargo);
     })
     it("reflects the nullability of the fields in the record instance type", function(){
         type Docente = RecordInstanceType<typeof typeDefs, typeof docente>
@@ -333,6 +342,25 @@ describe("aida entity completion (Def → Info)", function(){
         assert.deepStrictEqual(uksBack, {denominacion: ['denominacion']});
         // the defaulted empty fks stay explicit and empty:
         assert.deepStrictEqual(materiasInfo.fks, {});
+    })
+})
+
+describe("extended declaractions", function(){
+    type MyFieldDef = FieldDef<typeof typeDefs> & {otherText?:string, otherBool:boolean};
+    const extendedCargo = {
+        cargo            : {type: 'text'    , otherBool:true},
+        denominacion     : {type: 'text'    , otherBool:true, label:'denominación'},
+        orden            : {type: 'integer' , otherBool:true},
+        puede_dirigir    : {type: 'boolean' , otherBool:true},
+    } satisfies Record<string, MyFieldDef>
+    const extendedCargos = defineEntity({
+        fields: extendedCargo,
+        pk: ['cargo']
+    });
+    it("all ok with extended", function(){
+        var miCargo = {cargo: '7'}
+        var expected: ExpandType<Optional<DefinedType<typeof extendedCargos>>>;
+        expected = miCargo;
     })
 })
 

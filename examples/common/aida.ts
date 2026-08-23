@@ -2,7 +2,8 @@
 
 import {
     boxType, commonTypeDefs,
-    RecordDef, RecordInstanceType, defineEntity, defineEntities, extractPk, mergePk
+    RecordDef, EntityInstanceType, defineEntity, defineEntities, extractPk, mergePk,
+    EntityDef
 } from "../../src/common/system-design";
 
 type Fecha = {año: number, mes: number, día:number}
@@ -13,12 +14,7 @@ export var typeDefs = {
     email: commonTypeDefs.text
 }
 
-type RecordsDef = RecordDef<typeof typeDefs>
-
-/* the instance type of a record def, bound to this system's typeDefs (the fields that are
-   not marked nullable:false admit null):
-   DefinedType<typeof cargo> = {cargo: string|null, orden: number|null, ...} */
-export type DefinedType<TRecordDef extends RecordsDef> = RecordInstanceType<typeof typeDefs, TRecordDef>
+export type RecordsDef = RecordDef<typeof typeDefs>
 
 export const cargo = {
     cargo            : {type: 'text' },
@@ -27,6 +23,11 @@ export const cargo = {
     puede_dirigir    : {type: 'boolean'},
 
 } satisfies RecordsDef
+
+export const cargos = defineEntity({
+    fields: cargo,
+    pk: ['cargo'],
+})
 
 export const materia = {
     materia          : {type: 'text'   },
@@ -213,9 +214,15 @@ export const entityDefs = defineEntities({
     mesas,
 })
 
-export function validarCargo(cargoSinValidar: DefinedType<typeof cargo>){
+/* the instance type of a record def, bound to this entity instance system's typeDefs (the fields that are
+   not marked nullable:false admit null):
+   DefinedType<typeof cargos> = {cargo: string, orden?: number|null, ...} */
+export type DefinedType<TRecordDef extends EntityDef> = EntityInstanceType<typeof typeDefs, TRecordDef>
+
+export function validarCargo(cargoSinValidar: DefinedType<typeof cargos>){
     // denominacion is nullable in the def, so the deduced type forces the null check here
     if (cargoSinValidar.puede_dirigir && cargoSinValidar.denominacion?.match(/ayudante/i)) {
         throw new Error('Los ayudantes no pueden dirigir. Recibido:"' + cargoSinValidar.denominacion + '"');
     }
 }
+
