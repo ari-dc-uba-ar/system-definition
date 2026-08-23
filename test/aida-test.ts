@@ -4,7 +4,7 @@ import * as path from "path";
 import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
-import { RecordInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
+import { RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
     EntityDef, TypeCollection
 } from "../src/common/system-design";
 import { typeDefs, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo } from "../examples/common/aida";
@@ -176,7 +176,7 @@ describe("aida entities", function(){
         type Presencia = RecordInstanceType<typeof typeDefs, typeof presencia>
         var unaPresencia: Presencia = {periodo: '2026-1c', materia: 'AlgoI', alumno: 'L1234', orden: 1};
         // the inherited pk fields are nullable like any other field: the record def alone does
-        // not know which fields are part of the pk (see the entity level for that)
+        // not know which fields are part of the pk (that is what EntityInstanceType is for)
         var presenciaBack: {periodo: string | null, materia: string | null, alumno: string | null, orden: number | null} = unaPresencia;
         assert.deepStrictEqual(presenciaBack, unaPresencia);
     })
@@ -290,9 +290,44 @@ describe("aida entity completion (Def → Info)", function(){
         assert.deepStrictEqual(presenciasAltInfo.pk, ['periodo', 'materia', 'alumno', 'orden']);
         assert.deepStrictEqual(pkBack, pkExpected);
     })
+    it("completes the pk fields as not nullable", function(){
+        var clasesInfo = completeEntity(clases);
+        /* the type checks come first: assert.deepStrictEqual is an assertion signature, so it
+           narrows the type of what it receives and any type check after it would be vacuous */
+        var periodoNullable: false = clasesInfo.fields.periodo.nullable;
+        var temaNullable: boolean = clasesInfo.fields.tema.nullable;
+        // @ts-expect-error a pk field is known to be not nullable
+        var wrongNullable: true = clasesInfo.fields.periodo.nullable;
+        // the pk fields of the entity are not nullable, whatever the record def says:
+        assert.equal(clasesInfo.fields.periodo.nullable, false);
+        assert.equal(clasesInfo.fields.orden.nullable, false);
+        // the fields outside the pk keep the default:
+        assert.equal(clasesInfo.fields.tema.nullable, true);
+        assert.equal(periodoNullable, false);
+        assert.equal(temaNullable, true);
+        assert.equal(wrongNullable, false);
+    })
+    it("deduces the entity instance type with the pk fields not nullable", function(){
+        type Clase = EntityInstanceType<typeof typeDefs, typeof clases>
+        var unaClase: Clase = {
+            periodo: '2026-1c', materia: 'AlgoI', orden: 1,  // the pk admits no null
+            fecha  : null, tema: null,                       // the rest keeps its nullability
+        };
+        var pkExpected: {periodo: string, materia: string, orden: number} = unaClase;
+        // @ts-expect-error null is not assignable to a pk field
+        unaClase.orden = null;
+        // @ts-expect-error a field outside the pk is nullable
+        var tema: string = unaClase.tema;
+        assert.deepStrictEqual(pkExpected, unaClase);
+        assert.equal(tema, null);
+    })
     it("completes the fields and keeps the uks", function(){
         var materiasInfo = completeEntity(materias);
-        assert.deepStrictEqual(materiasInfo.fields, completeRecord(materia));
+        // the pk field completes as not nullable; the rest, as the plain record does:
+        assert.deepStrictEqual(materiasInfo.fields, {
+            ...completeRecord(materia),
+            materia: {...completeRecord(materia).materia, nullable: false},
+        });
         var uksExpected: {denominacion: readonly ['denominacion']} = materiasInfo.uks;
         var uksBack: typeof materiasInfo.uks = uksExpected;
         assert.deepStrictEqual(uksBack, {denominacion: ['denominacion']});
