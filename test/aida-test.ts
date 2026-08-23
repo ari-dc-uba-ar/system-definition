@@ -7,15 +7,16 @@ import { strict as LikeAr } from "like-ar";
 import { RecordInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
     EntityDef, TypeCollection
 } from "../src/common/system-design";
-import { typeDefs, cargo, materia, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo } from "../examples/common/aida";
+import { typeDefs, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo } from "../examples/common/aida";
 
 describe("aida example", function(){
     it("deduces the record instance type", function(){
+        // no field of cargo is marked nullable:false, so they all default to nullable
         type Cargo = {
-            cargo        : string,
-            denominacion : string,
-            orden        : number,
-            puede_dirigir: boolean
+            cargo        : string  | null,
+            denominacion : string  | null,
+            orden        : number  | null,
+            puede_dirigir: boolean | null
         }
         type CargoDeducido = RecordInstanceType<typeof typeDefs, typeof cargo>
         var jtp: Cargo = {
@@ -49,6 +50,28 @@ describe("aida example", function(){
         var noField = titular.inexistente;
         assert.equal(noField, undefined);
         assert.equal(malTipado.orden, '1');
+    })
+    it("reflects the nullability of the fields in the record instance type", function(){
+        type Docente = RecordInstanceType<typeof typeDefs, typeof docente>
+        var pepe: Docente = {
+            docente          : 'pepe',
+            apellido         : 'Pérez',
+            nombres          : 'José',
+            cargo            : null,  // the fields without an explicit nullable default to nullable
+            email            : null,
+            email_alternativo: null,
+            jefe             : null,
+        };
+        // nullable:false fields are plain values:
+        var apellido: string = pepe.apellido;
+        // @ts-expect-error a field that can be null is not assignable to a plain string
+        var email: string = pepe.email;
+        var emailOrNull: string | null = pepe.email;
+        // @ts-expect-error null is not assignable to a nullable:false field
+        pepe.apellido = null;
+        assert.equal(apellido, 'Pérez');
+        assert.equal(email, null);
+        assert.equal(emailOrNull, null);
     })
     it("completes a record def into a record info", function(){
         var materiaInfo = completeRecord(materia);
@@ -152,7 +175,9 @@ describe("aida entities", function(){
         // the whole chain still deduces the instance type:
         type Presencia = RecordInstanceType<typeof typeDefs, typeof presencia>
         var unaPresencia: Presencia = {periodo: '2026-1c', materia: 'AlgoI', alumno: 'L1234', orden: 1};
-        var presenciaBack: {periodo: string, materia: string, alumno: string, orden: number} = unaPresencia;
+        // the inherited pk fields are nullable like any other field: the record def alone does
+        // not know which fields are part of the pk (see the entity level for that)
+        var presenciaBack: {periodo: string | null, materia: string | null, alumno: string | null, orden: number | null} = unaPresencia;
         assert.deepStrictEqual(presenciaBack, unaPresencia);
     })
 })

@@ -43,8 +43,12 @@ export function completeRecord<TRecordDef extends RecordDef<TypeCollection>>(rec
     }]))) as RecordInfoOf<TRecordDef>;
 }
 
+/* the fields default to nullable (that is the default completeRecord writes into the Info),
+   so only the ones explicitly marked nullable:false stay free of null */
+export type NullPart<TFieldDef> = TFieldDef extends {nullable: false} ? never : null
+
 export type RecordInstanceType<TTypeCollection extends TypeCollection, TRecordDef extends RecordDef<TTypeCollection>> = {
-    [K in keyof TRecordDef]: TTypeCollection[TRecordDef[K]['type']]['tsType']
+    [K in keyof TRecordDef]: TTypeCollection[TRecordDef[K]['type']]['tsType'] | NullPart<TRecordDef[K]>
 }
 
 /* fks reference the target entity BY NAME (a string, not the object): that keeps the defs

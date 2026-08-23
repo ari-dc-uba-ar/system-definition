@@ -15,8 +15,9 @@ export var typeDefs = {
 
 type RecordsDef = RecordDef<typeof typeDefs>
 
-/* the instance type of a record def, bound to this system's typeDefs:
-   DefinedType<typeof cargo> = {cargo: string, orden: number, ...} */
+/* the instance type of a record def, bound to this system's typeDefs (the fields that are
+   not marked nullable:false admit null):
+   DefinedType<typeof cargo> = {cargo: string|null, orden: number|null, ...} */
 export type DefinedType<TRecordDef extends RecordsDef> = RecordInstanceType<typeof typeDefs, TRecordDef>
 
 export const cargo = {
@@ -213,7 +214,8 @@ export const entityDefs = defineEntities({
 })
 
 export function validarCargo(cargoSinValidar: DefinedType<typeof cargo>){
-    if (cargoSinValidar.puede_dirigir && cargoSinValidar.denominacion.match(/ayudante/i)) {
+    // denominacion is nullable in the def, so the deduced type forces the null check here
+    if (cargoSinValidar.puede_dirigir && cargoSinValidar.denominacion?.match(/ayudante/i)) {
         throw new Error('Los ayudantes no pueden dirigir. Recibido:"' + cargoSinValidar.denominacion + '"');
     }
 }
