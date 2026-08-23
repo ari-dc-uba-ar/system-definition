@@ -51,9 +51,14 @@ export function completeRecord<TRecordDef extends RecordDef<TypeCollection>>(rec
    so only the ones explicitly marked nullable:false stay free of null */
 export type NullPart<TFieldDef> = TFieldDef extends {nullable: false} ? never : null
 
-export type RecordInstanceType<TTypeCollection extends TypeCollection, TRecordDef extends RecordDef<TTypeCollection>> = {
+/* the intersection with {} makes TypeScript forget the alias when it reports the type:
+   the error messages and the hovers show the synthesized object type
+   ({cargo: string | null, ...}) instead of RecordInstanceType<...> with its arguments */
+export type ExpandType<T> = {[K in keyof T]: T[K]} & {}
+
+export type RecordInstanceType<TTypeCollection extends TypeCollection, TRecordDef extends RecordDef<TTypeCollection>> = ExpandType<{
     [K in keyof TRecordDef]: TTypeCollection[TRecordDef[K]['type']]['tsType'] | NullPart<TRecordDef[K]>
-}
+}>
 
 /* the pk fields are not nullable, but a record def alone does not know which fields are its
    pk: only the entity level does. Marking them is what turns a record def into the def the
