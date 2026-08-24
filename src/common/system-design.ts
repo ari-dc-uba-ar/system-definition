@@ -91,11 +91,16 @@ export function defineEntity<
 >(
     entityDef: {fields: TFields, pk: TPk, fks?: TFks, uks?: TUks}
 ): {fields: TFields, pk: TPk, fks: TFks, uks: TUks} {
+    /* whatever the framework does not know about the entity travels in ...rest and is
+       returned untouched: no data of the definition is lost. The types do not carry it
+       (the callers get a // @ts-expect-error) */
+    const {fields, pk, fks, uks, ...rest} = entityDef;
     return {
-        fields: entityDef.fields,
-        pk: entityDef.pk,
-        fks: entityDef.fks ?? {} as TFks,
-        uks: entityDef.uks ?? {} as TUks,
+        fields,
+        pk,
+        fks: fks ?? {} as TFks,
+        uks: uks ?? {} as TUks,
+        ...rest,
     };
 }
 
@@ -170,12 +175,15 @@ function completeFk(fkDef: FkDef): FkInfo {
 }
 
 export function completeEntity<const TEntityDef extends EntityDef<TypeCollection>>(entityDef: TEntityDef): EntityInfoOf<TEntityDef> {
-    return {
-        fields: completeRecord(notNullableFields(entityDef.fields, entityDef.pk)),
+    /* same as defineEntity: what the framework does not know about the entity is not lost,
+       it goes through to the Info (the types do not carry it: see defineEntity) */
+    const {fields, pk, fks, uks, ...rest} = entityDef;
+    return Object.assign({
+        fields: completeRecord(notNullableFields(fields, pk)),
         pk: mergePk(entityDef.pk),
-        fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
-        uks: entityDef.uks ?? {},
-    } as EntityInfoOf<TEntityDef>;
+        fks: Object.fromEntries(Object.entries(fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
+        uks: uks ?? {},
+    } as EntityInfoOf<TEntityDef>, rest);
 }
 
 /* the instance type of a row of the entity: like the record one, but the pk fields
