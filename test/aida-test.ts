@@ -449,16 +449,23 @@ describe("aida entity completion (Def → Info)", function(){
 })
 
 describe("extended declaractions", function(){
-    it("defineEntity passes through the properties it does not know", function(){
+    it("defineEntity and completeEntity pass through the properties they do not know", function(){
+        /* the properties the framework does not know are not lost, but the types do not
+           carry them yet: hence the @ts-expect-error on every use. It is left this way
+           because I don't know how to declare a generic that extends the table definition
+           and from which the completed one can be derived, without adding an extra type
+           parameter or touching anything else in the types. */
         const cosas = defineEntity({
             pk: ['cosa'],
             fields: {cosa: {type: 'text'}},
+            // @ts-expect-error (see above)
             title: 'las cosas',
             skipCrud: true,
         });
-        // the properties the framework does not know must survive, with their literals:
-        var title: 'las cosas' = cosas.title;
-        var skipCrud: true = cosas.skipCrud;
+        // @ts-expect-error (see above) the property is there at runtime, not in the type
+        var title: string = cosas.title;
+        // @ts-expect-error (see above)
+        var skipCrud: boolean = cosas.skipCrud;
         // and what the framework does know keeps working:
         var pk: readonly ['cosa'] = cosas.pk;
         assert.equal(title, 'las cosas');
@@ -466,6 +473,13 @@ describe("extended declaractions", function(){
         assert.deepStrictEqual(cosas.pk, ['cosa']);
         assert.deepStrictEqual(cosas.fks, {});
         assert.deepStrictEqual(pk, cosas.pk);
+        // completeEntity keeps them too, next to what it completes:
+        var cosasInfo = completeEntity(cosas);
+        // @ts-expect-error (see above)
+        var infoTitle: string = cosasInfo.title;
+        assert.equal(infoTitle, 'las cosas');
+        assert.deepStrictEqual(cosasInfo.pk, ['cosa']);
+        assert.equal(cosasInfo.fields.cosa.nullable, false);
     })
 
     type MyFieldDef = FieldDef<typeof typeDefs> & {otherText?:string, otherBool:boolean};
@@ -480,15 +494,19 @@ describe("extended declaractions", function(){
         pk: ['cargo']
     });
     it("keeps the properties this system added to its entities", function(){
-        var titulo: 'períodos' = periodos.title;
-        var skipCrud: true = respuestas_selecciones.skipCrud;
+        // @ts-expect-error the properties of the system are not in the types (see above)
+        var titulo: string = periodos.title;
+        // @ts-expect-error (see above)
+        var skipCrud: boolean = respuestas_selecciones.skipCrud;
+        // @ts-expect-error (see above)
+        var descripcion: string = cursos.description;
         assert.equal(titulo, 'períodos');
         assert.equal(skipCrud, true);
-        assert.equal(cursos.description, 'materias por período lectivo');
-        // the Info side still keeps only what the framework knows:
-        // @ts-expect-error
-        var noTitle = completeEntity(periodos).title;
-        assert.equal(noTitle, undefined);
+        assert.equal(descripcion, 'materias por período lectivo');
+        // and they reach the Info: the design does not lose them
+        // @ts-expect-error (see above)
+        var infoTitle: string = completeEntity(periodos).title;
+        assert.equal(infoTitle, 'períodos');
     })
     it("all ok with extended", function(){
         var miCargo = {cargo: '7'}

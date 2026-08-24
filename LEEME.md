@@ -111,8 +111,9 @@ valores que tomaría cada campo en tiempo de ejecución).
 forman la clave primaria (admite pk compuesta). Se construye con `defineEntity`, que
 chequea en tiempo de compilación que cada elemento de `pk` sea una key de `fields`, y
 preserva los literales (`pk` queda tipado como tupla exacta, no como `string[]`).
-Las propiedades que el framework no conoce pasan de largo: cada sistema le puede agregar a
-sus entidades lo que necesite, igual que a sus campos.
+Las propiedades que el framework no conoce pasan de largo, tanto en `defineEntity` como en
+`completeEntity`: cada sistema le puede agregar a sus entidades lo que necesite, igual que a
+sus campos. Por ahora pasan solo los valores; los tipos todavía no las declaran.
 
 ### Reutilización de claves: `extractPk` / `mergePk`
 
@@ -163,8 +164,9 @@ values each field would hold at runtime).
 make up the primary key (composite keys are supported). It's built with `defineEntity`,
 which checks at compile time that every element of `pk` is a key of `fields`, and preserves
 the literals (`pk` ends up typed as an exact tuple, not as `string[]`).
-The properties the framework does not know about are passed through: each system can add to
-its entities whatever it needs, the same way it does with its fields.
+The properties the framework does not know about are passed through, both by `defineEntity`
+and by `completeEntity`: each system can add to its entities whatever it needs, the same way
+it does with its fields. For now only the values go through; the types don't declare them yet.
 
 ### Reusing keys: `extractPk` / `mergePk`
 

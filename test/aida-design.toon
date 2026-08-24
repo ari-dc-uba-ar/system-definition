@@ -16,6 +16,8 @@ periodos:
   pk[1]: periodo
   fks:
   uks:
+  title: períodos
+  description: "períodos: cuatrimestres, bimestres, etc..."
 sedes:
   fields[2]{name,type,isName,nullable,label,description}:
     sede,text,false,false,sede,""
@@ -23,6 +25,7 @@ sedes:
   pk[1]: sede
   fks:
   uks:
+  description: sedes
 cursos:
   fields[4]:
     - name: periodo
@@ -57,6 +60,7 @@ cursos:
       fields:
         periodo: periodo
   uks:
+  description: materias por período lectivo
 comisiones:
   fields[6]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,período,""
@@ -73,6 +77,8 @@ comisiones:
         periodo: periodo
         cod_mat: cod_mat
   uks:
+  title: comisiones
+  description: "comisiones de cada curso (teórica, práctica, laboratorio, ...)"
 alumnos:
   fields[9]:
     - name: email
@@ -141,6 +147,7 @@ alumnos:
         cod_mat: cod_mat
         libreta: libreta
   uks:
+  description: "las personas que entran al sistema: el mail es la identidad"
 inscripciones:
   fields[8]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,período,""
@@ -163,6 +170,7 @@ inscripciones:
       fields:
         email_normalizado: email
   uks:
+  description: "inscripciones a cada curso, tal como las manda el sistema de inscripciones"
 docentes:
   fields[10]:
     - name: legajo
@@ -231,6 +239,7 @@ docentes:
   pk[1]: legajo
   fks:
   uks:
+  description: docentes
 asignacion_docente:
   fields[3]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,período,""
@@ -244,6 +253,7 @@ asignacion_docente:
         periodo: periodo
         cod_mat: cod_mat
   uks:
+  description: docentes asignados a cada curso
 parameters:
   fields[3]:
     - name: unique_row
@@ -269,6 +279,7 @@ parameters:
   pk[1]: unique_row
   fks:
   uks:
+  description: "parámetros globales de la aplicación (una sola fila: unique_row = true siempre)"
 users:
   fields[9]:
     - name: username
@@ -332,6 +343,7 @@ users:
   pk[1]: username
   fks:
   uks:
+  description: usuarios del sistema
 aulas:
   fields[7]{name,type,isName,nullable,label,description}:
     sede,text,false,false,sede,""
@@ -348,6 +360,7 @@ aulas:
       fields:
         sede: sede
   uks:
+  description: aulas disponibles
 clases:
   fields[11]:
     - name: periodo
@@ -431,6 +444,7 @@ clases:
         sede: sede
         aula: aula
   uks:
+  description: clases dictadas
 preguntas:
   fields[10]:
     - name: periodo
@@ -506,6 +520,7 @@ preguntas:
         comision: comision
         fecha: fecha
   uks:
+  description: preguntas realizadas en clase
 opciones:
   fields[7]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,período,""
@@ -526,6 +541,7 @@ opciones:
         fecha: fecha
         id_pregunta: id_pregunta
   uks:
+  description: opciones de las preguntas (simples o múltiples)
 respuestas:
   fields[8]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,período,""
@@ -553,6 +569,7 @@ respuestas:
         cod_mat: cod_mat
         libreta: libreta
   uks:
+  description: respuestas de alumnos a preguntas
 respuestas_selecciones:
   fields[10]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,período,""
@@ -586,6 +603,8 @@ respuestas_selecciones:
         id_pregunta: id_pregunta
         id_opcion: id_opcion
   uks:
+  description: opciones elegidas en las respuestas múltiples o simples
+  skipCrud: true
 clase_filas:
   fields[5]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,período,""
@@ -603,6 +622,7 @@ clase_filas:
         comision: comision
         fecha: fecha
   uks:
+  description: filas de asientos disponibles en cada clase
 clase_asientos:
   fields[7]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,período,""
@@ -623,6 +643,7 @@ clase_asientos:
         fecha: fecha
         fila: fila
   uks:
+  description: asientos disponibles por fila y clase
 presentes:
   fields[10]:
     - name: periodo
@@ -703,6 +724,7 @@ presentes:
         cod_mat: cod_mat
         libreta: libreta
   uks:
+  description: asistencia de alumnos a clase
 snapshots:
   fields[2]{name,type,isName,nullable,label,description}:
     snapshot,serial,false,false,snapshot,""
@@ -710,6 +732,8 @@ snapshots:
   pk[1]: snapshot
   fks:
   uks:
+  title: snapshots
+  description: cada foto de un momento; lo fotografiado va en las tablas snapshots_*
 snapshots_clases:
   fields[12]:
     - name: snapshot
@@ -799,6 +823,7 @@ snapshots_clases:
         comision: comision
         fecha: fecha
   uks:
+  description: de qué clase es cada snapshot (y cómo estaba la clase en ese momento)
 snapshots_presentes:
   fields[10]:
     - name: snapshot
@@ -879,6 +904,7 @@ snapshots_presentes:
         cod_mat: cod_mat
         libreta: libreta
   uks:
+  description: ubicaciones de los alumnos en un snapshot (el control del aula del docente)
 docentes_presentes:
   fields[6]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,período,""
@@ -903,6 +929,7 @@ docentes_presentes:
         cod_mat: cod_mat
         legajo: legajo
   uks:
+  description: docentes presentes en clase
 password_reset_tokens:
   fields[5]:
     - name: token
@@ -939,3 +966,5 @@ password_reset_tokens:
   pk[1]: token
   fks:
   uks:
+  description: tokens de recuperación de contraseña
+  skipCrud: true

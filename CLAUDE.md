@@ -98,10 +98,12 @@ Nombres ya elegidos:
   llaman igual (`fields: cursos.pk`), o mapa `{origen: 'destino'}` cuando no
   (`{jefe: 'docente'}`). La key del mapa de `fks` es el nombre de la fk (permite dos fks a
   la misma entidad: `presidente` y `vocal` → docentes).
-* `defineEntity` deja pasar las propiedades que no conoce (las junta con `...rest` y las
-  devuelve): cada sistema le puede agregar a sus entidades lo que necesite (título,
-  descripción, `skipCrud`), igual que a sus campos, sin tocar el framework. `completeEntity`
-  todavía no las lleva a la Info.
+* `defineEntity` y `completeEntity` dejan pasar las propiedades que no conocen (las juntan
+  con `...rest` y las devuelven, la Info incluida): cada sistema le puede agregar a sus
+  entidades lo que necesite (título, descripción, `skipCrud`), igual que a sus campos, y no
+  se pierde nada de la definición. Los tipos todavía no las llevan, así que cada uso va con
+  un `// @ts-expect-error` (falta declarar el genérico que extienda la definición de tabla y
+  del que se pueda sacar el completo, sin parámetros de tipo extra).
 * Los chequeos de fks tienen dos niveles: `defineEntity` chequea lo local (campos origen y
   de uks existen en `fields`); `defineEntities(entityDefs)` chequea lo global del sistema
   (la entidad destino existe, y los campos destino son su pk completa o una de sus uks).

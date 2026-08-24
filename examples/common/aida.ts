@@ -39,6 +39,13 @@ export type FieldsDef = FieldDef<typeof typeDefs> & {
 
 export type RecordsDef = Record<string, FieldsDef>
 
+/* lo mismo a nivel entidad: `title`, `description` y `skipCrud` son de este sistema, no del
+   framework. `defineEntity` y `completeEntity` las dejan pasar (no se pierde nada de la
+   definición), pero los tipos todavía no las llevan, así que cada definición que las usa
+   necesita un `// @ts-expect-error`. Lo dejo así porque no sé cómo declarar un genérico que
+   extienda la definición de tabla y del que se pueda sacar el completo, sin agregar un
+   parámetro de tipo extra ni tocar otra cosa en los tipos. */
+
 export const cargo = {
     cargo            : {type: 'text' },
     denominacion     : {type: 'text' , label:'denominación'},
@@ -60,6 +67,7 @@ export const periodo = {
 } satisfies RecordsDef
 
 export const periodos = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     title: 'períodos',
     description: 'períodos: cuatrimestres, bimestres, etc...',
     pk: ['periodo'],
@@ -74,6 +82,7 @@ export const curso = {
 } satisfies RecordsDef
 
 export const cursos = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'materias por período lectivo',
     pk: [...periodos.pk, 'cod_mat'],
     fks: {periodos: {entity: 'periodos', fields: periodos.pk}},
@@ -89,6 +98,7 @@ export const comision = {
 } satisfies RecordsDef
 
 export const comisiones = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     title: 'comisiones',
     description: 'comisiones de cada curso (teórica, práctica, laboratorio, ...)',
     pk: [...cursos.pk, 'comision'],
@@ -102,6 +112,7 @@ export const sede = {
 } satisfies RecordsDef
 
 export const sedes = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'sedes',
     pk: ['sede'],
     fields: sede,
@@ -118,6 +129,7 @@ export const aula = {
 } satisfies RecordsDef
 
 export const aulas = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'aulas disponibles',
     pk: [...sedes.pk, 'aula'],
     fks: {sedes: {entity: 'sedes', fields: sedes.pk}},
@@ -164,6 +176,7 @@ export const alumno = {
 } satisfies RecordsDef
 
 export const alumnos = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'las personas que entran al sistema: el mail es la identidad',
     pk: ['email'],
     /* circular con la fk alumnos de inscripciones: en la base tiene que ser DEFERRABLE.
@@ -191,6 +204,7 @@ export const inscripcion = {
 } satisfies RecordsDef
 
 export const inscripciones = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'inscripciones a cada curso, tal como las manda el sistema de inscripciones',
     pk: [...cursos.pk, 'libreta'],
     fks: {
@@ -211,6 +225,7 @@ export const docente = {
 } satisfies RecordsDef
 
 export const docentes = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'docentes',
     pk: ['legajo'],
     fields: docente,
@@ -222,6 +237,7 @@ export const asignacion = {
 } satisfies RecordsDef
 
 export const asignacion_docente = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'docentes asignados a cada curso',
     pk: [...cursos.pk, ...docentes.pk],
     fks: {cursos: {entity: 'cursos', fields: cursos.pk}},
@@ -250,6 +266,7 @@ export const clase = {
 } satisfies RecordsDef
 
 export const clases = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'clases dictadas',
     pk: [...comisiones.pk, 'fecha'],
     fks: {
@@ -271,6 +288,7 @@ export const pregunta = {
 } satisfies RecordsDef
 
 export const preguntas = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'preguntas realizadas en clase',
     pk: [...clases.pk, 'id_pregunta'],
     fks: {clases: {entity: 'clases', fields: clases.pk}},
@@ -284,6 +302,7 @@ export const opcion = {
 } satisfies RecordsDef
 
 export const opciones = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'opciones de las preguntas (simples o múltiples)',
     pk: [...preguntas.pk, 'id_opcion'],
     fks: {preguntas: {entity: 'preguntas', fields: preguntas.pk}},
@@ -298,6 +317,7 @@ export const respuesta = {
 } satisfies RecordsDef
 
 export const respuestas = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'respuestas de alumnos a preguntas',
     pk: mergePk(preguntas.pk, inscripciones.pk),
     fks: {
@@ -316,6 +336,7 @@ export const respuesta_seleccion = {
 } satisfies RecordsDef
 
 export const respuestas_selecciones = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'opciones elegidas en las respuestas múltiples o simples',
     skipCrud: true,
     pk: [...respuestas.pk, 'seleccion'],
@@ -336,6 +357,7 @@ export const clase_fila = {
 } satisfies RecordsDef
 
 export const clase_filas = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'filas de asientos disponibles en cada clase',
     pk: [...clases.pk, 'fila'],
     fks: {clases: {entity: 'clases', fields: clases.pk}},
@@ -349,6 +371,7 @@ export const clase_asiento = {
 } satisfies RecordsDef
 
 export const clase_asientos = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'asientos disponibles por fila y clase',
     pk: [...clase_filas.pk, 'asiento'],
     fks: {clase_filas: {entity: 'clase_filas', fields: clase_filas.pk}},
@@ -374,6 +397,7 @@ export const presente = {
 } satisfies RecordsDef
 
 export const presentes = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'asistencia de alumnos a clase',
     pk: mergePk(clases.pk, inscripciones.pk),
     fks: {
@@ -401,6 +425,7 @@ export const snapshot = {
 } satisfies RecordsDef
 
 export const snapshots = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     title: 'snapshots',
     description: 'cada foto de un momento; lo fotografiado va en las tablas snapshots_*',
     pk: ['snapshot'],
@@ -414,6 +439,7 @@ export const snapshot_clase = {
 } satisfies RecordsDef
 
 export const snapshots_clases = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'de qué clase es cada snapshot (y cómo estaba la clase en ese momento)',
     pk: mergePk(snapshots.pk, clases.pk),
     fks: {
@@ -432,6 +458,7 @@ export const snapshot_presente = {
 } satisfies RecordsDef
 
 export const snapshots_presentes = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'ubicaciones de los alumnos en un snapshot (el control del aula del docente)',
     pk: mergePk(snapshots_clases.pk, inscripciones.pk),
     fks: {
@@ -448,6 +475,7 @@ export const docente_presente = {
 } satisfies RecordsDef
 
 export const docentes_presentes = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'docentes presentes en clase',
     pk: mergePk(clases.pk, asignacion_docente.pk),
     fks: {
@@ -466,6 +494,7 @@ export const parameter = {
 } satisfies RecordsDef
 
 export const parameters = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'parámetros globales de la aplicación (una sola fila: unique_row = true siempre)',
     pk: ['unique_row'],
     fields: parameter,
@@ -483,6 +512,7 @@ export const user = {
 } satisfies RecordsDef
 
 export const users = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'usuarios del sistema',
     pk: ['username'],
     fields: user,
@@ -497,6 +527,7 @@ export const password_reset_token = {
 } satisfies RecordsDef
 
 export const password_reset_tokens = defineEntity({
+    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
     description: 'tokens de recuperación de contraseña',
     skipCrud: true,
     pk: ['token'],

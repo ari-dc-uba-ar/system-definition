@@ -75,8 +75,9 @@ values each field would hold at runtime).
 make up the primary key (composite keys are supported). It's built with `defineEntity`,
 which checks at compile time that every element of `pk` is a key of `fields`, and preserves
 the literals (`pk` ends up typed as an exact tuple, not as `string[]`).
-The properties the framework does not know about are passed through: each system can add to
-its entities whatever it needs, the same way it does with its fields.
+The properties the framework does not know about are passed through, both by `defineEntity`
+and by `completeEntity`: each system can add to its entities whatever it needs, the same way
+it does with its fields. For now only the values go through; the types don't declare them yet.
 
 ### Reusing keys: `extractPk` / `mergePk`
 

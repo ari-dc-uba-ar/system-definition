@@ -83,20 +83,17 @@ export type EntityDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> =
     uks?: Readonly<Record<string, readonly string[]>>
 }
 
-/* what the framework does not know about an entity is passed through untouched, the same
-   way each system can add what it needs to the definition of a field */
-export type EntityDefOf<TFields extends RecordDef<TypeCollection>, TPk extends readonly string[], TFks, TUks, TRest> =
-    {fields: TFields, pk: TPk, fks: TFks, uks: TUks} & Omit<TRest, keyof EntityDef<TypeCollection>>
-
 export function defineEntity<
     const TPk extends readonly (keyof TFields & string)[],
     const TFields extends RecordDef<TypeCollection>,
     const TUks extends Readonly<Record<string, readonly (keyof TFields & string)[]>> = {},
     const TFks extends Readonly<Record<string, {entity: string, fields: readonly (keyof TFields & string)[] | {readonly [K in keyof TFields]?: string}}>> = {},
-    const TRest extends Readonly<Record<string, unknown>> = {},
 >(
-    entityDef: {fields: TFields, pk: TPk, fks?: TFks, uks?: TUks} & TRest
-): EntityDefOf<TFields, TPk, TFks, TUks, TRest> {
+    entityDef: {fields: TFields, pk: TPk, fks?: TFks, uks?: TUks}
+): {fields: TFields, pk: TPk, fks: TFks, uks: TUks} {
+    /* whatever the framework does not know about the entity travels in ...rest and is
+       returned untouched: no data of the definition is lost. The types do not carry it
+       (the callers get a // @ts-expect-error) */
     const {fields, pk, fks, uks, ...rest} = entityDef;
     return {
         fields,
@@ -104,7 +101,7 @@ export function defineEntity<
         fks: fks ?? {} as TFks,
         uks: uks ?? {} as TUks,
         ...rest,
-    } as EntityDefOf<TFields, TPk, TFks, TUks, TRest>;
+    };
 }
 
 export type PkFieldsOf<TEntityDef extends EntityDef<TypeCollection>> =
@@ -178,12 +175,15 @@ function completeFk(fkDef: FkDef): FkInfo {
 }
 
 export function completeEntity<const TEntityDef extends EntityDef<TypeCollection>>(entityDef: TEntityDef): EntityInfoOf<TEntityDef> {
-    return {
-        fields: completeRecord(notNullableFields(entityDef.fields, entityDef.pk)),
+    /* same as defineEntity: what the framework does not know about the entity is not lost,
+       it goes through to the Info (the types do not carry it: see defineEntity) */
+    const {fields, pk, fks, uks, ...rest} = entityDef;
+    return Object.assign({
+        fields: completeRecord(notNullableFields(fields, pk)),
         pk: mergePk(entityDef.pk),
-        fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
-        uks: entityDef.uks ?? {},
-    } as EntityInfoOf<TEntityDef>;
+        fks: Object.fromEntries(Object.entries(fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
+        uks: uks ?? {},
+    } as EntityInfoOf<TEntityDef>, rest);
 }
 
 /* the instance type of a row of the entity: like the record one, but the pk fields
