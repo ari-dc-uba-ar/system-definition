@@ -5,12 +5,12 @@ import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
 import { RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
-    EntityDef, EntityInfoOf, ExpandType, FieldDef, Optional, TypeCollection
+    EntityDef, EntityInfoOf, ExpandType, FieldDef, Optional, DbDefinition
 } from "../src/common/system-design";
-import { typeDefs, cargo, cargos, docente, docentes, periodo, periodos, sede, curso, cursos, comision, comisiones,
+import { dbDefinition, cargo, cargos, docente, docentes, periodo, periodos, sede, curso, cursos, comision, comisiones,
     respuestas_selecciones,
     clase, clases, pregunta, preguntas, opcion, opciones, inscripciones, presente, presentes,
-    entityDefs, DefinedType, validarCargo, validarPregunta, PlainDate
+    entityDefs, DefinedType, validarCargo, validarPregunta, PlainDate,
 } from "../examples/common/aida";
 
 describe("aida example", function(){
@@ -22,7 +22,7 @@ describe("aida example", function(){
             orden        : number  | null,
             puede_dirigir: boolean | null
         }
-        type CargoDeducido = RecordInstanceType<typeof typeDefs, typeof cargo>
+        type CargoDeducido = RecordInstanceType<typeof dbDefinition, typeof cargo>
         var jtp: Cargo = {
             cargo        : 'JTP',
             denominacion : 'Jefe de Trabajos Prácticos',
@@ -58,12 +58,13 @@ describe("aida example", function(){
     it("can deduce the type from DefinedType", function(){
         var miCargo = {cargo: 'A1'}
         // var expected: ExpandType<Optional<DefinedType<typeof cargo>>>;
-        var expected: ExpandType<Optional<EntityInstanceType<typeof typeDefs, typeof cargos>>>;
+        var expected2: ExpandType<EntityInstanceType<typeof dbDefinition, typeof cargos>>;
+        var expected: ExpandType<Optional<EntityInstanceType<typeof dbDefinition, typeof cargos>>>;
         expected = miCargo;
         assert.equal(expected, miCargo);
     })
     it("reflects the nullability of the fields in the record instance type", function(){
-        type Docente = RecordInstanceType<typeof typeDefs, typeof docente>
+        type Docente = RecordInstanceType<typeof dbDefinition, typeof docente>
         var pepe: Docente = {
             legajo           : 'L-1234',
             username         : 'pperez',
@@ -233,7 +234,7 @@ describe("aida entities", function(){
         ]);
         assert.deepStrictEqual(presentesPk, mergedBack);
         // the whole chain still deduces the instance type:
-        type Presente = RecordInstanceType<typeof typeDefs, typeof presente>
+        type Presente = RecordInstanceType<typeof dbDefinition, typeof presente>
         var fecha: PlainDate = {year: 2026, month: 3, day: 16};
         var unPresente: Presente = {
             // the inherited pk fields are nullable like any other field: the record def alone
@@ -295,12 +296,12 @@ describe("aida fks and isName", function(){
         assert.deepStrictEqual(Object.keys(entityDefs).length, 24);
         assert.equal(entityDefs.presentes, presentes);
         // a fk to an entity that is not part of the system is rejected:
-        const huerfanos = defineEntity({pk: ['x'], fks: {rota: {entity: 'inexistentes', fields: {x: 'algo'}}}, fields: {x: {type: 'text'}}});
+        const huerfanos = defineEntity({dbDefinition, pk: ['x'], fks: {rota: {entity: 'inexistentes', fields: {x: 'algo'}}}, fields: {x: {type: 'text'}}});
         // @ts-expect-error 'inexistentes' is not an entity of the system
         defineEntities({huerfanos});
         // a fk that references only a part of a composite pk (and no uk) is rejected:
-        const franjas = defineEntity({pk: ['dia', 'hora'], fields: {dia: {type: 'text'}, hora: {type: 'integer'}}});
-        const eventos = defineEntity({pk: ['evento'], fks: {franja: {entity: 'franjas', fields: {dia: 'dia'}}}, fields: {evento: {type: 'text'}, dia: {type: 'text'}}});
+        const franjas = defineEntity({dbDefinition, pk: ['dia', 'hora'], fields: {dia: {type: 'text'}, hora: {type: 'integer'}}});
+        const eventos = defineEntity({dbDefinition, pk: ['evento'], fks: {franja: {entity: 'franjas', fields: {dia: 'dia'}}}, fields: {evento: {type: 'text'}, dia: {type: 'text'}}});
         // @ts-expect-error 'hora' is missing: the fk must reference the complete pk or a uk
         defineEntities({franjas, eventos});
     })
@@ -310,11 +311,13 @@ describe("aida fks and isName", function(){
    those framework cases are kept here as minimal defs, outside the example system */
 describe("framework cases the example system does not use", function(){
     const materias = defineEntity({
+        dbDefinition,
         pk: ['materia'],
         uks: {denominacion: ['denominacion']},
         fields: {materia: {type: 'text'}, denominacion: {type: 'text', isName: true}},
     });
     const catedras = defineEntity({
+        dbDefinition,
         pk: ['legajo'],
         // reflexive fk: inside its own definition the entity is referenced by name,
         // and the source field (jefe) is mapped to the target field (legajo)
@@ -322,6 +325,7 @@ describe("framework cases the example system does not use", function(){
         fields: {legajo: {type: 'text'}, jefe: {type: 'text'}},
     });
     const mesas = defineEntity({
+        dbDefinition,
         pk: ['mesa'],
         fks: {
             presidente: {entity: 'catedras', fields: {presidente: 'legajo'}},
@@ -341,7 +345,7 @@ describe("framework cases the example system does not use", function(){
         assert.equal(presidenteTarget, 'legajo');
     })
     it("accepts a fk against a uk of the target entity", function(){
-        const apuntes = defineEntity({pk: ['apunte'], fks: {materia_por_nombre: {entity: 'materias', fields: {denominacion_materia: 'denominacion'}}}, fields: {apunte: {type: 'text'}, denominacion_materia: {type: 'text'}}});
+        const apuntes = defineEntity({dbDefinition, pk: ['apunte'], fks: {materia_por_nombre: {entity: 'materias', fields: {denominacion_materia: 'denominacion'}}}, fields: {apunte: {type: 'text'}, denominacion_materia: {type: 'text'}}});
         const miniSystem = defineEntities({materias, apuntes, catedras, mesas});
         assert.deepStrictEqual(Object.keys(miniSystem), ['materias', 'apuntes', 'catedras', 'mesas']);
     })
@@ -393,6 +397,7 @@ describe("aida entity completion (Def → Info)", function(){
     })
     it("dedups the pk, so overlapping pks can be spread without mergePk", function(){
         var presentesAlt = defineEntity({
+            dbDefinition,
             // periodo and cod_mat appear twice in the spread:
             pk: [...clases.pk, ...inscripciones.pk],
             fields: presente,
@@ -421,7 +426,7 @@ describe("aida entity completion (Def → Info)", function(){
         assert.equal(wrongNullable, false);
     })
     it("deduces the entity instance type with the pk fields not nullable", function(){
-        type Clase = EntityInstanceType<typeof typeDefs, typeof clases>
+        type Clase = EntityInstanceType<typeof dbDefinition, typeof clases>
         var unaClase: Clase = {
             // the pk admits no null:
             periodo: '2026-1c', cod_mat: 'AlgoI', comision: 'T1', fecha: {year: 2026, month: 3, day: 16},
@@ -456,9 +461,9 @@ describe("extended declaractions", function(){
            and from which the completed one can be derived, without adding an extra type
            parameter or touching anything else in the types. */
         const cosas = defineEntity({
+            dbDefinition,
             pk: ['cosa'],
             fields: {cosa: {type: 'text'}},
-            // @ts-expect-error (see above)
             title: 'las cosas',
             skipCrud: true,
         });
@@ -482,7 +487,7 @@ describe("extended declaractions", function(){
         assert.equal(cosasInfo.fields.cosa.nullable, false);
     })
 
-    type MyFieldDef = FieldDef<typeof typeDefs> & {otherText?:string, otherBool:boolean};
+    type MyFieldDef = FieldDef<typeof dbDefinition> & {otherText?:string, otherBool:boolean};
     const extendedCargo = {
         cargo            : {type: 'text'    , otherBool:true},
         denominacion     : {type: 'text'    , otherBool:true, label:'denominación'},
@@ -490,6 +495,7 @@ describe("extended declaractions", function(){
         puede_dirigir    : {type: 'boolean' , otherBool:true},
     } satisfies Record<string, MyFieldDef>
     const extendedCargos = defineEntity({
+        dbDefinition,
         fields: extendedCargo,
         pk: ['cargo']
     });
@@ -519,13 +525,13 @@ describe("aida design snapshot", function(){
     it("matches aida-design.toon", function(){
         /* provisional flattening until TOLON exists: toon only formats arrays of uniform
            objects as tables, so the fields map becomes an array with the name inside */
-        type FieldInfoRow<TEntityDef extends EntityDef<TypeCollection>> = {
-            [K in keyof EntityInfoOf<TEntityDef>['fields']]: {name: K} & EntityInfoOf<TEntityDef>['fields'][K]
+        type FieldInfoRow<TEntityDef extends EntityDef<typeof dbDefinition>> = {
+            [K in keyof EntityInfoOf<TEntityDef, typeof dbDefinition>['fields']]: {name: K} & EntityInfoOf<TEntityDef, typeof dbDefinition>['fields'][K]
         }[keyof TEntityDef['fields']]
-        type DesignSnapshot<TEntities extends Record<string, EntityDef<TypeCollection>>> = {
-            [E in keyof TEntities]: Omit<EntityInfoOf<TEntities[E]>, 'fields'> & {fields: FieldInfoRow<TEntities[E]>[]}
+        type DesignSnapshot<TEntities extends Record<string, EntityDef<typeof dbDefinition>>> = {
+            [E in keyof TEntities]: Omit<EntityInfoOf<TEntities[E], typeof dbDefinition>, 'fields'> & {fields: FieldInfoRow<TEntities[E]>[]}
         }
-        function designSnapshot<const TEntities extends Record<string, EntityDef<TypeCollection>>>(eds: TEntities): DesignSnapshot<TEntities> {
+        function designSnapshot<const TEntities extends Record<string, EntityDef<typeof dbDefinition>>>(eds: TEntities): DesignSnapshot<TEntities> {
             return LikeAr(eds).map(ed => {
                 var entityInfo = completeEntity(ed);
                 return {

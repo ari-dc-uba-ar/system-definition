@@ -1,9 +1,11 @@
 /* EJEMPLO del sistema de alumnos */
 
 import {
-    boxType, commonTypeDefs,
-    FieldDef, EntityInstanceType, defineEntity, defineEntities, extractPk, mergePk,
-    EntityDef
+    boxType, commonTypeMapping,
+    FieldDef, /* TODO EntityInstanceType, */ defineEntity, defineEntities, extractPk, mergePk,
+    EntityDef, RecordDef,
+    DbDefinition as DbDefinition,
+    TypeMapping
 } from "../../src/common/system-design";
 
 export type PlainDate = {year: number, month: number, day: number}
@@ -11,19 +13,37 @@ export type PlainTime = {hour: number, minute: number}
 export type TstzRange = {from: Date, to: Date | null}
 export type TstzMultirange = readonly TstzRange[]
 
-export var typeDefs = {
-    ...commonTypeDefs,
-    email           : commonTypeDefs.text,
+export var typeMapping = {
+    ...commonTypeMapping,
+    email           : commonTypeMapping.text,
     /* enteros con un dominio más chico que integer */
-    positive_integer: commonTypeDefs.integer,
+    positive_integer: commonTypeMapping.integer,
     /* lo numera la base */
-    serial          : commonTypeDefs.integer,
+    serial          : commonTypeMapping.integer,
     plaindate       : {tsType: boxType<PlainDate>()},
     time            : {tsType: boxType<PlainTime>()},
     timestamp       : {tsType: boxType<Date>()},
     timestamptz     : {tsType: boxType<Date>()},
     tstzmultirange  : {tsType: boxType<TstzMultirange>()},
+} satisfies TypeMapping
+
+type AidaEntityProps = {
+    title?: string
+    description?: string
+    skipCrud?: boolean
 }
+
+type AidaFieldProps = {
+    defaultValue?: string | number | boolean | readonly unknown[]
+    options?: readonly (string | number | boolean)[]
+    secreto?: true
+}
+
+export var dbDefinition = {
+    typeMapping,
+    fieldCompleter: (s) => ({secreto: false, ...s})
+    entityCompleter: {} as AidaEntityProps,
+} satisfies DbDefinition
 
 /* lo que este sistema le agrega a la definición de un campo, aprovechando que los tipos
    de TypeScript admiten propiedades de más:
@@ -31,20 +51,16 @@ export var typeDefs = {
      - `options`: los valores admitidos, cuando son unos pocos fijos. No son un tipo
        aparte (el tipo sigue siendo text o boolean), son opciones de ese tipo;
      - `secreto`: el campo no se muestra ni se manda al frontend. */
-export type FieldsDef = FieldDef<typeof typeDefs> & {
-    defaultValue?: string | number | boolean | readonly unknown[]
-    options?: readonly (string | number | boolean)[]
-    secreto?: true
+export type FieldsDef = FieldDef<typeof dbDefinition>
+
+export type AidaRecordDef = Record<string, FieldsDef>
+
+export type AidaEntityComplement = {
+    description?:string
+    title?:string
 }
 
-export type RecordsDef = Record<string, FieldsDef>
-
-/* lo mismo a nivel entidad: `title`, `description` y `skipCrud` son de este sistema, no del
-   framework. `defineEntity` y `completeEntity` las dejan pasar (no se pierde nada de la
-   definición), pero los tipos todavía no las llevan, así que cada definición que las usa
-   necesita un `// @ts-expect-error`. Lo dejo así porque no sé cómo declarar un genérico que
-   extienda la definición de tabla y del que se pueda sacar el completo, sin agregar un
-   parámetro de tipo extra ni tocar otra cosa en los tipos. */
+export type AidaEntityDef = EntityDef<typeof dbDefinition>
 
 export const cargo = {
     cargo            : {type: 'text' },
@@ -52,9 +68,10 @@ export const cargo = {
     orden            : {type: 'integer'},
     puede_dirigir    : {type: 'boolean'},
 
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const cargos = defineEntity({
+    dbDefinition,
     fields: cargo,
     pk: ['cargo'],
 })
@@ -64,14 +81,14 @@ export const cargos = defineEntity({
 export const periodo = {
     periodo : {type: 'text', label: 'período'},
     cerrado : {type: 'boolean', nullable: false, defaultValue: false},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const periodos = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     title: 'períodos',
     description: 'períodos: cuatrimestres, bimestres, etc...',
-    pk: ['periodo'],
     fields: periodo,
+    pk: ['periodo'],
 })
 
 export const curso = {
@@ -79,14 +96,14 @@ export const curso = {
     cod_mat        : {type: 'text'},
     nombre_materia : {type: 'text'   , nullable: false},
     abierto        : {type: 'boolean', nullable: false, defaultValue: false},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const cursos = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'materias por período lectivo',
+    fields: curso,
     pk: [...periodos.pk, 'cod_mat'],
     fks: {periodos: {entity: 'periodos', fields: periodos.pk}},
-    fields: curso,
 })
 
 export const comision = {
@@ -95,24 +112,24 @@ export const comision = {
     denominacion : {type: 'text', nullable: false, isName: true, label: 'denominación'},
     hora_desde   : {type: 'time'},
     hora_hasta   : {type: 'time'},
-} satisfies RecordsDef
+} satisfies Record<string, FieldsDef>
 
 export const comisiones = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     title: 'comisiones',
     description: 'comisiones de cada curso (teórica, práctica, laboratorio, ...)',
+    fields: comision,
     pk: [...cursos.pk, 'comision'],
     fks: {cursos: {entity: 'cursos', fields: cursos.pk}},
-    fields: comision,
 })
 
 export const sede = {
     sede   : {type: 'text'},
     nombre : {type: 'text', nullable: false, isName: true},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const sedes = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'sedes',
     pk: ['sede'],
     fields: sede,
@@ -126,10 +143,10 @@ export const aula = {
     asientos_por_fila : {type: 'positive_integer'},
     escritorios       : {type: 'text'},
     puertas           : {type: 'text'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const aulas = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'aulas disponibles',
     pk: [...sedes.pk, 'aula'],
     fks: {sedes: {entity: 'sedes', fields: sedes.pk}},
@@ -146,7 +163,7 @@ export const aulas = defineEntity({
 const inscripcion_pk = {
     ...extractPk(cursos),
     libreta : {type: 'text'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 /* los campos con los que se entra al sistema, iguales en alumnos y en docentes */
 const credenciales = {
@@ -155,7 +172,7 @@ const credenciales = {
     hash_type         : {type: 'text', nullable: false, label: 'tipo de hash',
                          options: ['scram-sha-256', 'bcrypt'], defaultValue: 'scram-sha-256'},
     last_pass_change  : {type: 'plaindate', label: 'último cambio de contraseña'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const alumno = {
     email : {type: 'email'},
@@ -173,10 +190,10 @@ export const alumno = {
     /* hash_pass en null = todavía no eligió contraseña (así lo crea el trigger cuando
        aparece una inscripción con un mail nuevo). Entra por "olvidé mi contraseña". */
     ...credenciales,
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const alumnos = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'las personas que entran al sistema: el mail es la identidad',
     pk: ['email'],
     /* circular con la fk alumnos de inscripciones: en la base tiene que ser DEFERRABLE.
@@ -201,17 +218,17 @@ export const inscripcion = {
        Nullable acá (mandarlo en null es pedirle al trigger que lo calcule); en la base es
        NOT NULL. */
     email_normalizado : {type: 'email', label: 'mail del alumno'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const inscripciones = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'inscripciones a cada curso, tal como las manda el sistema de inscripciones',
+    fields: inscripcion,
     pk: [...cursos.pk, 'libreta'],
     fks: {
         cursos : {entity: 'cursos' , fields: cursos.pk},
         alumnos: {entity: 'alumnos', fields: {email_normalizado: 'email'}},
     },
-    fields: inscripcion,
 })
 
 export const docente = {
@@ -222,22 +239,22 @@ export const docente = {
     cargo    : {type: 'text'},
     email    : {type: 'email', nullable: false},
     ...credenciales,
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const docentes = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'docentes',
-    pk: ['legajo'],
     fields: docente,
+    pk: ['legajo'],
 })
 
 export const asignacion = {
     ...extractPk(cursos),
     ...extractPk(docentes),
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const asignacion_docente = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'docentes asignados a cada curso',
     pk: [...cursos.pk, ...docentes.pk],
     fks: {cursos: {entity: 'cursos', fields: cursos.pk}},
@@ -257,16 +274,16 @@ const datos_clase = {
        Van al final porque en las bases que ya existen se agregan al final, y así una
        base actualizada queda igual que una creada de cero. */
     ...extractPk(aulas),
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const clase = {
     ...extractPk(comisiones),
     fecha : {type: 'plaindate'},
     ...datos_clase,
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const clases = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'clases dictadas',
     pk: [...comisiones.pk, 'fecha'],
     fks: {
@@ -285,10 +302,10 @@ export const pregunta = {
                           options: ['int', 'texto', 'opciones', 'multiple_opcion']},
     abierta            : {type: 'boolean', nullable: false, defaultValue: false},
     respuesta_correcta : {type: 'text'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const preguntas = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'preguntas realizadas en clase',
     pk: [...clases.pk, 'id_pregunta'],
     fks: {clases: {entity: 'clases', fields: clases.pk}},
@@ -299,10 +316,10 @@ export const opcion = {
     ...extractPk(preguntas),
     id_opcion : {type: 'text', label: 'opción'},
     detalle   : {type: 'text', nullable: false},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const opciones = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'opciones de las preguntas (simples o múltiples)',
     pk: [...preguntas.pk, 'id_opcion'],
     fks: {preguntas: {entity: 'preguntas', fields: preguntas.pk}},
@@ -314,10 +331,10 @@ export const respuesta = {
     ...extractPk(inscripciones),
     respuesta : {type: 'text'     , nullable: false},
     momento   : {type: 'timestamp', nullable: false},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const respuestas = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'respuestas de alumnos a preguntas',
     pk: mergePk(preguntas.pk, inscripciones.pk),
     fks: {
@@ -333,10 +350,10 @@ export const respuesta_seleccion = {
     id_opcion : opcion.id_opcion,
     es_unica  : {type: 'boolean'},
     texto     : {type: 'text'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const respuestas_selecciones = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'opciones elegidas en las respuestas múltiples o simples',
     skipCrud: true,
     pk: [...respuestas.pk, 'seleccion'],
@@ -354,10 +371,10 @@ export const respuestas_selecciones = defineEntity({
 export const clase_fila = {
     ...extractPk(clases),
     fila : {type: 'positive_integer'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const clase_filas = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'filas de asientos disponibles en cada clase',
     pk: [...clases.pk, 'fila'],
     fks: {clases: {entity: 'clases', fields: clases.pk}},
@@ -368,10 +385,10 @@ export const clase_asiento = {
     ...extractPk(clase_filas),
     asiento : {type: 'positive_integer'},
     uso     : {type: 'text'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const clase_asientos = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'asientos disponibles por fila y clase',
     pk: [...clase_filas.pk, 'asiento'],
     fks: {clase_filas: {entity: 'clase_filas', fields: clase_filas.pk}},
@@ -385,7 +402,7 @@ const ubicacion = {
     retiro   : {type: 'boolean', nullable: false, defaultValue: false},
     fila     : {type: 'positive_integer'},
     asiento  : {type: 'positive_integer'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const presente = {
     ...extractPk(clases),
@@ -394,10 +411,10 @@ export const presente = {
     /* Tramos en los que el alumno estuvo presente; lo mantiene un trigger.
        El default (multirango vacío) es "sin registro de horarios". */
     horarios : {type: 'tstzmultirange', nullable: false, defaultValue: []},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const presentes = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'asistencia de alumnos a clase',
     pk: mergePk(clases.pk, inscripciones.pk),
     fks: {
@@ -422,10 +439,10 @@ export const presentes = defineEntity({
 export const snapshot = {
     snapshot : {type: 'serial'},
     momento  : {type: 'timestamptz', nullable: false},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const snapshots = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     title: 'snapshots',
     description: 'cada foto de un momento; lo fotografiado va en las tablas snapshots_*',
     pk: ['snapshot'],
@@ -436,10 +453,10 @@ export const snapshot_clase = {
     ...extractPk(snapshots),
     ...extractPk(clases),
     ...datos_clase,
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const snapshots_clases = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'de qué clase es cada snapshot (y cómo estaba la clase en ese momento)',
     pk: mergePk(snapshots.pk, clases.pk),
     fks: {
@@ -455,10 +472,10 @@ export const snapshot_presente = {
     ...extractPk(snapshots_clases),
     ...extractPk(inscripciones),
     ...ubicacion,
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const snapshots_presentes = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'ubicaciones de los alumnos en un snapshot (el control del aula del docente)',
     pk: mergePk(snapshots_clases.pk, inscripciones.pk),
     fks: {
@@ -472,10 +489,10 @@ export const docente_presente = {
     ...extractPk(clases),
     ...extractPk(asignacion_docente),
     tema : {type: 'text'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const docentes_presentes = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'docentes presentes en clase',
     pk: mergePk(clases.pk, asignacion_docente.pk),
     fks: {
@@ -491,10 +508,10 @@ export const parameter = {
     unique_row : {type: 'boolean', options: [true], defaultValue: true},
     app_name   : {type: 'text'     , nullable: false, label: 'nombre de la app'},
     fecha_test : {type: 'plaindate', label: 'fecha de prueba'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const parameters = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'parámetros globales de la aplicación (una sola fila: unique_row = true siempre)',
     pk: ['unique_row'],
     fields: parameter,
@@ -509,10 +526,10 @@ export const user = {
     /* acá el hash_type sí es nulleable */
     hash_type  : {...credenciales.hash_type, nullable: true},
     rol        : {type: 'text', nullable: false, options: ['admin']},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const users = defineEntity({
-    // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
+    dbDefinition,
     description: 'usuarios del sistema',
     pk: ['username'],
     fields: user,
@@ -524,7 +541,7 @@ export const password_reset_token = {
     identity   : {type: 'text'       , nullable: false},
     created_at : {type: 'timestamptz', nullable: false},
     used_at    : {type: 'timestamptz'},
-} satisfies RecordsDef
+} satisfies AidaRecordDef
 
 export const password_reset_tokens = defineEntity({
     // @ts-expect-error las propiedades de este sistema no están en los tipos (ver la nota de arriba)
@@ -592,7 +609,7 @@ export const entityDefs = defineEntities({
 /* the instance type of a record def, bound to this entity instance system's typeDefs (the fields that are
    not marked nullable:false admit null):
    DefinedType<typeof cargos> = {cargo: string, orden?: number|null, ...} */
-export type DefinedType<TRecordDef extends EntityDef<typeof typeDefs>> = EntityInstanceType<typeof typeDefs, TRecordDef>
+export type DefinedType<TRecordDef extends EntityDef<typeof dbDefinition>> = EntityInstanceType<typeof dbDefinition, TRecordDef>
 
 export function validarCargo(cargoSinValidar: DefinedType<typeof cargos>){
     // denominacion is nullable in the def, so the deduced type forces the null check here

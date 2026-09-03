@@ -4,51 +4,38 @@ export interface TypeDef<TsType> {
     tsType: TsType
 }
 
-export type TypeMapping = Record<string , TypeDef<any>>
+export type TypeCollection = Record<string , TypeDef<any>>
 
-export const commonTypeMapping = {
+export const commonTypeDefs = {
     text       : {tsType: boxType<string>()},
     integer    : {tsType: boxType<number>()},
     boolean    : {tsType: boxType<boolean>()},
-} satisfies TypeMapping;
+} satisfies TypeCollection;
 
-export type DbDefinition<TTypeMapping extends TypeMapping = typeof commonTypeMapping> = {
-    typeMapping: TTypeMapping,
-    fieldCompleter: <SFieldDef extends FieldDef<TTypeMapping>, TFieldDef extends FieldDef<TTypeMapping>>(s:SFieldDef) => TFieldDef,
-    entityCompleter: <S,T>(x:S)=>T
-}
-
-const idFun = <T>(s:T) => s;
-
-export const commonBusinessChoices = {
-    typeMapping: commonTypeMapping,
-    fieldCompleter: idFun,
-    entityCompleter: idFun,
-} as DbDefinition;
-
-export type FieldDef<TTypeMapping extends TypeMapping> = {
-    type: keyof TTypeMapping
+export type FieldDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
+    type: keyof TypeDefs
     isName?: true
     nullable?: boolean
     label?: string
     description?: string
 }
 
-export type FieldInfo<TDbDefinition extends DbDefinition = typeof commonBusinessChoices> = Required<Omit<FieldDef<TDbDefinition['typeMapping']>, 'isName'>> & {isName: boolean}
+export type FieldInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Required<Omit<FieldDef<TypeDefs>, 'isName'>> & {isName: boolean}
 
-export type RecordDef<TDbDefinition extends DbDefinition = typeof commonBusinessChoices> = Record<string, FieldDef<TDbDefinition['typeMapping']>>
+export type RecordDef<TFieldDef extends FieldDef = FieldDef<typeof commonTypeDefs>> = Record<string, TFieldDef>
 
-export type RecordInfo<TDbDefinition extends DbDefinition = typeof commonBusinessChoices> = Record<string, FieldInfo<TDbDefinition>>
+// export type RecordInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Required<RecordDef<TypeDefs>>
+export type RecordInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Record<string, FieldInfo<TypeDefs>>
 
-export type RecordInfoOf<TRecordDef extends RecordDef<TDbDefinition>, TDbDefinition extends DbDefinition = typeof commonBusinessChoices> = {
-    [K in keyof TRecordDef]: Omit<FieldInfo<DbDefinition>, 'type' | 'nullable'> & {
+export type RecordInfoOf<TRecordDef extends RecordDef> = {
+    [K in keyof TRecordDef]: Omit<FieldInfo<TypeCollection>, 'type' | 'nullable'> & {
         type: TRecordDef[K]['type']
         // what is known statically is only the explicit nullable:false; the default stays boolean
         nullable: TRecordDef[K] extends {nullable: false} ? false : boolean
     }
 }
 
-export function completeRecord<TRecordDef extends RecordDef<TDbDefinition>, TDbDefinition extends DbDefinition = typeof commonBusinessChoices>(recordDef: TRecordDef): RecordInfoOf<TRecordDef, TDbDefinition>{
+export function completeRecord<TRecordDef extends RecordDef>(recordDef: TRecordDef): RecordInfoOf<TRecordDef>{
     return Object.fromEntries(Object.entries(recordDef).map(([name, fieldDef]) => ([name, {
         // @ts-expect-error type is specified because we need to guaranty the order in the completed type
         type: null,
@@ -57,27 +44,25 @@ export function completeRecord<TRecordDef extends RecordDef<TDbDefinition>, TDbD
         label: name.replace(/_/g,' '),
         description: '',
         ...fieldDef,
-    }]))) as RecordInfoOf<TRecordDef, TDbDefinition>;
+    }]))) as RecordInfoOf<TRecordDef>;
 }
 
 /* the fields default to nullable (that is the default completeRecord writes into the Info),
    so only the ones explicitly marked nullable:false stay free of null */
 export type NullPart<TFieldDef> = TFieldDef extends {nullable: false} ? never : null
 
-/* TODO
-export type RecordInstanceType<TDbDefinition extends DbDefinition, TRecordDef extends RecordDef<TDbDefinition>> = {
-    [K in keyof TRecordDef]: TDbDefinition['typeMapping'][TRecordDef[K]['type']]['tsType'] | NullPart<TRecordDef[K]>
+export type RecordInstanceType<TTypeCollection extends TypeCollection, TRecordDef extends RecordDef> = {
+    [K in keyof TRecordDef]: TTypeCollection[TRecordDef[K]['type']]['tsType'] | NullPart<TRecordDef[K]>
 }
-    */
 
 /* the pk fields are not nullable, but a record def alone does not know which fields are its
    pk: only the entity level does. Marking them is what turns a record def into the def the
    entity actually completes (and the instance type of a row of the entity). */
-export type NotNullableFieldsOf<TDbDefinition extends DbDefinition, TRecordDef extends RecordDef<TDbDefinition>, TNames extends string> = {
+export type NotNullableFieldsOf<TRecordDef extends RecordDef, TNames extends string> = {
     [K in keyof TRecordDef]: K extends TNames ? TRecordDef[K] & {nullable: false} : TRecordDef[K]
 }
 
-function notNullableFields<TDbDefinition extends DbDefinition>(recordDef: RecordDef<TDbDefinition>, names: readonly string[]): RecordDef<TDbDefinition> {
+function notNullableFields(recordDef: RecordDef, names: readonly string[]): RecordDef {
     return Object.fromEntries(Object.entries(recordDef).map(([name, fieldDef]) =>
         [name, names.includes(name) ? {...fieldDef, nullable: false} : fieldDef]
     ));
@@ -91,46 +76,41 @@ export type FkDef = {
     fields: readonly string[] | Readonly<Record<string, string>>
 }
 
-export type EntityDef<TDbDefinition extends DbDefinition = typeof commonBusinessChoices, TRecordDef extends RecordDef<TDbDefinition> = RecordDef<TDbDefinition>> = {
+export type EntityDef<TRecordDef extends RecordDef = RecordDef> = {
     fields: TRecordDef
     pk: readonly string[]
     fks?: Readonly<Record<string, FkDef>>
     uks?: Readonly<Record<string, readonly string[]>>
-} & ReturnType<TDbDefinition['entityCompleter']>
+}
 
 export function defineEntity<
-    const TDbDefinition extends DbDefinition,
+    TEntityDef extends EntityDef
+/*
     const TPk extends readonly (keyof TFields & string)[],
-    const TFields extends RecordDef<TDbDefinition>,
+    const TFields extends RecordDef<TypeCollection>,
     const TUks extends Readonly<Record<string, readonly (keyof TFields & string)[]>> = {},
     const TFks extends Readonly<Record<string, {entity: string, fields: readonly (keyof TFields & string)[] | {readonly [K in keyof TFields]?: string}}>> = {},
+*/
 >(
-    entityDef: {dbDefinition: TDbDefinition, fields: TFields, pk: TPk, fks?: TFks, uks?: TUks} & ReturnType<TDbDefinition['entityCompleter']>
-): {fields: TFields, pk: TPk, fks: TFks, uks: TUks} {
-    /* whatever the framework does not know about the entity travels in ...rest and is
-       returned untouched: no data of the definition is lost. The types do not carry it
-       (the callers get a // @ts-expect-error) */
+    entityDef: TEntityDef
+): TEntityDef {
     const {fields, pk, fks, uks, ...rest} = entityDef;
+    // @ts-expect-error TODO: check why this isnt fits
     return {
         fields,
         pk,
-        fks: fks ?? {} as TFks,
-        uks: uks ?? {} as TUks,
+        fks: fks ?? {} as Readonly<TEntityDef['fks']>,
+        uks: uks ?? {} as Readonly<TEntityDef['uks']>,
         ...rest,
     };
 }
 
-export function entityDefinitor<const TDbDefinition extends DbDefinition>(businessChoices:TDbDefinition){
-    return defineEntities;
-}
-
-
-export type PkFieldsOf<TEntityDef extends EntityDef<TDbDefinition>, TDbDefinition extends DbDefinition> =
+export type PkFieldsOf<TEntityDef extends EntityDef> =
     Pick<TEntityDef['fields'], TEntityDef['pk'][number] & keyof TEntityDef['fields']>
 
-export function extractPk<TEntityDef extends EntityDef<TDbDefinition>, TDbDefinition extends DbDefinition>(entityDef: TEntityDef): PkFieldsOf<TEntityDef, TDbDefinition> {
-    const fields: RecordDef<TDbDefinition> = entityDef.fields;
-    return Object.fromEntries(entityDef.pk.map(name => [name, fields[name]])) as PkFieldsOf<TEntityDef, TDbDefinition>;
+export function extractPk<TEntityDef extends EntityDef>(entityDef: TEntityDef): PkFieldsOf<TEntityDef> {
+    const fields: RecordDef = entityDef.fields;
+    return Object.fromEntries(entityDef.pk.map(name => [name, fields[name]])) as PkFieldsOf<TEntityDef>;
 }
 
 type FlattenPks<TPks extends readonly (readonly string[])[]> =
@@ -170,15 +150,15 @@ export type FkInfoOf<TFk extends FkDef> = {
     fields: TFk['fields'] extends readonly (infer TNames extends string)[] ? {[K in TNames]: K} : TFk['fields']
 }
 
-export type EntityInfo<TDbDefinition extends DbDefinition = typeof commonBusinessChoices> = {
-    fields: RecordInfo<TDbDefinition>
+export type EntityInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
+    fields: RecordInfo<TypeDefs>
     pk: readonly string[]
     fks: Readonly<Record<string, FkInfo>>
     uks: Readonly<Record<string, readonly string[]>>
 }
 
-export type EntityInfoOf<TEntityDef extends EntityDef<TDbDefinition>, TDbDefinition extends DbDefinition> = {
-    fields: RecordInfoOf<NotNullableFieldsOf<TDbDefinition, TEntityDef['fields'], TEntityDef['pk'][number]>, TDbDefinition>
+export type EntityInfoOf<TEntityDef extends EntityDef> = {
+    fields: RecordInfoOf<NotNullableFieldsOf<TEntityDef['fields'], TEntityDef['pk'][number]>>
     pk: DedupPk<TEntityDef['pk']>
     fks: TEntityDef['fks'] extends Readonly<Record<string, FkDef>>
         ? {[F in keyof TEntityDef['fks']]: FkInfoOf<TEntityDef['fks'][F]>}
@@ -195,27 +175,22 @@ function completeFk(fkDef: FkDef): FkInfo {
     };
 }
 
-export function completeEntity<const TEntityDef extends EntityDef<TDbDefinition>, TDbDefinition extends DbDefinition>(
-    dbDefinition: TDbDefinition, entityDef: TEntityDef
-): EntityInfoOf<TEntityDef, TDbDefinition> {
+export function completeEntity<const TEntityDef extends EntityDef>(entityDef: TEntityDef): EntityInfoOf<TEntityDef> {
     /* same as defineEntity: what the framework does not know about the entity is not lost,
        it goes through to the Info (the types do not carry it: see defineEntity) */
     const {fields, pk, fks, uks, ...rest} = entityDef;
     return Object.assign({
-        ...(dbDefinition.entityCompleter(entityDef)),
         fields: completeRecord(notNullableFields(fields, pk)),
         pk: mergePk(entityDef.pk),
         fks: Object.fromEntries(Object.entries(fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
         uks: uks ?? {},
-    } as EntityInfoOf<TEntityDef, TDbDefinition>, rest);
+    } as EntityInfoOf<TEntityDef>, rest);
 }
 
 /* the instance type of a row of the entity: like the record one, but the pk fields
    are not nullable */
-   /* TODO
-export type EntityInstanceType<TTypeCollection extends DbDefinition, TEntityDef extends EntityDef<TTypeCollection>> =
-    RecordInstanceType<TTypeCollection, NotNullableFieldsOf<TTypeCollection, TEntityDef['fields'], TEntityDef['pk'][number]>>
-*/
+export type EntityInstanceType<TTypeCollection extends TypeCollection, TEntityDef extends EntityDef> =
+    RecordInstanceType<TTypeCollection, NotNullableFieldsOf<TEntityDef['fields'], TEntityDef['pk'][number]>>
 
 type SameKeySet<TA extends string, TB extends string> = [TA] extends [TB] ? ([TB] extends [TA] ? true : false) : false
 
@@ -224,12 +199,12 @@ type FkTargetFields<TFk extends FkDef> =
     : TFk['fields'] extends Readonly<Record<string, string>> ? TFk['fields'][keyof TFk['fields']]
     : never
 
-type FkMatchesTargetKey<TFk extends FkDef, TTarget extends EntityDef<DbDefinition>> =
+type FkMatchesTargetKey<TFk extends FkDef, TTarget extends EntityDef> =
     SameKeySet<FkTargetFields<TFk>, TTarget['pk'][number]> extends true ? true
     : true extends {[U in keyof NonNullable<TTarget['uks']>]: SameKeySet<FkTargetFields<TFk>, NonNullable<TTarget['uks']>[U][number]>}[keyof NonNullable<TTarget['uks']>] ? true
     : false
 
-type ValidatedFks<TFks extends Readonly<Record<string, FkDef>>, TEntities extends Readonly<Record<string, EntityDef<DbDefinition>>>> = {
+type ValidatedFks<TFks extends Readonly<Record<string, FkDef>>, TEntities extends Readonly<Record<string, EntityDef>>> = {
     [F in keyof TFks]: TFks[F]['entity'] extends keyof TEntities
         ? FkMatchesTargetKey<TFks[F], TEntities[TFks[F]['entity'] & keyof TEntities]> extends true
             ? TFks[F]
@@ -237,13 +212,13 @@ type ValidatedFks<TFks extends Readonly<Record<string, FkDef>>, TEntities extend
         : never
 }
 
-export type ValidatedEntities<TEntities extends Readonly<Record<string, EntityDef<DbDefinition>>>> = {
+export type ValidatedEntities<TEntities extends Readonly<Record<string, EntityDef>>> = {
     [E in keyof TEntities]: {fks?: ValidatedFks<NonNullable<TEntities[E]['fks']>, TEntities>}
 }
 
 /* system-level checks, where all the entities are known: every fk must point to an entity
    of the system, and its target fields must be the complete pk or one of the uks of it */
-export function defineEntities<const TEntities extends Readonly<Record<string, EntityDef<DbDefinition>>>>(
+export function defineEntities<const TEntities extends Readonly<Record<string, EntityDef>>>(
     entityDefs: TEntities & ValidatedEntities<TEntities>
 ): TEntities {
     return entityDefs;
