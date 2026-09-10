@@ -402,3 +402,18 @@ describe("aida design snapshot", function(){
         assert.equal(generated, expected);
     })
 })
+
+describe("the parametric type collection must be explicit", function(){
+    it("types an instance of an entity that uses a type of its own system", function(){
+        /* clases has a field of type 'fecha', which belongs to the aida typeDefs and not to
+           commonTypeDefs: the default of the parametric type hides which collection is in use */
+        var unaClase: DefinedType<typeof clases> = {
+            periodo: '2025-1',
+            materia: 'ALG',
+            orden  : 1,
+            fecha  : {año: 2025, mes: 3, día: 10},
+            tema   : 'introducción',
+        };
+        assert.equal(unaClase.orden, 1);
+    })
+})
