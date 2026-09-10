@@ -12,7 +12,7 @@ export const commonTypeDefs = {
     boolean    : {tsType: boxType<boolean>()},
 } satisfies TypeCollection;
 
-export type FieldDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
+export type FieldDef<TypeDefs extends TypeCollection> = {
     type: keyof TypeDefs
     isName?: true
     nullable?: boolean
@@ -20,12 +20,12 @@ export type FieldDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = 
     description?: string
 }
 
-export type FieldInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Required<Omit<FieldDef<TypeDefs>, 'isName'>> & {isName: boolean}
+export type FieldInfo<TypeDefs extends TypeCollection> = Required<Omit<FieldDef<TypeDefs>, 'isName'>> & {isName: boolean}
 
-export type RecordDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Record<string, FieldDef<TypeDefs>>
+export type RecordDef<TypeDefs extends TypeCollection> = Record<string, FieldDef<TypeDefs>>
 
-// export type RecordInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Required<RecordDef<TypeDefs>>
-export type RecordInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = Record<string, FieldInfo<TypeDefs>>
+// export type RecordInfo<TypeDefs extends TypeCollection> = Required<RecordDef<TypeDefs>>
+export type RecordInfo<TypeDefs extends TypeCollection> = Record<string, FieldInfo<TypeDefs>>
 
 export type RecordInfoOf<TRecordDef extends RecordDef<TypeCollection>> = {
     [K in keyof TRecordDef]: Omit<FieldInfo<TypeCollection>, 'type' | 'nullable'> & {
@@ -76,7 +76,7 @@ export type FkDef = {
     fields: readonly string[] | Readonly<Record<string, string>>
 }
 
-export type EntityDef<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
+export type EntityDef<TypeDefs extends TypeCollection> = {
     fields: RecordDef<TypeDefs>
     pk: readonly string[]
     fks?: Readonly<Record<string, FkDef>>
@@ -144,7 +144,7 @@ export type FkInfoOf<TFk extends FkDef> = {
     fields: TFk['fields'] extends readonly (infer TNames extends string)[] ? {[K in TNames]: K} : TFk['fields']
 }
 
-export type EntityInfo<TypeDefs extends TypeCollection = typeof commonTypeDefs> = {
+export type EntityInfo<TypeDefs extends TypeCollection> = {
     fields: RecordInfo<TypeDefs>
     pk: readonly string[]
     fks: Readonly<Record<string, FkInfo>>

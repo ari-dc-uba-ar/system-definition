@@ -5,7 +5,7 @@ import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
 import { RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
-    EntityDef, EntityInfoOf, ExpandType, FieldDef, Optional, TypeCollection
+    EntityDef, EntityInfoOf, ExpandType, FieldDef, Optional, RecordDef, TypeCollection
 } from "../src/common/system-design";
 import { typeDefs, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
     cargos
@@ -415,5 +415,13 @@ describe("the parametric type collection must be explicit", function(){
             tema   : 'introducción',
         };
         assert.equal(unaClase.orden, 1);
+    })
+    it("rejects the defs that omit the type collection", function(){
+        // @ts-expect-error FieldDef has no default collection: which types exist must be said
+        type LooseFieldDef = FieldDef
+        // @ts-expect-error idem RecordDef
+        type LooseRecordDef = RecordDef
+        // @ts-expect-error idem EntityDef
+        type LooseEntityDef = EntityDef
     })
 })

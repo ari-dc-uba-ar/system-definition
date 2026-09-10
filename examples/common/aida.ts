@@ -214,10 +214,10 @@ export const entityDefs = defineEntities({
     mesas,
 })
 
-/* the instance type of a record def, bound to this entity instance system's typeDefs (the fields that are
+/* the instance type of a row of an entity, bound to this system's typeDefs (the fields that are
    not marked nullable:false admit null):
    DefinedType<typeof cargos> = {cargo: string, orden?: number|null, ...} */
-export type DefinedType<TRecordDef extends EntityDef> = EntityInstanceType<typeof typeDefs, TRecordDef>
+export type DefinedType<TEntityDef extends EntityDef<typeof typeDefs>> = EntityInstanceType<typeof typeDefs, TEntityDef>
 
 export function validarCargo(cargoSinValidar: DefinedType<typeof cargos>){
     // denominacion is nullable in the def, so the deduced type forces the null check here
