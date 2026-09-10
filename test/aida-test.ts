@@ -5,9 +5,9 @@ import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
 import { RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
-    EntityDef, EntityInfoOf, ExpandType, FieldDef, Optional, RecordDef, TypeCollection
+    EntityDef, EntityInfoOf, ExpandType, FieldDef, Optional, RecordDef, SystemEntityContext
 } from "../src/common/system-design";
-import { typeDefs, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
+import { aidaContext, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
     cargos
 } from "../examples/common/aida";
 
@@ -20,7 +20,7 @@ describe("aida example", function(){
             orden        : number  | null,
             puede_dirigir: boolean | null
         }
-        type CargoDeducido = RecordInstanceType<typeof typeDefs, typeof cargo>
+        type CargoDeducido = RecordInstanceType<typeof aidaContext, typeof cargo>
         var jtp: Cargo = {
             cargo        : 'JTP',
             denominacion : 'Jefe de Trabajos Prácticos',
@@ -56,12 +56,12 @@ describe("aida example", function(){
     it("can deduce the type from DefinedType", function(){
         var miCargo = {cargo: 'A1'}
         // var expected: ExpandType<Optional<DefinedType<typeof cargo>>>;
-        var expected: ExpandType<Optional<EntityInstanceType<typeof typeDefs, typeof cargos>>>;
+        var expected: ExpandType<Optional<EntityInstanceType<typeof aidaContext, typeof cargos>>>;
         expected = miCargo;
         assert.equal(expected, miCargo);
     })
     it("reflects the nullability of the fields in the record instance type", function(){
-        type Docente = RecordInstanceType<typeof typeDefs, typeof docente>
+        type Docente = RecordInstanceType<typeof aidaContext, typeof docente>
         var pepe: Docente = {
             docente          : 'pepe',
             apellido         : 'Pérez',
@@ -182,7 +182,7 @@ describe("aida entities", function(){
         assert.deepStrictEqual(Object.keys(presencia), ['periodo', 'materia', 'alumno', 'orden']);
         assert.deepStrictEqual(presenciasPk, mergedBack);
         // the whole chain still deduces the instance type:
-        type Presencia = RecordInstanceType<typeof typeDefs, typeof presencia>
+        type Presencia = RecordInstanceType<typeof aidaContext, typeof presencia>
         var unaPresencia: Presencia = {periodo: '2026-1c', materia: 'AlgoI', alumno: 'L1234', orden: 1};
         // the inherited pk fields are nullable like any other field: the record def alone does
         // not know which fields are part of the pk (that is what EntityInstanceType is for)
@@ -317,7 +317,7 @@ describe("aida entity completion (Def → Info)", function(){
         assert.equal(wrongNullable, false);
     })
     it("deduces the entity instance type with the pk fields not nullable", function(){
-        type Clase = EntityInstanceType<typeof typeDefs, typeof clases>
+        type Clase = EntityInstanceType<typeof aidaContext, typeof clases>
         var unaClase: Clase = {
             periodo: '2026-1c', materia: 'AlgoI', orden: 1,  // the pk admits no null
             fecha  : null, tema: null,                       // the rest keeps its nullability
@@ -346,7 +346,7 @@ describe("aida entity completion (Def → Info)", function(){
 })
 
 describe("extended declaractions", function(){
-    type MyFieldDef = FieldDef<typeof typeDefs> & {otherText?:string, otherBool:boolean};
+    type MyFieldDef = FieldDef<typeof aidaContext> & {otherText?:string, otherBool:boolean};
     const extendedCargo = {
         cargo            : {type: 'text'    , otherBool:true},
         denominacion     : {type: 'text'    , otherBool:true, label:'denominación'},
@@ -368,13 +368,13 @@ describe("aida design snapshot", function(){
     it("matches aida-design.toon", function(){
         /* provisional flattening until TOLON exists: toon only formats arrays of uniform
            objects as tables, so the fields map becomes an array with the name inside */
-        type FieldInfoRow<TEntityDef extends EntityDef<TypeCollection>> = {
+        type FieldInfoRow<TEntityDef extends EntityDef<SystemEntityContext>> = {
             [K in keyof EntityInfoOf<TEntityDef>['fields']]: {name: K} & EntityInfoOf<TEntityDef>['fields'][K]
         }[keyof TEntityDef['fields']]
-        type DesignSnapshot<TEntities extends Record<string, EntityDef<TypeCollection>>> = {
+        type DesignSnapshot<TEntities extends Record<string, EntityDef<SystemEntityContext>>> = {
             [E in keyof TEntities]: Omit<EntityInfoOf<TEntities[E]>, 'fields'> & {fields: FieldInfoRow<TEntities[E]>[]}
         }
-        function designSnapshot<const TEntities extends Record<string, EntityDef<TypeCollection>>>(eds: TEntities): DesignSnapshot<TEntities> {
+        function designSnapshot<const TEntities extends Record<string, EntityDef<SystemEntityContext>>>(eds: TEntities): DesignSnapshot<TEntities> {
             return LikeAr(eds).map(ed => {
                 var entityInfo = completeEntity(ed);
                 return {
@@ -405,7 +405,7 @@ describe("aida design snapshot", function(){
 
 describe("the parametric type collection must be explicit", function(){
     it("types an instance of an entity that uses a type of its own system", function(){
-        /* clases has a field of type 'fecha', which belongs to the aida typeDefs and not to
+        /* clases has a field of type 'fecha', which belongs to the aida context and not to
            commonTypeDefs: the default of the parametric type hides which collection is in use */
         var unaClase: DefinedType<typeof clases> = {
             periodo: '2025-1',
@@ -423,5 +423,23 @@ describe("the parametric type collection must be explicit", function(){
         type LooseRecordDef = RecordDef
         // @ts-expect-error idem EntityDef
         type LooseEntityDef = EntityDef
+    })
+})
+
+describe("one context per system, shared by every layer", function(){
+    /* each layer requires only the part of the context it uses, so a system can define one
+       context with everything in it and hand the same one to all of them */
+    const extendedContext = {...aidaContext, records: {cargo}, whatever: true}
+    it("accepts a context that carries more than the types", function(){
+        type ExtendedCargo = RecordInstanceType<typeof extendedContext, typeof cargo>
+        var jtp: ExtendedCargo = {cargo: 'JTP', denominacion: null, orden: 4, puede_dirigir: null};
+        // the deduced type does not depend on the part of the context the layer ignores
+        var alsoAida: RecordInstanceType<typeof aidaContext, typeof cargo> = jtp;
+        var back: ExtendedCargo = alsoAida;
+        assert.deepStrictEqual(back, jtp);
+    })
+    it("rejects a bare type collection, which is not a context", function(){
+        // @ts-expect-error the collection has to come inside the types property
+        type NotAContext = RecordDef<typeof aidaContext.types>
     })
 })

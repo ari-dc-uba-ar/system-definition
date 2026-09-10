@@ -8,13 +8,17 @@ import {
 
 type Fecha = {año: number, mes: number, día:number}
 
-export var typeDefs = {
-    ...commonTypeDefs,
-    fecha: {tsType: boxType<Fecha>()},
-    email: commonTypeDefs.text
+/* the context this system is described against: one value that every layer of the SSOT
+   receives, so a def never has to say twice which types it is talking about */
+export const aidaContext = {
+    types: {
+        ...commonTypeDefs,
+        fecha: {tsType: boxType<Fecha>()},
+        email: commonTypeDefs.text,
+    }
 }
 
-export type RecordsDef = RecordDef<typeof typeDefs>
+export type RecordsDef = RecordDef<typeof aidaContext>
 
 export const cargo = {
     cargo            : {type: 'text' },
@@ -214,10 +218,10 @@ export const entityDefs = defineEntities({
     mesas,
 })
 
-/* the instance type of a row of an entity, bound to this system's typeDefs (the fields that are
+/* the instance type of a row of an entity, bound to this system's context (the fields that are
    not marked nullable:false admit null):
    DefinedType<typeof cargos> = {cargo: string, orden?: number|null, ...} */
-export type DefinedType<TEntityDef extends EntityDef<typeof typeDefs>> = EntityInstanceType<typeof typeDefs, TEntityDef>
+export type DefinedType<TEntityDef extends EntityDef<typeof aidaContext>> = EntityInstanceType<typeof aidaContext, TEntityDef>
 
 export function validarCargo(cargoSinValidar: DefinedType<typeof cargos>){
     // denominacion is nullable in the def, so the deduced type forces the null check here
