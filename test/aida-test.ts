@@ -4,9 +4,10 @@ import * as path from "path";
 import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
-import { RecordInstanceType, EntityInstanceType, completeRecord, completeEntity, defineEntity, defineEntities, extractPk, mergePk,
-    EntityDef, EntityInfoOf, ExpandType, FieldDef, Optional, RecordDef, SystemEntityContext
-} from "../src/common/system-design";
+import { FieldDef, RecordDef, RecordInstanceType, completeRecord } from "../src/common/ssot-record";
+import { EntityDef, EntityInfoOf, EntityInstanceType, SystemEntityContext,
+    completeEntity, defineEntity, defineEntities, extractPk, mergePk } from "../src/common/ssot-entity";
+import { ExpandType, Optional } from "../src/common/type-utils";
 import { aidaContext, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
     cargos
 } from "../examples/common/aida";

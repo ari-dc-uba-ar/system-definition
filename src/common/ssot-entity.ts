@@ -1,77 +1,9 @@
-export const boxType = <T>() => null as T
+/* the entity: the container level, the unit that can be shown as a grid. It knows the record
+   and adds what only makes sense over a stored collection: pk, uks and fks. */
 
-export interface TypeDef<TsType> {
-    tsType: TsType
-}
-
-export type TypeCollection = Record<string , TypeDef<any>>
-
-/* every layer of the SSOT takes exactly one type parameter: the context of the system being
-   described. Each layer declares the part of the context it needs, and the outer layers extend
-   the inner ones, so a system defines its context once and passes the same one to all of them. */
-export type SystemTypeContext = {types: TypeCollection}
-
-export const commonTypeDefs = {
-    text       : {tsType: boxType<string>()},
-    integer    : {tsType: boxType<number>()},
-    boolean    : {tsType: boxType<boolean>()},
-} satisfies TypeCollection;
-
-export type FieldDef<TContext extends SystemTypeContext> = {
-    type: keyof TContext['types']
-    isName?: true
-    nullable?: boolean
-    label?: string
-    description?: string
-}
-
-export type FieldInfo<TContext extends SystemTypeContext> = Required<Omit<FieldDef<TContext>, 'isName'>> & {isName: boolean}
-
-export type RecordDef<TContext extends SystemTypeContext> = Record<string, FieldDef<TContext>>
-
-// export type RecordInfo<TContext extends SystemTypeContext> = Required<RecordDef<TContext>>
-export type RecordInfo<TContext extends SystemTypeContext> = Record<string, FieldInfo<TContext>>
-
-export type RecordInfoOf<TRecordDef extends RecordDef<SystemTypeContext>> = {
-    [K in keyof TRecordDef]: Omit<FieldInfo<SystemTypeContext>, 'type' | 'nullable'> & {
-        type: TRecordDef[K]['type']
-        // what is known statically is only the explicit nullable:false; the default stays boolean
-        nullable: TRecordDef[K] extends {nullable: false} ? false : boolean
-    }
-}
-
-export function completeRecord<TRecordDef extends RecordDef<SystemTypeContext>>(recordDef: TRecordDef): RecordInfoOf<TRecordDef>{
-    return Object.fromEntries(Object.entries(recordDef).map(([name, fieldDef]) => ([name, {
-        // @ts-expect-error type is specified because we need to guaranty the order in the completed type
-        type: null,
-        isName: false,
-        nullable: true,
-        label: name.replace(/_/g,' '),
-        description: '',
-        ...fieldDef,
-    }]))) as RecordInfoOf<TRecordDef>;
-}
-
-/* the fields default to nullable (that is the default completeRecord writes into the Info),
-   so only the ones explicitly marked nullable:false stay free of null */
-export type NullPart<TFieldDef> = TFieldDef extends {nullable: false} ? never : null
-
-export type RecordInstanceType<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>> = {
-    [K in keyof TRecordDef]: TContext['types'][TRecordDef[K]['type']]['tsType'] | NullPart<TRecordDef[K]>
-}
-
-/* the pk fields are not nullable, but a record def alone does not know which fields are its
-   pk: only the entity level does. Marking them is what turns a record def into the def the
-   entity actually completes (and the instance type of a row of the entity). */
-export type NotNullableFieldsOf<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>, TNames extends string> = {
-    [K in keyof TRecordDef]: K extends TNames ? TRecordDef[K] & {nullable: false} : TRecordDef[K]
-}
-
-function notNullableFields(recordDef: RecordDef<SystemTypeContext>, names: readonly string[]): RecordDef<SystemTypeContext> {
-    return Object.fromEntries(Object.entries(recordDef).map(([name, fieldDef]) =>
-        [name, names.includes(name) ? {...fieldDef, nullable: false} : fieldDef]
-    ));
-}
+import { SystemTypeContext } from "./ssot-types";
+import { RecordDef, RecordInfo, RecordInfoOf, RecordInstanceType, NotNullableFieldsOf,
+    completeRecord, notNullableFields } from "./ssot-record";
 
 /* the entity layer needs nothing beyond the types yet, but it names its own context anyway:
    what it will need later (the records, the other entities) then has where to go without
@@ -224,13 +156,3 @@ export function defineEntities<const TEntities extends Readonly<Record<string, E
 ): TEntities {
     return entityDefs;
 }
-
-export type ExpandType<T> = {[K in keyof T]: T[K]} & {}
-
-type IsNullable<T> = null extends T ? true : undefined extends T ? true : false;
-
-export type Optional<T> = {
-  [K in keyof T as IsNullable<T[K]> extends true ? never : K]: T[K];
-} & {
-  [K in keyof T as IsNullable<T[K]> extends true ? K : never]?: T[K];
-};

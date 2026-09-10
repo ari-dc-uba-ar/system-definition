@@ -1,10 +1,8 @@
 /* EJEMPLO del sistema de alumnos */
 
-import {
-    boxType, commonTypeDefs,
-    RecordDef, EntityInstanceType, defineEntity, defineEntities, extractPk, mergePk,
-    EntityDef
-} from "../../src/common/system-design";
+import { boxType, commonTypeDefs } from "../../src/common/ssot-types";
+import { RecordDef } from "../../src/common/ssot-record";
+import { EntityDef, EntityInstanceType, defineEntity, defineEntities, extractPk, mergePk } from "../../src/common/ssot-entity";
 
 type Fecha = {año: number, mes: number, día:number}
 

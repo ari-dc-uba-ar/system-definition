@@ -25,7 +25,10 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
 
 ## Estructura
 
-* `src/common`: el framework descriptor. No conoce ningún sistema concreto.
+* `src/common`: el framework descriptor. No conoce ningún sistema concreto. Está cortado en capas,
+  cada una conoce a la anterior y no al revés: `ssot-types.ts` (los tipos de dominio y el contexto),
+  `ssot-record.ts` (campos y registros), `ssot-entity.ts` (pk, uks, fks) y `type-utils.ts` (helpers
+  de TypeScript, ajenos al SSOT). El `index.ts` reexporta todo.
   (Más adelante podrían aparecer `src/backend` y `src/frontend`, o aplanarse todo a `src` si no hacen falta.)
 * `examples/common`: un sistema de ejemplo (sistema de alumnos) descripto con el framework.
 * `test/`: tests con mocha que importan las definiciones de los ejemplos (los ejemplos implican tests).
@@ -55,6 +58,14 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
   de compile-time a runtime.
 * La validación estructural de las descripciones (FK que apuntan a entidades existentes,
   PK sobre campos declarados, etc.) se expresa preferentemente en el sistema de tipos.
+* Cada capa del SSOT recibe **un solo parámetro de tipo**: el contexto del sistema que se describe.
+  `SystemTypeContext` es `{types: TypeCollection}` y `SystemEntityContext` lo extiende (todavía no
+  agrega nada; es donde van a ir los records y las entidades cuando hagan falta). Un sistema define
+  un contexto único (`aidaContext`) y se lo pasa igual a todas las capas: cada una exige solo la
+  parte que usa, así que un contexto con más cosas adentro sirve lo mismo.
+* Los parámetros de tipo **no llevan default**. Si no se dice contra qué contexto se define algo,
+  no compila. El default silencioso escondía cuál era la colección en uso y hacía, por ejemplo,
+  que el propio sistema no pudiera tipar las filas de sus entidades con tipos propios.
 
 ## Convención de nombres: Def e Info
 
