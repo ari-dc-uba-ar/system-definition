@@ -6,11 +6,11 @@ import { strict as LikeAr } from "like-ar";
 
 import { FieldDef, RecordDef, RecordInstanceType, completeRecord, recordDef } from "../src/common/ssot-record";
 import { AnyEntityDef, EntityDef, EntityInfoOf, EntityInstanceType,
-    completeEntity, defineEntity, defineEntities, extractPk, mergePk } from "../src/common/ssot-entity";
+    completeEntity, entityDef, defineEntities, extractPk, mergePk, withRecords } from "../src/common/ssot-entity";
 import { boxType, defineTypes } from "../src/common/ssot-types";
 import { ExpandType, Optional } from "../src/common/type-utils";
-import { aidaContext, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
-    cargos, alumnoSearchParams, Fecha, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef
+import { aidaTypes, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
+    cargos, alumnoSearchParams, Fecha, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef, aida, aida1
 } from "../examples/common/aida";
 
 describe("aida example", function(){
@@ -22,7 +22,7 @@ describe("aida example", function(){
             orden        : number  | null,
             puede_dirigir: boolean | null
         }
-        type CargoDeducido = RecordInstanceType<typeof aidaContext, typeof cargo>
+        type CargoDeducido = RecordInstanceType<typeof aidaTypes, typeof cargo>
         var jtp: Cargo = {
             cargo        : 'JTP',
             denominacion : 'Jefe de Trabajos Prácticos',
@@ -58,12 +58,12 @@ describe("aida example", function(){
     it("can deduce the type from DefinedType", function(){
         var miCargo = {cargo: 'A1'}
         // var expected: ExpandType<Optional<DefinedType<typeof cargo>>>;
-        var expected: ExpandType<Optional<EntityInstanceType<typeof aidaContext, typeof cargos>>>;
+        var expected: ExpandType<Optional<EntityInstanceType<typeof aida, typeof cargos>>>;
         expected = miCargo;
         assert.equal(expected, miCargo);
     })
     it("reflects the nullability of the fields in the record instance type", function(){
-        type Docente = RecordInstanceType<typeof aidaContext, typeof docente>
+        type Docente = RecordInstanceType<typeof aidaTypes, typeof docente>
         var pepe: Docente = {
             docente          : 'pepe',
             apellido         : 'Pérez',
@@ -85,14 +85,14 @@ describe("aida example", function(){
         assert.equal(emailOrNull, null);
     })
     it("completes a record def into a record info", function(){
-        var materiaInfo = completeRecord(aidaContext, materia);
+        var materiaInfo = completeRecord(aidaTypes, materia);
         assert.deepStrictEqual(materiaInfo, {
             materia      : {type: 'text', label: 'materia'     , nullable: true , description: '', isName: false},
             denominacion : {type: 'text', label: 'denominación', nullable: false, description: 'si corresponde a más de una carrera, aclarar en el nombre', isName: true},
         });
     })
     it("completes preserving the field set and the type literals", function(){
-        var cargoInfo = completeRecord(aidaContext, cargo);
+        var cargoInfo = completeRecord(aidaTypes, cargo);
         // the type literals from the def must survive the completion:
         var cargoType: 'text' = cargoInfo.cargo.type;
         // @ts-expect-error
@@ -128,11 +128,11 @@ describe("aida entities", function(){
         assert.deepStrictEqual(clasesPkBack, clasesPk);
     })
     it("rejects pk keys that are not keys of fields", function(){
-        // @ts-expect-error 'inexistente' is not a field
-        var wrong = defineEntity({pk: ['inexistente'], fields: materia});
+        // @ts-expect-error 'inexistente' is not a field of the record the entity names
+        var wrong = entityDef(aida, {record: 'materia', pk: ['inexistente']});
         // @ts-expect-error a wrong key among valid ones is also rejected
-        var wrong2 = defineEntity({pk: ['materia', 'inexistente'], fields: materia});
-        // (the check is compile-time only: at runtime defineEntity is the identity)
+        var wrong2 = entityDef(aida, {record: 'materia', pk: ['materia', 'inexistente']});
+        // (the check is compile-time only: at runtime entityDef is the identity)
         assert.deepStrictEqual(wrong.pk, ['inexistente']);
         assert.deepStrictEqual(wrong2.pk, ['materia', 'inexistente']);
     })
@@ -184,7 +184,7 @@ describe("aida entities", function(){
         assert.deepStrictEqual(Object.keys(presencia), ['periodo', 'materia', 'alumno', 'orden']);
         assert.deepStrictEqual(presenciasPk, mergedBack);
         // the whole chain still deduces the instance type:
-        type Presencia = RecordInstanceType<typeof aidaContext, typeof presencia>
+        type Presencia = RecordInstanceType<typeof aidaTypes, typeof presencia>
         var unaPresencia: Presencia = {periodo: '2026-1c', materia: 'AlgoI', alumno: 'L1234', orden: 1};
         // the inherited pk fields are nullable like any other field: the record def alone does
         // not know which fields are part of the pk (that is what EntityInstanceType is for)
@@ -225,12 +225,13 @@ describe("aida fks, uks and isName", function(){
         assert.equal(codigoIsName, undefined);
     })
     it("rejects fk source fields and uk fields that are not fields", function(){
+        const soloMateria = withRecords(aidaTypes, {materia});
         // @ts-expect-error 'inexistente' is not a field (array form)
-        var wrongFk = defineEntity({pk: ['materia'], fks: {x: {entity: 'materias', fields: ['inexistente']}}, fields: materia});
+        var wrongFk = entityDef(soloMateria, {record: 'materia', pk: ['materia'], fks: {x: {entity: 'materias', fields: ['inexistente']}}});
         // @ts-expect-error 'inexistente' is not a field (map form: the source is the key)
-        var wrongFkMap = defineEntity({pk: ['materia'], fks: {x: {entity: 'materias', fields: {inexistente: 'materia'}}}, fields: materia});
+        var wrongFkMap = entityDef(soloMateria, {record: 'materia', pk: ['materia'], fks: {x: {entity: 'materias', fields: {inexistente: 'materia'}}}});
         // @ts-expect-error uk fields must be fields too
-        var wrongUk = defineEntity({pk: ['materia'], uks: {u: ['inexistente']}, fields: materia});
+        var wrongUk = entityDef(soloMateria, {record: 'materia', pk: ['materia'], uks: {u: ['inexistente']}});
         // (the checks are compile-time only)
         assert.equal(wrongFk.fks.x.entity, 'materias');
         assert.deepStrictEqual(wrongUk.uks, {u: ['inexistente']});
@@ -241,16 +242,22 @@ describe("aida fks, uks and isName", function(){
         assert.deepStrictEqual(Object.keys(entityDefs).length, 11);
         assert.equal(entityDefs.presencias, presencias);
         // a fk against a uk of the target entity is accepted:
-        const apuntes = defineEntity({pk: ['apunte'], fks: {materia_por_nombre: {entity: 'materias', fields: {denominacion_materia: 'denominacion'}}}, fields: {apunte: {type: 'text'}, denominacion_materia: {type: 'text'}}});
+        const otros = withRecords(aidaTypes, {
+            apunte : recordDef(aidaTypes, {apunte: {type: 'text'}, denominacion_materia: {type: 'text'}}),
+            huerfano: recordDef(aidaTypes, {x: {type: 'text'}}),
+            franja : recordDef(aidaTypes, {dia: {type: 'text'}, hora: {type: 'integer'}}),
+            evento : recordDef(aidaTypes, {evento: {type: 'text'}, dia: {type: 'text'}}),
+        });
+        const apuntes = entityDef(otros, {record: 'apunte', pk: ['apunte'], fks: {materia_por_nombre: {entity: 'materias', fields: {denominacion_materia: 'denominacion'}}}});
         const miniSystem = defineEntities({materias, apuntes});
         assert.deepStrictEqual(Object.keys(miniSystem), ['materias', 'apuntes']);
         // a fk to an entity that is not part of the system is rejected:
-        const huerfanos = defineEntity({pk: ['x'], fks: {rota: {entity: 'inexistentes', fields: {x: 'algo'}}}, fields: {x: {type: 'text'}}});
+        const huerfanos = entityDef(otros, {record: 'huerfano', pk: ['x'], fks: {rota: {entity: 'inexistentes', fields: {x: 'algo'}}}});
         // @ts-expect-error 'inexistentes' is not an entity of the system
         defineEntities({huerfanos});
         // a fk that references only a part of a composite pk (and no uk) is rejected:
-        const franjas = defineEntity({pk: ['dia', 'hora'], fields: {dia: {type: 'text'}, hora: {type: 'integer'}}});
-        const eventos = defineEntity({pk: ['evento'], fks: {franja: {entity: 'franjas', fields: {dia: 'dia'}}}, fields: {evento: {type: 'text'}, dia: {type: 'text'}}});
+        const franjas = entityDef(otros, {record: 'franja', pk: ['dia', 'hora']});
+        const eventos = entityDef(otros, {record: 'evento', pk: ['evento'], fks: {franja: {entity: 'franjas', fields: {dia: 'dia'}}}});
         // @ts-expect-error 'hora' is missing: the fk must reference the complete pk or a uk
         defineEntities({franjas, eventos});
     })
@@ -258,7 +265,7 @@ describe("aida fks, uks and isName", function(){
 
 describe("aida entity completion (Def → Info)", function(){
     it("normalizes array-form fks to the source→target map form", function(){
-        var cursosInfo = completeEntity(aidaContext, cursos);
+        var cursosInfo = completeEntity(aida, cursos);
         type CursosFksExpected = {
             periodos   : {entity: 'periodos', fields: {periodo: 'periodo'}},
             materias   : {entity: 'materias', fields: {materia: 'materia'}},
@@ -280,7 +287,7 @@ describe("aida entity completion (Def → Info)", function(){
         assert.equal(wrongTarget, 'periodo');
     })
     it("keeps map-form fks as they are", function(){
-        var mesasInfo = completeEntity(aidaContext, mesas);
+        var mesasInfo = completeEntity(aida, mesas);
         var presidenteFk: {entity: 'docentes', fields: {presidente: 'docente'}} = mesasInfo.fks.presidente;
         var presidenteFkBack: typeof mesasInfo.fks.presidente = presidenteFk;
         // @ts-expect-error after completion the array form is gone: fields is always a map
@@ -290,19 +297,19 @@ describe("aida entity completion (Def → Info)", function(){
         assert.deepStrictEqual(noArray, {periodo: 'periodo', materia: 'materia'});
     })
     it("dedups the pk, so overlapping pks can be spread without mergePk", function(){
-        var presenciasAlt = defineEntity({
+        var presenciasAlt = entityDef(aida, {
+            record: 'presencia',
             // periodo and materia appear twice in the spread:
             pk: [...inscripciones.pk, ...clases.pk],
-            fields: presencia,
         });
-        var presenciasAltInfo = completeEntity(aidaContext, presenciasAlt);
+        var presenciasAltInfo = completeEntity(aida, presenciasAlt);
         var pkExpected: readonly ['periodo', 'materia', 'alumno', 'orden'] = presenciasAltInfo.pk;
         var pkBack: typeof presenciasAltInfo.pk = pkExpected;
         assert.deepStrictEqual(presenciasAltInfo.pk, ['periodo', 'materia', 'alumno', 'orden']);
         assert.deepStrictEqual(pkBack, pkExpected);
     })
     it("completes the pk fields as not nullable", function(){
-        var clasesInfo = completeEntity(aidaContext, clases);
+        var clasesInfo = completeEntity(aida, clases);
         /* the type checks come first: assert.deepStrictEqual is an assertion signature, so it
            narrows the type of what it receives and any type check after it would be vacuous */
         var periodoNullable: false = clasesInfo.fields.periodo.nullable;
@@ -319,7 +326,7 @@ describe("aida entity completion (Def → Info)", function(){
         assert.equal(wrongNullable, false);
     })
     it("deduces the entity instance type with the pk fields not nullable", function(){
-        type Clase = EntityInstanceType<typeof aidaContext, typeof clases>
+        type Clase = EntityInstanceType<typeof aida, typeof clases>
         var unaClase: Clase = {
             periodo: '2026-1c', materia: 'AlgoI', orden: 1,  // the pk admits no null
             fecha  : null, tema: null,                       // the rest keeps its nullability
@@ -333,11 +340,11 @@ describe("aida entity completion (Def → Info)", function(){
         assert.equal(tema, null);
     })
     it("completes the fields and keeps the uks", function(){
-        var materiasInfo = completeEntity(aidaContext, materias);
+        var materiasInfo = completeEntity(aida, materias);
         // the pk field completes as not nullable; the rest, as the plain record does:
         assert.deepStrictEqual(materiasInfo.fields, {
-            ...completeRecord(aidaContext, materia),
-            materia: {...completeRecord(aidaContext, materia).materia, nullable: false},
+            ...completeRecord(aidaTypes, materia),
+            materia: {...completeRecord(aidaTypes, materia).materia, nullable: false},
         });
         var uksExpected: {denominacion: readonly ['denominacion']} = materiasInfo.uks;
         var uksBack: typeof materiasInfo.uks = uksExpected;
@@ -352,9 +359,9 @@ describe("extended declaractions", function(){
        is the one the context carries. Extending aida is extending its completer: the extras
        come out in the info with the defaults this variant chose. */
     const extendedContext = defineTypes({
-        types: aidaContext.types,
+        types: aidaTypes.types,
         completeField: (fieldDef: AidaFieldDef & {otherText?: string, otherBool?: boolean}, name: string) => ({
-            ...aidaContext.completeField(fieldDef, name),
+            ...aidaTypes.completeField(fieldDef, name),
             otherText: fieldDef.otherText ?? '',
             otherBool: fieldDef.otherBool ?? false,
         }),
@@ -365,8 +372,9 @@ describe("extended declaractions", function(){
         orden            : {type: 'integer' , otherBool:true, otherText:'lo que el sistema quiera'},
         puede_dirigir    : {type: 'boolean' , otherBool:true},
     })
-    const extendedCargos = defineEntity({
-        fields: extendedCargo,
+    const extendedSystem = withRecords(extendedContext, {cargo: extendedCargo})
+    const extendedCargos = entityDef(extendedSystem, {
+        record: 'cargo',
         pk: ['cargo']
     });
     it("all ok with extended", function(){
@@ -391,26 +399,26 @@ describe("extended declaractions", function(){
         // @ts-expect-error other_text2 is in nobody's field def, not even the extended one
         recordDef(extendedContext, {mal: {type: 'text', other_text2: 'no existe'}});
         // @ts-expect-error a typo in label is a property nobody declared, not a new property
-        recordDef(aidaContext, {mal: {type: 'text', labl: 'typo'}});
+        recordDef(aidaTypes, {mal: {type: 'text', labl: 'typo'}});
         // @ts-expect-error the extras of the variant are not available in the plain aida context
-        recordDef(aidaContext, {mal: {type: 'text', otherBool: true}});
+        recordDef(aidaTypes, {mal: {type: 'text', otherBool: true}});
         // @ts-expect-error and the type is still checked against the context
-        recordDef(aidaContext, {mal: {type: 'importe'}});
+        recordDef(aidaTypes, {mal: {type: 'importe'}});
     })
 })
 describe("aida design snapshot", function(){
     it("matches aida-design.toon", function(){
         /* provisional flattening until TOLON exists: toon only formats arrays of uniform
            objects as tables, so the fields map becomes an array with the name inside */
-        type FieldInfoRow<TEntityDef extends EntityDef<typeof aidaContext>> = {
-            [K in keyof EntityInfoOf<typeof aidaContext, TEntityDef>['fields']]: {name: K} & EntityInfoOf<typeof aidaContext, TEntityDef>['fields'][K]
+        type FieldInfoRow<TEntityDef extends EntityDef<typeof aida>> = {
+            [K in keyof EntityInfoOf<typeof aida, TEntityDef>['fields']]: {name: K} & EntityInfoOf<typeof aida, TEntityDef>['fields'][K]
         }[keyof TEntityDef['fields']]
-        type DesignSnapshot<TEntities extends Record<string, EntityDef<typeof aidaContext>>> = {
-            [E in keyof TEntities]: Omit<EntityInfoOf<typeof aidaContext, TEntities[E]>, 'fields'> & {fields: FieldInfoRow<TEntities[E]>[]}
+        type DesignSnapshot<TEntities extends Record<string, EntityDef<typeof aida>>> = {
+            [E in keyof TEntities]: Omit<EntityInfoOf<typeof aida, TEntities[E]>, 'fields'> & {fields: FieldInfoRow<TEntities[E]>[]}
         }
-        function designSnapshot<const TEntities extends Record<string, EntityDef<typeof aidaContext>>>(eds: TEntities): DesignSnapshot<TEntities> {
+        function designSnapshot<const TEntities extends Record<string, EntityDef<typeof aida>>>(eds: TEntities): DesignSnapshot<TEntities> {
             return LikeAr(eds).map(ed => {
-                var entityInfo = completeEntity(aidaContext, ed);
+                var entityInfo = completeEntity(aida, ed);
                 return {
                     ...entityInfo,
                     fields: LikeAr(entityInfo.fields).map((fieldInfo, name)=>({name, ...fieldInfo})).array(),
@@ -463,18 +471,18 @@ describe("the parametric type collection must be explicit", function(){
 describe("one context per system, shared by every layer", function(){
     /* each layer requires only the part of the context it uses, so a system can define one
        context with everything in it and hand the same one to all of them */
-    const extendedContext = {...aidaContext, records: {cargo}, whatever: true}
+    const extendedContext = {...aidaTypes, records: {cargo}, whatever: true}
     it("accepts a context that carries more than the types", function(){
         type ExtendedCargo = RecordInstanceType<typeof extendedContext, typeof cargo>
         var jtp: ExtendedCargo = {cargo: 'JTP', denominacion: null, orden: 4, puede_dirigir: null};
         // the deduced type does not depend on the part of the context the layer ignores
-        var alsoAida: RecordInstanceType<typeof aidaContext, typeof cargo> = jtp;
+        var alsoAida: RecordInstanceType<typeof aidaTypes, typeof cargo> = jtp;
         var back: ExtendedCargo = alsoAida;
         assert.deepStrictEqual(back, jtp);
     })
     it("rejects a bare type collection, which is not a context", function(){
         // @ts-expect-error the collection has to come inside the types property
-        type NotAContext = RecordDef<typeof aidaContext.types>
+        type NotAContext = RecordDef<typeof aidaTypes.types>
     })
 })
 
@@ -487,7 +495,7 @@ describe("recordDef: the def checked against the context it is written against",
     })
     it("deduces the instance type without naming the context again", function(){
         type SearchParams = {apellido: string | null, desde: Fecha | null}
-        type Deduced = RecordInstanceType<typeof aidaContext, typeof alumnoSearchParams>
+        type Deduced = RecordInstanceType<typeof aidaTypes, typeof alumnoSearchParams>
         var params: SearchParams = {apellido: 'Pérez', desde: null};
         // both assignments must compile: SearchParams and Deduced are mutually assignable
         var deduced: Deduced = params;
@@ -499,11 +507,11 @@ describe("recordDef: the def checked against the context it is written against",
     })
     it("rejects a type that the context does not have", function(){
         // @ts-expect-error 'importe' is not one of the types of the aida context
-        var noSuchType = recordDef(aidaContext, {total: {type: 'importe'}});
+        var noSuchType = recordDef(aidaTypes, {total: {type: 'importe'}});
         assert.deepStrictEqual(noSuchType, {total: {type: 'importe'}});
     })
     it("does not complete: completing is up to whoever needs it", function(){
-        assert.deepStrictEqual(completeRecord(aidaContext, alumnoSearchParams).apellido, {
+        assert.deepStrictEqual(completeRecord(aidaTypes, alumnoSearchParams).apellido, {
             type: 'text', isName: false, nullable: true, label: 'apellido', description: '',
         });
     })
@@ -556,9 +564,9 @@ describe("the system describing itself", function(){
        what the tools read at runtime, the other is what the compiler checks. If they drift
        apart, this test is what notices. */
     type Deduced  = RecordInstanceType<typeof aidaMetaContext, typeof aidaFieldInfo>
-    type Declared = ReturnType<typeof aidaContext.completeField>
+    type Declared = ReturnType<typeof aidaTypes.completeField>
     it("deduces exactly the field info that the completer of the system produces", function(){
-        var completed: Declared = completeRecord(aidaContext, materia).denominacion;
+        var completed: Declared = completeRecord(aidaTypes, materia).denominacion;
         // both assignments must compile: the deduced and the declared are mutually assignable
         var deduced: Deduced = completed;
         var back: Declared = deduced;
@@ -586,5 +594,41 @@ describe("the system describing itself", function(){
             label      : {type: 'text'    , nullable: false},
             description: {type: 'text'    , nullable: false},
         });
+    })
+})
+
+describe("the entity names its record, and the context grows in stages", function(){
+    it("resolves the fields from the record that the entity names", function(){
+        var elNombre: 'curso' = cursos.record;
+        assert.equal(elNombre, 'curso');
+        assert.deepStrictEqual(cursos.fields, curso);
+        // resolved with the precise type, not with the wide record def
+        var unCampo: {type: 'text'} = cursos.fields.docente;
+        // @ts-expect-error a field that the named record does not have
+        var noCampo = cursos.fields.inexistente;
+        assert.deepStrictEqual(unCampo, {type: 'text'});
+        assert.equal(noCampo, undefined);
+    })
+    it("carries the name into the info, so the link survives the serialization", function(){
+        var info = completeEntity(aida, cursos);
+        var elNombre: 'curso' = info.record;
+        assert.equal(JSON.parse(JSON.stringify(info)).record, 'curso');
+        assert.equal(elNombre, 'curso');
+    })
+    it("accumulates the records of every stage", function(){
+        // the last stage has what the first one had, with its precise type
+        var delPrimerNivel: typeof cargo = aida.records.cargo;
+        var delUltimo: typeof presencia = aida.records.presencia;
+        assert.equal(Object.keys(aida.records).length, 13);
+        assert.deepStrictEqual(delPrimerNivel, cargo);
+        assert.deepStrictEqual(delUltimo, presencia);
+    })
+    it("cannot define an entity before the stage that defines its record", function(){
+        // @ts-expect-error curso only enters the context at the second stage
+        entityDef(aida1, {record: 'curso', pk: ['periodo']});
+        // @ts-expect-error and a record that no stage ever defines is rejected too
+        entityDef(aida, {record: 'inexistente', pk: ['x']});
+        // the same entity against the stage that does have it compiles:
+        assert.equal(entityDef(aida, {record: 'curso', pk: ['periodo']}).record, 'curso');
     })
 })

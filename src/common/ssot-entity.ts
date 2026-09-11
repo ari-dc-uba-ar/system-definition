@@ -5,14 +5,32 @@ import { AnyFieldDef, SystemTypeContext } from "./ssot-types";
 import { AnyRecordDef, RecordDef, RecordInfo, RecordInfoOf, RecordInstanceType,
     NotNullableFieldsOf, completeRecord, notNullableFields } from "./ssot-record";
 
-/* the entity layer needs nothing beyond the types yet, but it names its own context anyway:
-   what it will need later (the records, the other entities) then has where to go without
-   touching every signature again */
-export type SystemEntityContext = SystemTypeContext
+/* the entity references its record BY NAME, like an fk references its target entity and for
+   the same reason, so the context of the entity layer is the one of the types plus the records
+   already defined. It grows in stages: a record that inherits the pk of an entity cannot exist
+   before that entity, so each withRecords is one more level of depth of the data model. A system
+   that declares its pks as separate records at the top and spreads them by hand needs only one. */
+export type RecordCollection = Record<string, AnyRecordDef>
+
+export type SystemEntityContext = SystemTypeContext & {records: RecordCollection}
+
+type RecordsOf<TContext> = TContext extends {records: infer TRecords} ? TRecords : {}
+
+export function withRecords<TContext extends SystemTypeContext, const TRecords extends RecordCollection>(
+    context: TContext,
+    records: TRecords,
+): TContext & {records: TRecords} {
+    return {
+        ...context,
+        // the stages accumulate: the intersection of the type says the same as this spread
+        records: {...(context as Partial<SystemEntityContext>).records, ...records},
+    } as TContext & {records: TRecords};
+}
 
 /* the bound for "an entity def of any system at all", the counterpart of AnyFieldDef: the
    structural checks over pks and fks do not need to know the types of anybody */
 export type AnyEntityDef = {
+    record: string
     fields: AnyRecordDef
     pk: readonly string[]
     fks?: Readonly<Record<string, FkDef>>
@@ -28,25 +46,31 @@ export type FkDef = {
 }
 
 export type EntityDef<TContext extends SystemEntityContext> = {
+    record: keyof TContext['records'] & string
     fields: RecordDef<TContext>
     pk: readonly string[]
     fks?: Readonly<Record<string, FkDef>>
     uks?: Readonly<Record<string, readonly string[]>>
 }
 
-export function defineEntity<
-    const TPk extends readonly (keyof TFields & string)[],
-    const TFields extends AnyRecordDef,
-    const TUks extends Readonly<Record<string, readonly (keyof TFields & string)[]>> = {},
-    const TFks extends Readonly<Record<string, {entity: string, fields: readonly (keyof TFields & string)[] | {readonly [K in keyof TFields]?: string}}>> = {},
+export function entityDef<
+    TContext extends SystemEntityContext,
+    const TRecord extends keyof TContext['records'] & string,
+    const TPk extends readonly (keyof TContext['records'][TRecord] & string)[],
+    const TUks extends Readonly<Record<string, readonly (keyof TContext['records'][TRecord] & string)[]>> = {},
+    const TFks extends Readonly<Record<string, {entity: string, fields: readonly (keyof TContext['records'][TRecord] & string)[] | {readonly [K in keyof TContext['records'][TRecord]]?: string}}>> = {},
 >(
-    entityDef: {fields: TFields, pk: TPk, fks?: TFks, uks?: TUks}
-): {fields: TFields, pk: TPk, fks: TFks, uks: TUks} {
+    context: TContext,
+    def: {record: TRecord, pk: TPk, fks?: TFks, uks?: TUks},
+): {record: TRecord, fields: TContext['records'][TRecord], pk: TPk, fks: TFks, uks: TUks} {
     return {
-        fields: entityDef.fields,
-        pk: entityDef.pk,
-        fks: entityDef.fks ?? {} as TFks,
-        uks: entityDef.uks ?? {} as TUks,
+        record: def.record,
+        // the name is what the human writes and what gets serialized; the fields are resolved
+        // from the context so that everything downstream keeps working on values
+        fields: context.records[def.record] as TContext['records'][TRecord],
+        pk: def.pk,
+        fks: def.fks ?? {} as TFks,
+        uks: def.uks ?? {} as TUks,
     };
 }
 
@@ -96,6 +120,7 @@ export type FkInfoOf<TFk extends FkDef> = {
 }
 
 export type EntityInfo<TContext extends SystemEntityContext> = {
+    record: string
     fields: RecordInfo<TContext>
     pk: readonly string[]
     fks: Readonly<Record<string, FkInfo>>
@@ -103,6 +128,7 @@ export type EntityInfo<TContext extends SystemEntityContext> = {
 }
 
 export type EntityInfoOf<TContext extends SystemEntityContext, TEntityDef extends EntityDef<TContext>> = {
+    record: TEntityDef['record']
     fields: RecordInfoOf<TContext, NotNullableFieldsOf<TContext, TEntityDef['fields'], TEntityDef['pk'][number]>>
     pk: DedupPk<TEntityDef['pk']>
     fks: TEntityDef['fks'] extends Readonly<Record<string, FkDef>>
@@ -125,6 +151,7 @@ export function completeEntity<TContext extends SystemEntityContext, const TEnti
     entityDef: TEntityDef,
 ): EntityInfoOf<TContext, TEntityDef> {
     return {
+        record: entityDef.record,
         fields: completeRecord(context, notNullableFields(entityDef.fields, entityDef.pk) as RecordDef<TContext>),
         pk: mergePk(entityDef.pk),
         fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),

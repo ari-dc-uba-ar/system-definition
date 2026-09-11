@@ -93,10 +93,21 @@ Nombres ya elegidos:
 * La descripción de un campo es `FieldDef` / `FieldInfo`. `RecordDef` es el mapa de campos:
   `Record<string, FieldDef>`.
 * `EntityDef` es el nivel contenedor (la unidad representable como grilla, como la llama el
-  documento SSOTIGAD): `{pk, fields}` donde `fields` es un `RecordDef`; ahí se irán agregando
-  foreign keys, subgrillas, título, etc. Se construye con `defineEntity`, que chequea en
-  compilación que los elementos de `pk` sean keys de `fields` (funciona con PK compuesta)
-  y preserva los literales (parámetros de tipo `const`).
+  documento SSOTIGAD). Se construye con `entityDef(context, {record, pk, fks, uks})`, donde
+  `record` es el **nombre** del record, igual que una fk nombra a su entidad destino y por el
+  mismo motivo: serializabilidad. El valor que devuelve resuelve además `fields` desde el
+  contexto, así que todo lo que viene después (`extractPk`, `completeEntity`, los tipos de
+  instancia) sigue trabajando sobre valores. Chequea en compilación que `record` esté en el
+  contexto y que los elementos de `pk` (y los de `uks` y los orígenes de `fks`) sean campos de
+  ese record; preserva los literales con parámetros `const`. `EntityInfo` también lleva el
+  `record`, para que el vínculo sobreviva a la serialización.
+* El contexto de la capa de entidades es `SystemEntityContext = SystemTypeContext & {records}`,
+  y **crece por etapas** con `withRecords(context, records)`, que acumula: el tipo que devuelve
+  es la intersección, que dice lo mismo que el spread del runtime. Un record que hereda la pk de
+  una entidad no puede existir antes que esa entidad, así que **cada etapa es un nivel de
+  profundidad del modelo de datos**: no es ruido, es la estructura. En aida son seis
+  (`aida1`..`aida6`, y `aida` es la última). Un sistema que declare sus pks como records sueltos
+  arriba de todo y los incluya a mano con `...` necesita una sola etapa.
 * Convención de nombres en los sistemas de ejemplo: el record en singular, la entidad en
   plural (`docente` es el `RecordDef`, `docentes` es la entity que lo envuelve).
 * `PkFieldsOf<TEntityDef>` / `extractPk(entityDef)`: los campos de la pk como `RecordDef`
