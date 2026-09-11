@@ -121,6 +121,11 @@ Nombres ya elegidos:
 * `RecordInfoOf<TRecordDef>`: la Info precisa que corresponde a una Def concreta (conserva
   las claves y los literales de `type`); es lo que devuelve `completeRecord`. El sufijo `Of`
   marca "tipo derivado de una definición concreta".
+* `TypeDef` es `{tsType}`, **sin parámetro de tipo**: el tipo preciso de cada uno sale del literal
+  que preserva el `satisfies`, no del parámetro (que nunca se instanciaba con otra cosa que `any`).
+  `tsType` es fantasma: `boxType` devuelve `null` en runtime, así que lleva un tipo de compilación
+  adentro de un valor. Es el lugar donde más adelante va a vivir el comportamiento de los tipos
+  (parseo, validación, tipo SQL), que no es serializable y por eso vive en el contexto y no en la Def.
 * `RecordSsot<TContext, TRecordDef>` / `createRecordSsot(context, def)`: ata un `RecordDef` al
   contexto contra el que está escrito, sin mezclarlos (`{context, def}`). Lo serializable es `.def`;
   el contexto es lo que tienen que compartir los dos lados de la serialización. Reemplaza al
