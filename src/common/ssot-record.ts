@@ -22,11 +22,19 @@ export type AnyRecordDef = Record<string, AnyFieldDef>
 export type TypeNameOf<TContext extends SystemTypeContext, TFieldDef> =
     TFieldDef extends {type: infer TName extends keyof TContext['types']} ? TName : never
 
+/* the keys that the system's field def does not declare are typed never, so any real value
+   put in them fails to compile. It is needed because the constraint of a type parameter does
+   no excess property check, and without this a typo in `label` would silently become a new
+   property that nothing reads. */
+export type ExactFieldsOf<TRecordDef, TFieldDef> = {
+    [K in keyof TRecordDef]: Record<Exclude<keyof TRecordDef[K], keyof TFieldDef>, never>
+}
+
 /* a record def only means something against a context: which types exist is not something the
    def can say by itself. recordDef checks it against the context and gives back the very same
-   def: what it adds is the check and the preserved literals, not a wrapper. Unlike a satisfies,
-   the constraint of a type parameter does no excess property check, so a system can put its own
-   properties in a field (a width, a tooltip) without redeclaring a wider FieldDef.
+   def: what it adds is the check and the preserved literals, not a wrapper. A system that wants
+   its own properties in a field (a width, a tooltip) declares them in its own field def, which
+   is the one the context carries: what nobody declared is rejected.
    It does not complete anything: the def is worth having as it is (one def is written in terms
    of another), and every end knows how to complete it when it needs to.
    The field def is inferred from the context's completer instead of being read with
@@ -38,7 +46,7 @@ export function recordDef<
     TRecordDef extends Record<string, TFieldDef>,
 >(
     _context: {types: TTypes, completeField: (fieldDef: TFieldDef, name: string) => object},
-    def: TRecordDef,
+    def: TRecordDef & ExactFieldsOf<TRecordDef, TFieldDef>,
 ): TRecordDef {
     return def;
 }

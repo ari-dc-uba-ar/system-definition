@@ -10,7 +10,7 @@ import { AnyEntityDef, EntityDef, EntityInfoOf, EntityInstanceType,
 import { boxType, defineTypes } from "../src/common/ssot-types";
 import { ExpandType, Optional } from "../src/common/type-utils";
 import { aidaContext, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
-    cargos, alumnoSearchParams, Fecha, aidaMetaContext, aidaFieldInfo, AidaTypeName
+    cargos, alumnoSearchParams, Fecha, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef
 } from "../examples/common/aida";
 
 describe("aida example", function(){
@@ -348,10 +348,18 @@ describe("aida entity completion (Def → Info)", function(){
 })
 
 describe("extended declaractions", function(){
-    /* a system can put its own properties in a field: recordDef checks against the context
-       through the constraint of a type parameter, which does no excess property check, so
-       there is no need to declare a wider FieldDef as the satisfies used to require */
-    const extendedCargo = recordDef(aidaContext, {
+    /* a system that wants its own properties in a field declares them in its field def, which
+       is the one the context carries. Extending aida is extending its completer: the extras
+       come out in the info with the defaults this variant chose. */
+    const extendedContext = defineTypes({
+        types: aidaContext.types,
+        completeField: (fieldDef: AidaFieldDef & {otherText?: string, otherBool?: boolean}, name: string) => ({
+            ...aidaContext.completeField(fieldDef, name),
+            otherText: fieldDef.otherText ?? '',
+            otherBool: fieldDef.otherBool ?? false,
+        }),
+    })
+    const extendedCargo = recordDef(extendedContext, {
         cargo            : {type: 'text'    , otherBool:true},
         denominacion     : {type: 'text'    , otherBool:true, label:'denominación'},
         orden            : {type: 'integer' , otherBool:true, otherText:'lo que el sistema quiera'},
@@ -366,19 +374,30 @@ describe("extended declaractions", function(){
         var expected: ExpandType<Optional<DefinedType<typeof extendedCargos>>>;
         expected = miCargo;
     })
-    it("keeps the properties the ssot knows nothing about", function(){
+    it("keeps the properties the system declared, in the def and in the info", function(){
         var otherBool: boolean = extendedCargo.orden.otherBool;
         var otherText: string = extendedCargo.orden.otherText;
-        // @ts-expect-error the extra of one field does not leak into the others
+        // @ts-expect-error the extra written in one field does not leak into the others
         var noExtra = extendedCargo.cargo.otherText;
-        // @ts-expect-error the extras do not loosen the check: the type must still be in the context
-        recordDef(aidaContext, {mal: {type: 'importe', otherBool: true}});
+        assert.deepStrictEqual(completeRecord(extendedContext, extendedCargo).cargo, {
+            type: 'text', isName: false, nullable: true, label: 'cargo', description: '',
+            otherText: '', otherBool: true,
+        });
         assert.equal(otherBool, true);
         assert.equal(otherText, 'lo que el sistema quiera');
         assert.equal(noExtra, undefined);
     })
+    it("rejects what no system declared", function(){
+        // @ts-expect-error other_text2 is in nobody's field def, not even the extended one
+        recordDef(extendedContext, {mal: {type: 'text', other_text2: 'no existe'}});
+        // @ts-expect-error a typo in label is a property nobody declared, not a new property
+        recordDef(aidaContext, {mal: {type: 'text', labl: 'typo'}});
+        // @ts-expect-error the extras of the variant are not available in the plain aida context
+        recordDef(aidaContext, {mal: {type: 'text', otherBool: true}});
+        // @ts-expect-error and the type is still checked against the context
+        recordDef(aidaContext, {mal: {type: 'importe'}});
+    })
 })
-
 describe("aida design snapshot", function(){
     it("matches aida-design.toon", function(){
         /* provisional flattening until TOLON exists: toon only formats arrays of uniform

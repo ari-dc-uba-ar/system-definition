@@ -148,10 +148,13 @@ Nombres ya elegidos:
   herramientas en runtime y otra para el compilador. El test las ata, chequeando que el tipo
   deducido del meta-record y el que devuelve el completador del sistema sean mutuamente asignables.
 * `recordDef(context, def)`: chequea una def de record contra el contexto y **devuelve la misma def**,
-  sin envoltorio. Reemplaza al `satisfies`, y gana dos cosas: la restricción de un parámetro de tipo
-  no hace chequeo de propiedades excedentes, así que el sistema puede poner sus propias propiedades
-  en un campo (un ancho, un tooltip) sin redeclarar un `FieldDef` ancho; y el error apunta al campo
-  que está mal en vez de al objeto entero. **No lleva `const`** en el parámetro: sin `const` el tipo
+  sin envoltorio. Reemplaza al `satisfies`, y gana que el error apunta al campo que está mal en vez
+  de al objeto entero. Si el sistema quiere propiedades propias en un campo (un ancho, un tooltip),
+  las declara en **su** field def, que es el que lleva el contexto: lo que nadie declaró se rechaza.
+  Eso último no sale gratis: la restricción de un parámetro de tipo **no** hace chequeo de
+  propiedades excedentes, así que sin nada más un `labl` en vez de `label` pasaba en silencio y se
+  convertía en una propiedad nueva que nadie lee. Lo fuerza `ExactFieldsOf`, que tipa `never` las
+  claves que el field def del sistema no declara. **No lleva `const`** en el parámetro: sin `const` el tipo
   contextual preserva los literales donde importan (`type`, `nullable`) y ensancha los que no
   (`label`, `description`), que es exactamente lo que hacía el `satisfies`; con `const` quedaba
   literal hasta la `description`.
