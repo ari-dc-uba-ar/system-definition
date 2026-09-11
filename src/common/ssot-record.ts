@@ -1,49 +1,74 @@
 /* the record: a map of fields, the fundamental element of the SSOT. It stands on its own,
    without entities or database: it also describes a payload or the parameters of an endpoint. */
 
-import { SystemTypeContext } from "./ssot-types";
+import { AnyFieldDef, CoreFieldDef, SystemTypeContext, TypeCollection } from "./ssot-types";
 
-export type FieldDef<TContext extends SystemTypeContext> = {
-    type: keyof TContext['types']
-    isName?: true
-    nullable?: boolean
-    label?: string
-    description?: string
-}
+/* the field def and the field info are the two ends of the system's own completer: what it
+   takes and what it gives back. The framework only adds the core it needs to read itself. */
+export type FieldDef<TContext extends SystemTypeContext> = Parameters<TContext['completeField']>[0]
 
-export type FieldInfo<TContext extends SystemTypeContext> = Required<Omit<FieldDef<TContext>, 'isName'>> & {isName: boolean}
+export type FieldInfo<TContext extends SystemTypeContext> = ReturnType<TContext['completeField']>
 
 export type RecordDef<TContext extends SystemTypeContext> = Record<string, FieldDef<TContext>>
 
-// export type RecordInfo<TContext extends SystemTypeContext> = Required<RecordDef<TContext>>
 export type RecordInfo<TContext extends SystemTypeContext> = Record<string, FieldInfo<TContext>>
 
-export type RecordInfoOf<TRecordDef extends RecordDef<SystemTypeContext>> = {
-    [K in keyof TRecordDef]: Omit<FieldInfo<SystemTypeContext>, 'type' | 'nullable'> & {
-        type: TRecordDef[K]['type']
+export type AnyRecordDef = Record<string, AnyFieldDef>
+
+/* the name of the type of a field, read out of a def the framework cannot see inside: the
+   field def is the system's, and defineTypes is what guarantees it carries the core. Reaching
+   it by intersecting with CoreFieldDef does not work: an intersection in the contextual
+   position widens the literal of type back to the whole union of names. */
+export type TypeNameOf<TContext extends SystemTypeContext, TFieldDef> =
+    TFieldDef extends {type: infer TName extends keyof TContext['types']} ? TName : never
+
+/* a record def only means something against a context: which types exist is not something the
+   def can say by itself. recordDef checks it against the context and gives back the very same
+   def: what it adds is the check and the preserved literals, not a wrapper. Unlike a satisfies,
+   the constraint of a type parameter does no excess property check, so a system can put its own
+   properties in a field (a width, a tooltip) without redeclaring a wider FieldDef.
+   It does not complete anything: the def is worth having as it is (one def is written in terms
+   of another), and every end knows how to complete it when it needs to.
+   The field def is inferred from the context's completer instead of being read with
+   FieldDef<TContext>: through that deferred indexed access the compiler cannot see that the
+   target of `type` is a union of literals, and widens every one of them to the whole union. */
+export function recordDef<
+    TTypes extends TypeCollection,
+    TFieldDef extends CoreFieldDef<TTypes>,
+    TRecordDef extends Record<string, TFieldDef>,
+>(
+    _context: {types: TTypes, completeField: (fieldDef: TFieldDef, name: string) => object},
+    def: TRecordDef,
+): TRecordDef {
+    return def;
+}
+
+/* the Info of a concrete def: the shape comes from the system's completer, but type and
+   nullable are pinned to what this def actually says, which is what the generators read */
+export type RecordInfoOf<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>> = {
+    [K in keyof TRecordDef]: Omit<FieldInfo<TContext>, 'type' | 'nullable'> & {
+        type: TypeNameOf<TContext, TRecordDef[K]>
         // what is known statically is only the explicit nullable:false; the default stays boolean
         nullable: TRecordDef[K] extends {nullable: false} ? false : boolean
     }
 }
 
-export function completeRecord<TRecordDef extends RecordDef<SystemTypeContext>>(recordDef: TRecordDef): RecordInfoOf<TRecordDef>{
-    return Object.fromEntries(Object.entries(recordDef).map(([name, fieldDef]) => ([name, {
-        // @ts-expect-error type is specified because we need to guaranty the order in the completed type
-        type: null,
-        isName: false,
-        nullable: true,
-        label: name.replace(/_/g,' '),
-        description: '',
-        ...fieldDef,
-    }]))) as RecordInfoOf<TRecordDef>;
+/* completing knows no defaults of its own: it hands each field to the system's completer,
+   with its name, because some defaults are derived from it */
+export function completeRecord<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
+    context: TContext,
+    fields: TRecordDef,
+): RecordInfoOf<TContext, TRecordDef> {
+    return Object.fromEntries(Object.entries(fields).map(([name, fieldDef]) =>
+        [name, context.completeField(fieldDef as never, name)]
+    )) as RecordInfoOf<TContext, TRecordDef>;
 }
 
-/* the fields default to nullable (that is the default completeRecord writes into the Info),
-   so only the ones explicitly marked nullable:false stay free of null */
+/* a field admits null unless it says nullable:false, so only that one stays free of null */
 export type NullPart<TFieldDef> = TFieldDef extends {nullable: false} ? never : null
 
 export type RecordInstanceType<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>> = {
-    [K in keyof TRecordDef]: TContext['types'][TRecordDef[K]['type']]['tsType'] | NullPart<TRecordDef[K]>
+    [K in keyof TRecordDef]: TContext['types'][TypeNameOf<TContext, TRecordDef[K]>]['tsType'] | NullPart<TRecordDef[K]>
 }
 
 /* marking a subset of the fields as not nullable is a record operation, but which subset it is
@@ -52,22 +77,8 @@ export type NotNullableFieldsOf<TContext extends SystemTypeContext, TRecordDef e
     [K in keyof TRecordDef]: K extends TNames ? TRecordDef[K] & {nullable: false} : TRecordDef[K]
 }
 
-export function notNullableFields(fields: RecordDef<SystemTypeContext>, names: readonly string[]): RecordDef<SystemTypeContext> {
+export function notNullableFields(fields: AnyRecordDef, names: readonly string[]): AnyRecordDef {
     return Object.fromEntries(Object.entries(fields).map(([name, fieldDef]) =>
         [name, names.includes(name) ? {...fieldDef, nullable: false} : fieldDef]
     ));
-}
-
-/* a record def only means something against a context: which types exist is not something the
-   def can say by itself. recordDef checks it against the context and gives back the very same
-   def: what it adds is the check and the preserved literals, not a wrapper. Unlike a satisfies,
-   the constraint of a type parameter does no excess property check, so a system can put its own
-   properties in a field (a width, a tooltip) without redeclaring a wider FieldDef.
-   It does not complete anything: the def is worth having as it is (one def is written in terms
-   of another), and every end knows how to complete it when it needs to. */
-export function recordDef<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
-    _context: TContext,
-    def: TRecordDef,
-): TRecordDef {
-    return def;
 }

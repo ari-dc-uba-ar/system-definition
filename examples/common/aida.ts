@@ -1,20 +1,38 @@
 /* EJEMPLO del sistema de alumnos */
 
-import { boxType, commonTypeDefs } from "../../src/common/ssot-types";
+import { boxType, commonTypeDefs, CoreFieldDef, defineTypes } from "../../src/common/ssot-types";
 import { recordDef } from "../../src/common/ssot-record";
 import { EntityDef, EntityInstanceType, defineEntity, defineEntities, extractPk, mergePk } from "../../src/common/ssot-entity";
 
 export type Fecha = {año: number, mes: number, día:number}
 
-/* the context this system is described against: one value that every layer of the SSOT
-   receives, so a def never has to say twice which types it is talking about */
-export const aidaContext = {
-    types: {
-        ...commonTypeDefs,
-        fecha: {tsType: boxType<Fecha>()},
-        email: commonTypeDefs.text,
-    }
+const types = {
+    ...commonTypeDefs,
+    fecha: {tsType: boxType<Fecha>()},
+    email: commonTypeDefs.text,
 }
+
+/* what a field of THIS system looks like: the core the ssot needs plus what aida wants. isName
+   is not a concept of the framework, it is a decision of this system, and so are the defaults */
+export type AidaFieldDef = CoreFieldDef<typeof types> & {
+    isName?: boolean
+    label?: string
+    description?: string
+}
+
+/* the context this system is described against: one value that every layer of the SSOT
+   receives, so a def never has to say twice which types it is talking about. The completer
+   builds the info key by key, which also fixes the order the generators will see. */
+export const aidaContext = defineTypes({
+    types,
+    completeField: (fieldDef: AidaFieldDef, name: string) => ({
+        type       : fieldDef.type,
+        isName     : fieldDef.isName ?? false,
+        nullable   : fieldDef.nullable ?? true,
+        label      : fieldDef.label ?? name.replace(/_/g,' '),
+        description: fieldDef.description ?? '',
+    }),
+})
 
 export const cargo = recordDef(aidaContext, {
     cargo            : {type: 'text' },

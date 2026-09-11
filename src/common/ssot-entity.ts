@@ -1,14 +1,23 @@
 /* the entity: the container level, the unit that can be shown as a grid. It knows the record
    and adds what only makes sense over a stored collection: pk, uks and fks. */
 
-import { SystemTypeContext } from "./ssot-types";
-import { RecordDef, RecordInfo, RecordInfoOf, RecordInstanceType, NotNullableFieldsOf,
-    completeRecord, notNullableFields } from "./ssot-record";
+import { AnyFieldDef, SystemTypeContext } from "./ssot-types";
+import { AnyRecordDef, RecordDef, RecordInfo, RecordInfoOf, RecordInstanceType,
+    NotNullableFieldsOf, completeRecord, notNullableFields } from "./ssot-record";
 
 /* the entity layer needs nothing beyond the types yet, but it names its own context anyway:
    what it will need later (the records, the other entities) then has where to go without
    touching every signature again */
 export type SystemEntityContext = SystemTypeContext
+
+/* the bound for "an entity def of any system at all", the counterpart of AnyFieldDef: the
+   structural checks over pks and fks do not need to know the types of anybody */
+export type AnyEntityDef = {
+    fields: AnyRecordDef
+    pk: readonly string[]
+    fks?: Readonly<Record<string, FkDef>>
+    uks?: Readonly<Record<string, readonly string[]>>
+}
 
 /* fks reference the target entity BY NAME (a string, not the object): that keeps the defs
    serializable and makes circular and reflexive fks representable. The counterpart is that
@@ -27,7 +36,7 @@ export type EntityDef<TContext extends SystemEntityContext> = {
 
 export function defineEntity<
     const TPk extends readonly (keyof TFields & string)[],
-    const TFields extends RecordDef<SystemEntityContext>,
+    const TFields extends AnyRecordDef,
     const TUks extends Readonly<Record<string, readonly (keyof TFields & string)[]>> = {},
     const TFks extends Readonly<Record<string, {entity: string, fields: readonly (keyof TFields & string)[] | {readonly [K in keyof TFields]?: string}}>> = {},
 >(
@@ -41,11 +50,11 @@ export function defineEntity<
     };
 }
 
-export type PkFieldsOf<TEntityDef extends EntityDef<SystemEntityContext>> =
+export type PkFieldsOf<TEntityDef extends AnyEntityDef> =
     Pick<TEntityDef['fields'], TEntityDef['pk'][number] & keyof TEntityDef['fields']>
 
-export function extractPk<TEntityDef extends EntityDef<SystemEntityContext>>(entityDef: TEntityDef): PkFieldsOf<TEntityDef> {
-    const fields: RecordDef<SystemEntityContext> = entityDef.fields;
+export function extractPk<TEntityDef extends AnyEntityDef>(entityDef: TEntityDef): PkFieldsOf<TEntityDef> {
+    const fields: AnyRecordDef = entityDef.fields;
     return Object.fromEntries(entityDef.pk.map(name => [name, fields[name]])) as PkFieldsOf<TEntityDef>;
 }
 
@@ -93,8 +102,8 @@ export type EntityInfo<TContext extends SystemEntityContext> = {
     uks: Readonly<Record<string, readonly string[]>>
 }
 
-export type EntityInfoOf<TEntityDef extends EntityDef<SystemEntityContext>> = {
-    fields: RecordInfoOf<NotNullableFieldsOf<SystemEntityContext, TEntityDef['fields'], TEntityDef['pk'][number]>>
+export type EntityInfoOf<TContext extends SystemEntityContext, TEntityDef extends EntityDef<TContext>> = {
+    fields: RecordInfoOf<TContext, NotNullableFieldsOf<TContext, TEntityDef['fields'], TEntityDef['pk'][number]>>
     pk: DedupPk<TEntityDef['pk']>
     fks: TEntityDef['fks'] extends Readonly<Record<string, FkDef>>
         ? {[F in keyof TEntityDef['fks']]: FkInfoOf<TEntityDef['fks'][F]>}
@@ -111,13 +120,16 @@ function completeFk(fkDef: FkDef): FkInfo {
     };
 }
 
-export function completeEntity<const TEntityDef extends EntityDef<SystemEntityContext>>(entityDef: TEntityDef): EntityInfoOf<TEntityDef> {
+export function completeEntity<TContext extends SystemEntityContext, const TEntityDef extends EntityDef<TContext>>(
+    context: TContext,
+    entityDef: TEntityDef,
+): EntityInfoOf<TContext, TEntityDef> {
     return {
-        fields: completeRecord(notNullableFields(entityDef.fields, entityDef.pk)),
+        fields: completeRecord(context, notNullableFields(entityDef.fields, entityDef.pk) as RecordDef<TContext>),
         pk: mergePk(entityDef.pk),
         fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
         uks: entityDef.uks ?? {},
-    } as EntityInfoOf<TEntityDef>;
+    } as EntityInfoOf<TContext, TEntityDef>;
 }
 
 /* the instance type of a row of the entity: like the record one, but the pk fields
@@ -132,12 +144,12 @@ type FkTargetFields<TFk extends FkDef> =
     : TFk['fields'] extends Readonly<Record<string, string>> ? TFk['fields'][keyof TFk['fields']]
     : never
 
-type FkMatchesTargetKey<TFk extends FkDef, TTarget extends EntityDef<SystemEntityContext>> =
+type FkMatchesTargetKey<TFk extends FkDef, TTarget extends AnyEntityDef> =
     SameKeySet<FkTargetFields<TFk>, TTarget['pk'][number]> extends true ? true
     : true extends {[U in keyof NonNullable<TTarget['uks']>]: SameKeySet<FkTargetFields<TFk>, NonNullable<TTarget['uks']>[U][number]>}[keyof NonNullable<TTarget['uks']>] ? true
     : false
 
-type ValidatedFks<TFks extends Readonly<Record<string, FkDef>>, TEntities extends Readonly<Record<string, EntityDef<SystemEntityContext>>>> = {
+type ValidatedFks<TFks extends Readonly<Record<string, FkDef>>, TEntities extends Readonly<Record<string, AnyEntityDef>>> = {
     [F in keyof TFks]: TFks[F]['entity'] extends keyof TEntities
         ? FkMatchesTargetKey<TFks[F], TEntities[TFks[F]['entity'] & keyof TEntities]> extends true
             ? TFks[F]
@@ -145,13 +157,13 @@ type ValidatedFks<TFks extends Readonly<Record<string, FkDef>>, TEntities extend
         : never
 }
 
-export type ValidatedEntities<TEntities extends Readonly<Record<string, EntityDef<SystemEntityContext>>>> = {
+export type ValidatedEntities<TEntities extends Readonly<Record<string, AnyEntityDef>>> = {
     [E in keyof TEntities]: {fks?: ValidatedFks<NonNullable<TEntities[E]['fks']>, TEntities>}
 }
 
 /* system-level checks, where all the entities are known: every fk must point to an entity
    of the system, and its target fields must be the complete pk or one of the uks of it */
-export function defineEntities<const TEntities extends Readonly<Record<string, EntityDef<SystemEntityContext>>>>(
+export function defineEntities<const TEntities extends Readonly<Record<string, AnyEntityDef>>>(
     entityDefs: TEntities & ValidatedEntities<TEntities>
 ): TEntities {
     return entityDefs;

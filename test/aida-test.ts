@@ -5,8 +5,9 @@ import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
 import { FieldDef, RecordDef, RecordInstanceType, completeRecord, recordDef } from "../src/common/ssot-record";
-import { EntityDef, EntityInfoOf, EntityInstanceType, SystemEntityContext,
+import { AnyEntityDef, EntityDef, EntityInfoOf, EntityInstanceType,
     completeEntity, defineEntity, defineEntities, extractPk, mergePk } from "../src/common/ssot-entity";
+import { boxType, defineTypes } from "../src/common/ssot-types";
 import { ExpandType, Optional } from "../src/common/type-utils";
 import { aidaContext, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
     cargos, alumnoSearchParams, Fecha
@@ -84,14 +85,14 @@ describe("aida example", function(){
         assert.equal(emailOrNull, null);
     })
     it("completes a record def into a record info", function(){
-        var materiaInfo = completeRecord(materia);
+        var materiaInfo = completeRecord(aidaContext, materia);
         assert.deepStrictEqual(materiaInfo, {
             materia      : {type: 'text', label: 'materia'     , nullable: true , description: '', isName: false},
             denominacion : {type: 'text', label: 'denominación', nullable: false, description: 'si corresponde a más de una carrera, aclarar en el nombre', isName: true},
         });
     })
     it("completes preserving the field set and the type literals", function(){
-        var cargoInfo = completeRecord(cargo);
+        var cargoInfo = completeRecord(aidaContext, cargo);
         // the type literals from the def must survive the completion:
         var cargoType: 'text' = cargoInfo.cargo.type;
         // @ts-expect-error
@@ -217,7 +218,7 @@ describe("aida fks, uks and isName", function(){
         assert.equal(presidenteTarget, 'docente');
     })
     it("marks the isName field and completes it as false elsewhere", function(){
-        var denominacionIsName: true = materia.denominacion.isName;
+        var denominacionIsName: boolean = materia.denominacion.isName;
         // @ts-expect-error the code field has no isName mark
         var codigoIsName = materia.materia.isName;
         assert.equal(denominacionIsName, true);
@@ -257,7 +258,7 @@ describe("aida fks, uks and isName", function(){
 
 describe("aida entity completion (Def → Info)", function(){
     it("normalizes array-form fks to the source→target map form", function(){
-        var cursosInfo = completeEntity(cursos);
+        var cursosInfo = completeEntity(aidaContext, cursos);
         type CursosFksExpected = {
             periodos   : {entity: 'periodos', fields: {periodo: 'periodo'}},
             materias   : {entity: 'materias', fields: {materia: 'materia'}},
@@ -279,7 +280,7 @@ describe("aida entity completion (Def → Info)", function(){
         assert.equal(wrongTarget, 'periodo');
     })
     it("keeps map-form fks as they are", function(){
-        var mesasInfo = completeEntity(mesas);
+        var mesasInfo = completeEntity(aidaContext, mesas);
         var presidenteFk: {entity: 'docentes', fields: {presidente: 'docente'}} = mesasInfo.fks.presidente;
         var presidenteFkBack: typeof mesasInfo.fks.presidente = presidenteFk;
         // @ts-expect-error after completion the array form is gone: fields is always a map
@@ -294,14 +295,14 @@ describe("aida entity completion (Def → Info)", function(){
             pk: [...inscripciones.pk, ...clases.pk],
             fields: presencia,
         });
-        var presenciasAltInfo = completeEntity(presenciasAlt);
+        var presenciasAltInfo = completeEntity(aidaContext, presenciasAlt);
         var pkExpected: readonly ['periodo', 'materia', 'alumno', 'orden'] = presenciasAltInfo.pk;
         var pkBack: typeof presenciasAltInfo.pk = pkExpected;
         assert.deepStrictEqual(presenciasAltInfo.pk, ['periodo', 'materia', 'alumno', 'orden']);
         assert.deepStrictEqual(pkBack, pkExpected);
     })
     it("completes the pk fields as not nullable", function(){
-        var clasesInfo = completeEntity(clases);
+        var clasesInfo = completeEntity(aidaContext, clases);
         /* the type checks come first: assert.deepStrictEqual is an assertion signature, so it
            narrows the type of what it receives and any type check after it would be vacuous */
         var periodoNullable: false = clasesInfo.fields.periodo.nullable;
@@ -332,11 +333,11 @@ describe("aida entity completion (Def → Info)", function(){
         assert.equal(tema, null);
     })
     it("completes the fields and keeps the uks", function(){
-        var materiasInfo = completeEntity(materias);
+        var materiasInfo = completeEntity(aidaContext, materias);
         // the pk field completes as not nullable; the rest, as the plain record does:
         assert.deepStrictEqual(materiasInfo.fields, {
-            ...completeRecord(materia),
-            materia: {...completeRecord(materia).materia, nullable: false},
+            ...completeRecord(aidaContext, materia),
+            materia: {...completeRecord(aidaContext, materia).materia, nullable: false},
         });
         var uksExpected: {denominacion: readonly ['denominacion']} = materiasInfo.uks;
         var uksBack: typeof materiasInfo.uks = uksExpected;
@@ -382,22 +383,22 @@ describe("aida design snapshot", function(){
     it("matches aida-design.toon", function(){
         /* provisional flattening until TOLON exists: toon only formats arrays of uniform
            objects as tables, so the fields map becomes an array with the name inside */
-        type FieldInfoRow<TEntityDef extends EntityDef<SystemEntityContext>> = {
-            [K in keyof EntityInfoOf<TEntityDef>['fields']]: {name: K} & EntityInfoOf<TEntityDef>['fields'][K]
+        type FieldInfoRow<TEntityDef extends EntityDef<typeof aidaContext>> = {
+            [K in keyof EntityInfoOf<typeof aidaContext, TEntityDef>['fields']]: {name: K} & EntityInfoOf<typeof aidaContext, TEntityDef>['fields'][K]
         }[keyof TEntityDef['fields']]
-        type DesignSnapshot<TEntities extends Record<string, EntityDef<SystemEntityContext>>> = {
-            [E in keyof TEntities]: Omit<EntityInfoOf<TEntities[E]>, 'fields'> & {fields: FieldInfoRow<TEntities[E]>[]}
+        type DesignSnapshot<TEntities extends Record<string, EntityDef<typeof aidaContext>>> = {
+            [E in keyof TEntities]: Omit<EntityInfoOf<typeof aidaContext, TEntities[E]>, 'fields'> & {fields: FieldInfoRow<TEntities[E]>[]}
         }
-        function designSnapshot<const TEntities extends Record<string, EntityDef<SystemEntityContext>>>(eds: TEntities): DesignSnapshot<TEntities> {
+        function designSnapshot<const TEntities extends Record<string, EntityDef<typeof aidaContext>>>(eds: TEntities): DesignSnapshot<TEntities> {
             return LikeAr(eds).map(ed => {
-                var entityInfo = completeEntity(ed);
+                var entityInfo = completeEntity(aidaContext, ed);
                 return {
                     ...entityInfo,
                     fields: LikeAr(entityInfo.fields).map((fieldInfo, name)=>({name, ...fieldInfo})).array(),
                 };
             /* the cast recovers what LikeAr's map loses: its signature collapses the values
                into a union, while the mapping is done key by key */
-            }).plain() as DesignSnapshot<TEntities>;
+            }).plain() as unknown as DesignSnapshot<TEntities>;
         }
         var design = designSnapshot(entityDefs);
         /* the snapshot must be built with the precise type of each entity: with the wide
@@ -483,8 +484,50 @@ describe("recordDef: the def checked against the context it is written against",
         assert.deepStrictEqual(noSuchType, {total: {type: 'importe'}});
     })
     it("does not complete: completing is up to whoever needs it", function(){
-        assert.deepStrictEqual(completeRecord(alumnoSearchParams).apellido, {
+        assert.deepStrictEqual(completeRecord(aidaContext, alumnoSearchParams).apellido, {
             type: 'text', isName: false, nullable: true, label: 'apellido', description: '',
+        });
+    })
+})
+
+describe("each system decides what a field is and how it completes", function(){
+    /* another system entirely, with its own field def and its own defaults: the framework
+       dictates neither. Only type and nullable are the core it needs to read itself. */
+    const billing = defineTypes({
+        types: {code: {tsType: boxType<string>()}, amount: {tsType: boxType<number>()}},
+        completeField: (fieldDef: {type: 'code' | 'amount', nullable?: boolean, defaultValue?: string}, name: string) => ({
+            type        : fieldDef.type,
+            nullable    : fieldDef.nullable ?? true,
+            defaultValue: fieldDef.defaultValue ?? null,
+            title       : name.toUpperCase(),
+        }),
+    })
+    const invoice = recordDef(billing, {
+        number: {type: 'code'  , nullable: false},
+        total : {type: 'amount', defaultValue: '0'},
+    })
+    it("completes with the properties and the defaults of that system", function(){
+        assert.deepStrictEqual(completeRecord(billing, invoice), {
+            number: {type: 'code'  , nullable: false, defaultValue: null, title: 'NUMBER'},
+            total : {type: 'amount', nullable: true , defaultValue: '0' , title: 'TOTAL' },
+        });
+    })
+    it("deduces the instance type against the types of that system", function(){
+        type Invoice = {number: string, total: number | null}
+        type Deduced = RecordInstanceType<typeof billing, typeof invoice>
+        var una: Invoice = {number: 'A-0001', total: null};
+        var deducida: Deduced = una;
+        var back: Invoice = deducida;
+        // @ts-expect-error aida's isName means nothing here: this system never declared it
+        var noIsName = completeRecord(billing, invoice).number.isName;
+        assert.deepStrictEqual(back, una);
+        assert.equal(noIsName, undefined);
+    })
+    it("rejects a completer that does not fill in the core", function(){
+        defineTypes({
+            types: {code: {tsType: boxType<string>()}},
+            // @ts-expect-error the completed info has to carry nullable: the ssot reads it
+            completeField: (fieldDef: {type: 'code'}) => ({type: fieldDef.type, title: 'x'}),
         });
     })
 })

@@ -12,10 +12,50 @@ export interface TypeDef {
 
 export type TypeCollection = Record<string, TypeDef>
 
-/* every layer of the SSOT takes exactly one type parameter: the context of the system being
-   described. Each layer declares the part of the context it needs, and the outer layers extend
-   the inner ones, so a system defines its context once and passes the same one to all of them. */
-export type SystemTypeContext = {types: TypeCollection}
+/* what the SSOT itself needs to know about a field, and nothing else: the type, to deduce the
+   instance type, and whether it admits null. Everything else a field may carry — a label, a
+   description, which field names the row, a default value, a width for the grid — belongs to
+   the system, which declares its own field def on top of this one. */
+export type CoreFieldDef<TTypes extends TypeCollection> = {
+    type: keyof TTypes
+    nullable?: boolean
+}
+
+export type CoreFieldInfo<TTypes extends TypeCollection> = {
+    type: keyof TTypes
+    nullable: boolean
+}
+
+/* completing a field def is behaviour, so it lives in the context and not in the def: the
+   defaults are the system's decision, not the framework's. The name comes in because some
+   defaults are derived from it (the label). Declaring the parameter as never makes this a
+   supertype of every unary completer, so any system's own field def fits the bound. */
+export type FieldCompleter = (fieldDef: never, name: string) => object
+
+export type SystemTypeContext = {
+    types: TypeCollection
+    completeField: FieldCompleter
+}
+
+/* the gate where a system's own field def and completer are checked against its types:
+   the def has to carry at least the core, and the completed info has to fill it in */
+export function defineTypes<
+    const TTypes extends TypeCollection,
+    TFieldDef extends CoreFieldDef<TTypes>,
+    TFieldInfo extends CoreFieldInfo<TTypes>,
+>(
+    context: {types: TTypes, completeField: (fieldDef: TFieldDef, name: string) => TFieldInfo}
+): {types: TTypes, completeField: (fieldDef: TFieldDef, name: string) => TFieldInfo} {
+    return context;
+}
+
+/* the bound for "a field def of any system at all". It is NOT FieldDef<SystemTypeContext>:
+   the field def is the parameter of the completer, and a parameter is contravariant, so the
+   widest context yields the narrowest (never) field def. */
+export type AnyFieldDef = {
+    type: string
+    nullable?: boolean
+}
 
 export const commonTypeDefs = {
     text       : {tsType: boxType<string>()},

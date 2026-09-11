@@ -63,6 +63,12 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
   agrega nada; es donde van a ir los records y las entidades cuando hagan falta). Un sistema define
   un contexto único (`aidaContext`) y se lo pasa igual a todas las capas: cada una exige solo la
   parte que usa, así que un contexto con más cosas adentro sirve lo mismo.
+* Dos trampas de inferencia encontradas y verificadas, que conviene no repetir:
+  el `FieldDef` que recibe `recordDef` se **infiere del completador del contexto**, no se calcula
+  con `Parameters<TContext['completeField']>[0]`: a través de ese indexed access diferido el
+  compilador no ve que el destino de `type` sea una unión de literales y los ensancha a todos.
+  Y una propiedad opcional cuyo tipo es un **literal único** (`isName?: true`) hace que la
+  inferencia del record entero se caiga al constraint; por eso en el ejemplo es `isName?: boolean`.
 * Los parámetros de tipo **no llevan default**. Si no se dice contra qué contexto se define algo,
   no compila. El default silencioso escondía cuál era la colección en uso y hacía, por ejemplo,
   que el propio sistema no pudiera tipar las filas de sus entidades con tipos propios.
@@ -100,8 +106,17 @@ Nombres ya elegidos:
   deduplicando también a nivel de tipos (tupla recursiva), preservando el orden de primera
   aparición. Es para pks combinadas (`presencias.pk = mergePk(inscripciones.pk, clases.pk)`);
   para los `fields` no hace falta: el spread ya deduplica keys solo.
-* `isName?: true` en `FieldDef` (solo `true`, así el literal sobrevive al `satisfies`);
-  `completeRecord` lo completa a `false` en la Info.
+* El `FieldDef` del framework es solo `CoreFieldDef = {type, nullable?}`: lo único que el propio
+  SSOT lee. Todo lo demás (`isName`, `label`, `description`, un `defaultValue`, un ancho de grilla)
+  lo declara **cada sistema** en su propio field def, y `defineTypes(context)` es la puerta que
+  chequea que ese field def traiga el core y que la Info lo complete.
+* Completar es comportamiento, así que vive en el contexto: `completeField(fieldDef, name)` lo
+  pone el sistema, y `completeRecord(context, fields)` no conoce ningún default propio, solo mapea.
+  El `name` entra porque algunos defaults se derivan de él (el label). Escribir la Info clave por
+  clave en el completador también fija el orden que van a ver los generadores.
+  Pendiente: la regla estática de nulleabilidad (`NullPart`: nulleable salvo `nullable:false`)
+  la sigue fijando el framework, así que un sistema cuyo completador ponga otro default para
+  `nullable` haría que la Info y el tipo deducido no coincidan. Hoy es una convención, no un chequeo.
 * `EntityDef` tiene además `uks` (uniques con nombre: `{denominacion: ['denominacion']}`) y
   `fks`. Una `FkDef` es `{entity, fields}` donde `entity` es el **nombre** de la entidad
   destino (string, no el objeto: mantiene la serializabilidad y permite fks circulares y
