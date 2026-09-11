@@ -1,10 +1,10 @@
 /* EJEMPLO del sistema de alumnos */
 
 import { boxType, commonTypeDefs } from "../../src/common/ssot-types";
-import { RecordDef } from "../../src/common/ssot-record";
+import { RecordDef, createRecordSsot } from "../../src/common/ssot-record";
 import { EntityDef, EntityInstanceType, defineEntity, defineEntities, extractPk, mergePk } from "../../src/common/ssot-entity";
 
-type Fecha = {año: number, mes: number, día:number}
+export type Fecha = {año: number, mes: number, día:number}
 
 /* the context this system is described against: one value that every layer of the SSOT
    receives, so a def never has to say twice which types it is talking about */
@@ -184,6 +184,14 @@ export const mesas = defineEntity({
         vocal     : {entity: 'docentes', fields: {vocal: 'docente'}},
     },
     fields: mesa,
+})
+
+/* a record def is not only the fields of an entity: this one describes the parameters of a
+   search endpoint, so it goes through createRecordSsot, which binds it to the context it is
+   written against. There is no satisfies here: the function is the one that checks. */
+export const alumnoSearchParams = createRecordSsot(aidaContext, {
+    apellido: {type: 'text' },
+    desde   : {type: 'fecha'},
 })
 
 export const recordDefs = {

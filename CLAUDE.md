@@ -121,3 +121,12 @@ Nombres ya elegidos:
 * `RecordInfoOf<TRecordDef>`: la Info precisa que corresponde a una Def concreta (conserva
   las claves y los literales de `type`); es lo que devuelve `completeRecord`. El sufijo `Of`
   marca "tipo derivado de una definición concreta".
+* `RecordSsot<TContext, TRecordDef>` / `createRecordSsot(context, def)`: ata un `RecordDef` al
+  contexto contra el que está escrito, sin mezclarlos (`{context, def}`). Lo serializable es `.def`;
+  el contexto es lo que tienen que compartir los dos lados de la serialización. Reemplaza al
+  `satisfies RecordsDef`: la función es la que chequea, y preserva los literales igual.
+  **No completa**: la Def sin completar tiene valor propio (unas defs se escriben en función de
+  otras, y completar de entrada impide eso), y todas las puntas saben completar cuando les hace falta.
+  `RecordInstanceTypeOf<TRecordSsot>` deduce el tipo de la instancia sin volver a nombrar el contexto.
+  Un `RecordDef` vale por sí mismo, no solo como campos de una entidad: sirve para el payload o los
+  parámetros de un endpoint (`alumnoSearchParams` en el ejemplo).

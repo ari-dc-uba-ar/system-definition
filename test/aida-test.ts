@@ -4,12 +4,12 @@ import * as path from "path";
 import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
-import { FieldDef, RecordDef, RecordInstanceType, completeRecord } from "../src/common/ssot-record";
+import { FieldDef, RecordDef, RecordInstanceType, RecordInstanceTypeOf, completeRecord, createRecordSsot } from "../src/common/ssot-record";
 import { EntityDef, EntityInfoOf, EntityInstanceType, SystemEntityContext,
     completeEntity, defineEntity, defineEntities, extractPk, mergePk } from "../src/common/ssot-entity";
 import { ExpandType, Optional } from "../src/common/type-utils";
 import { aidaContext, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
-    cargos
+    cargos, alumnoSearchParams, Fecha
 } from "../examples/common/aida";
 
 describe("aida example", function(){
@@ -442,5 +442,36 @@ describe("one context per system, shared by every layer", function(){
     it("rejects a bare type collection, which is not a context", function(){
         // @ts-expect-error the collection has to come inside the types property
         type NotAContext = RecordDef<typeof aidaContext.types>
+    })
+})
+
+describe("record ssot: the def bound to the context it is written against", function(){
+    it("keeps the def as plain serializable data", function(){
+        var plainDef = {apellido: {type: 'text'}, desde: {type: 'fecha'}};
+        assert.deepStrictEqual(alumnoSearchParams.def, plainDef);
+        // the def travels as JSON; the context is what both ends have to share beforehand
+        assert.deepStrictEqual(JSON.parse(JSON.stringify(alumnoSearchParams.def)), plainDef);
+    })
+    it("deduces the instance type without naming the context again", function(){
+        type SearchParams = {apellido: string | null, desde: Fecha | null}
+        type Deduced = RecordInstanceTypeOf<typeof alumnoSearchParams>
+        var params: SearchParams = {apellido: 'Pérez', desde: null};
+        // both assignments must compile: SearchParams and Deduced are mutually assignable
+        var deduced: Deduced = params;
+        var back: SearchParams = deduced;
+        // @ts-expect-error a field outside the def cannot be accessed
+        var noField = deduced.nombres;
+        assert.deepStrictEqual(back, params);
+        assert.equal(noField, undefined);
+    })
+    it("rejects a type that the context does not have", function(){
+        // @ts-expect-error 'importe' is not one of the types of the aida context
+        var noSuchType = createRecordSsot(aidaContext, {total: {type: 'importe'}});
+        assert.deepStrictEqual(noSuchType.def, {total: {type: 'importe'}});
+    })
+    it("does not complete: completing is up to whoever needs it", function(){
+        assert.deepStrictEqual(completeRecord(alumnoSearchParams.def).apellido, {
+            type: 'text', isName: false, nullable: true, label: 'apellido', description: '',
+        });
     })
 })

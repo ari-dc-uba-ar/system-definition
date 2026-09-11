@@ -57,3 +57,25 @@ export function notNullableFields(recordDef: RecordDef<SystemTypeContext>, names
         [name, names.includes(name) ? {...fieldDef, nullable: false} : fieldDef]
     ));
 }
+
+/* a record def only means something against a context: which types exist is not something the
+   def can say by itself. createRecordSsot binds the two without merging them: what travels as
+   JSON is the def, and the context is what both ends of the serialization have to share.
+   It does not complete anything: the def is worth having as it is (one def is written in terms
+   of another), and every end knows how to complete it when it needs to. */
+export type RecordSsot<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>> = {
+    context: TContext
+    def: TRecordDef
+}
+
+export function createRecordSsot<TContext extends SystemTypeContext, const TRecordDef extends RecordDef<TContext>>(
+    context: TContext,
+    def: TRecordDef,
+): RecordSsot<TContext, TRecordDef> {
+    return {context, def};
+}
+
+/* the def goes in as it is: intersecting it with RecordDef to "help" the constraint drags in the
+   index signature of the Record, and then the deduced instance type accepts any field name */
+export type RecordInstanceTypeOf<TRecordSsot extends RecordSsot<SystemTypeContext, RecordDef<SystemTypeContext>>> =
+    RecordInstanceType<TRecordSsot['context'], TRecordSsot['def']>
