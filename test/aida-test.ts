@@ -10,7 +10,7 @@ import { AnyEntityDef, EntityDef, EntityInfoOf, EntityInstanceType,
 import { boxType, defineTypes } from "../src/common/ssot-types";
 import { ExpandType, Optional } from "../src/common/type-utils";
 import { aidaContext, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
-    cargos, alumnoSearchParams, Fecha
+    cargos, alumnoSearchParams, Fecha, aidaMetaContext, aidaFieldInfo, AidaTypeName
 } from "../examples/common/aida";
 
 describe("aida example", function(){
@@ -528,6 +528,44 @@ describe("each system decides what a field is and how it completes", function(){
             types: {code: {tsType: boxType<string>()}},
             // @ts-expect-error the completed info has to carry nullable: the ssot reads it
             completeField: (fieldDef: {type: 'code'}) => ({type: fieldDef.type, title: 'x'}),
+        });
+    })
+})
+
+describe("the system describing itself", function(){
+    /* the meta record and the static declaration are two halves of the same thing: one is
+       what the tools read at runtime, the other is what the compiler checks. If they drift
+       apart, this test is what notices. */
+    type Deduced  = RecordInstanceType<typeof aidaMetaContext, typeof aidaFieldInfo>
+    type Declared = ReturnType<typeof aidaContext.completeField>
+    it("deduces exactly the field info that the completer of the system produces", function(){
+        var completed: Declared = completeRecord(aidaContext, materia).denominacion;
+        // both assignments must compile: the deduced and the declared are mutually assignable
+        var deduced: Deduced = completed;
+        var back: Declared = deduced;
+        assert.deepStrictEqual(back, {
+            type: 'text', isName: true, nullable: false,
+            label: 'denominación', description: 'si corresponde a más de una carrera, aclarar en el nombre',
+        });
+    })
+    it("says the type of a field with the type names of the system", function(){
+        var nombreDeTipo: AidaTypeName = 'fecha';
+        var deducido: Deduced['type'] = nombreDeTipo;
+        // @ts-expect-error a type name the system does not have
+        var noExiste: Deduced['type'] = 'importe';
+        // @ts-expect-error and the meta record is a record like any other: no invented fields
+        var noField = aidaFieldInfo.inexistente;
+        assert.equal(deducido, 'fecha');
+        assert.equal(noExiste, 'importe');
+        assert.equal(noField, undefined);
+    })
+    it("is a plain serializable def, like every other one", function(){
+        assert.deepStrictEqual(JSON.parse(JSON.stringify(aidaFieldInfo)), {
+            type       : {type: 'typeName', nullable: false},
+            isName     : {type: 'boolean' , nullable: false},
+            nullable   : {type: 'boolean' , nullable: false},
+            label      : {type: 'text'    , nullable: false},
+            description: {type: 'text'    , nullable: false},
         });
     })
 })

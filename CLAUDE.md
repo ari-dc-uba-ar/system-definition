@@ -141,6 +141,12 @@ Nombres ya elegidos:
   `tsType` es fantasma: `boxType` devuelve `null` en runtime, así que lleva un tipo de compilación
   adentro de un valor. Es el lugar donde más adelante va a vivir el comportamiento de los tipos
   (parseo, validación, tipo SQL), que no es serializable y por eso vive en el contexto y no en la Def.
+* El sistema puede **describirse a sí mismo**: `aidaFieldInfo` es un `recordDef` que describe
+  cómo es un field info de aida, escrito con el mismo vocabulario. No reemplaza a la declaración
+  estática (un record plano no puede expresar que el tipo de un `defaultValue` dependa del `type`
+  del campo, ni que `type` sea un enum sobre un conjunto dinámico): son dos mitades, una para las
+  herramientas en runtime y otra para el compilador. El test las ata, chequeando que el tipo
+  deducido del meta-record y el que devuelve el completador del sistema sean mutuamente asignables.
 * `recordDef(context, def)`: chequea una def de record contra el contexto y **devuelve la misma def**,
   sin envoltorio. Reemplaza al `satisfies`, y gana dos cosas: la restricción de un parámetro de tipo
   no hace chequeo de propiedades excedentes, así que el sistema puede poner sus propias propiedades

@@ -201,6 +201,36 @@ export const mesas = defineEntity({
     fields: mesa,
 })
 
+/* THE SYSTEM DESCRIBING ITSELF: what an aida field def looks like, said with the very same
+   vocabulary. This is what a generator would read to build the screen that edits the
+   definitions of aida. It cannot replace the static declaration above — a flat record cannot
+   express that the type of defaultValue depends on the type of the field — so they are two
+   halves, and the test checks that they did not drift apart. */
+
+export type AidaTypeName = keyof typeof types
+
+const metaTypes = {
+    ...commonTypeDefs,
+    typeName: {tsType: boxType<AidaTypeName>()},
+}
+
+export const aidaMetaContext = defineTypes({
+    types: metaTypes,
+    completeField: (fieldDef: CoreFieldDef<typeof metaTypes> & {label?: string}, name: string) => ({
+        type    : fieldDef.type,
+        nullable: fieldDef.nullable ?? true,
+        label   : fieldDef.label ?? name.replace(/_/g,' '),
+    }),
+})
+
+export const aidaFieldInfo = recordDef(aidaMetaContext, {
+    type       : {type: 'typeName', nullable: false},
+    isName     : {type: 'boolean' , nullable: false},
+    nullable   : {type: 'boolean' , nullable: false},
+    label      : {type: 'text'    , nullable: false},
+    description: {type: 'text'    , nullable: false},
+})
+
 /* a record def is not only the fields of an entity: this one describes the parameters of a
    search endpoint and belongs to no table at all */
 export const alumnoSearchParams = recordDef(aidaContext, {
