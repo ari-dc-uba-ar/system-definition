@@ -52,30 +52,22 @@ export type NotNullableFieldsOf<TContext extends SystemTypeContext, TRecordDef e
     [K in keyof TRecordDef]: K extends TNames ? TRecordDef[K] & {nullable: false} : TRecordDef[K]
 }
 
-export function notNullableFields(recordDef: RecordDef<SystemTypeContext>, names: readonly string[]): RecordDef<SystemTypeContext> {
-    return Object.fromEntries(Object.entries(recordDef).map(([name, fieldDef]) =>
+export function notNullableFields(fields: RecordDef<SystemTypeContext>, names: readonly string[]): RecordDef<SystemTypeContext> {
+    return Object.fromEntries(Object.entries(fields).map(([name, fieldDef]) =>
         [name, names.includes(name) ? {...fieldDef, nullable: false} : fieldDef]
     ));
 }
 
 /* a record def only means something against a context: which types exist is not something the
-   def can say by itself. createRecordSsot binds the two without merging them: what travels as
-   JSON is the def, and the context is what both ends of the serialization have to share.
+   def can say by itself. recordDef checks it against the context and gives back the very same
+   def: what it adds is the check and the preserved literals, not a wrapper. Unlike a satisfies,
+   the constraint of a type parameter does no excess property check, so a system can put its own
+   properties in a field (a width, a tooltip) without redeclaring a wider FieldDef.
    It does not complete anything: the def is worth having as it is (one def is written in terms
    of another), and every end knows how to complete it when it needs to. */
-export type RecordSsot<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>> = {
-    context: TContext
-    def: TRecordDef
-}
-
-export function createRecordSsot<TContext extends SystemTypeContext, const TRecordDef extends RecordDef<TContext>>(
-    context: TContext,
+export function recordDef<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
+    _context: TContext,
     def: TRecordDef,
-): RecordSsot<TContext, TRecordDef> {
-    return {context, def};
+): TRecordDef {
+    return def;
 }
-
-/* the def goes in as it is: intersecting it with RecordDef to "help" the constraint drags in the
-   index signature of the Record, and then the deduced instance type accepts any field name */
-export type RecordInstanceTypeOf<TRecordSsot extends RecordSsot<SystemTypeContext, RecordDef<SystemTypeContext>>> =
-    RecordInstanceType<TRecordSsot['context'], TRecordSsot['def']>

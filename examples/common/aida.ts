@@ -1,7 +1,7 @@
 /* EJEMPLO del sistema de alumnos */
 
 import { boxType, commonTypeDefs } from "../../src/common/ssot-types";
-import { RecordDef, createRecordSsot } from "../../src/common/ssot-record";
+import { recordDef } from "../../src/common/ssot-record";
 import { EntityDef, EntityInstanceType, defineEntity, defineEntities, extractPk, mergePk } from "../../src/common/ssot-entity";
 
 export type Fecha = {año: number, mes: number, día:number}
@@ -16,27 +16,24 @@ export const aidaContext = {
     }
 }
 
-export type RecordsDef = RecordDef<typeof aidaContext>
-
-export const cargo = {
+export const cargo = recordDef(aidaContext, {
     cargo            : {type: 'text' },
     denominacion     : {type: 'text' , label:'denominación'},
     orden            : {type: 'integer'},
     puede_dirigir    : {type: 'boolean'},
-
-} satisfies RecordsDef
+})
 
 export const cargos = defineEntity({
     fields: cargo,
     pk: ['cargo'],
 })
 
-export const materia = {
+export const materia = recordDef(aidaContext, {
     materia          : {type: 'text'   },
     denominacion     : {type: 'text'   , label:'denominación', nullable: false, isName: true, description: 'si corresponde a más de una carrera, aclarar en el nombre'},
-} satisfies RecordsDef
+})
 
-export const docente = {
+export const docente = recordDef(aidaContext, {
     docente          : {type: 'text' },
     apellido         : {type: 'text' , nullable:false},
     nombres          : {type: 'text' , nullable:false},
@@ -44,17 +41,17 @@ export const docente = {
     email            : {type: 'email'},
     email_alternativo: {type: 'email'},
     jefe             : {type: 'text' , description: 'jefe de cátedra (otro docente)'},
-} satisfies RecordsDef
+})
 
-export const asignacion = {
+export const asignacion = recordDef(aidaContext, {
     docente: docente.docente,
     materia: materia.materia,
     cargo  : cargo.cargo,
-} satisfies RecordsDef
+})
 
-export const periodo = {
+export const periodo = recordDef(aidaContext, {
     periodo          : {type: 'text' , description: 'bimestre, cuatrimestre, etc...'},
-} satisfies RecordsDef
+})
 
 /* entities: plural names wrap the singular record defs */
 
@@ -72,11 +69,11 @@ export const materias = defineEntity({
 })
 export const periodos = defineEntity({pk: ['periodo'], fields: periodo})
 
-export const curso = {
+export const curso = recordDef(aidaContext, {
     ...extractPk(periodos),
     ...extractPk(materias),
     ...extractPk(docentes), // docente responsable del curso
-} satisfies RecordsDef
+})
 
 export const cursos = defineEntity({
     pk: ['periodo', 'materia'],
@@ -88,12 +85,12 @@ export const cursos = defineEntity({
     fields: curso,
 })
 
-export const clase = {
+export const clase = recordDef(aidaContext, {
     ...extractPk(cursos),
     orden            : {type: 'integer'},
     fecha            : {type: 'fecha'  },
     tema             : {type: 'text'   },
-} satisfies RecordsDef
+})
 
 export const clases = defineEntity({
     pk: [...cursos.pk, 'orden'],
@@ -101,22 +98,22 @@ export const clases = defineEntity({
     fields: clase,
 })
 
-export const alumno = {
+export const alumno = recordDef(aidaContext, {
     alumno           : {type: 'text' },
     apellido         : {type: 'text' , nullable:false},
     nombres          : {type: 'text' , nullable:false},
     email            : {type: 'email'},
-} satisfies RecordsDef
+})
 
 export const alumnos = defineEntity({pk: ['alumno'], fields: alumno})
 
-export const pregunta = {
+export const pregunta = recordDef(aidaContext, {
     ...extractPk(clases),
     pregunta         : {type: 'integer'},
     formulacion      : {type: 'text'   , nullable:false, label: 'formulación', description: 'texto principal de la pregunta'},
     aclaraciones     : {type: 'text'   , description: 'texto que no necesita repetirse cuando se quiera referir a una pregunta por su formulación, pero que es necesario para aclarar el contexto o posibles ambigüedades de la pregunta'},
     tipo_respuesta   : {type: 'text'   , nullable:false, label: 'tipo'}
-} satisfies RecordsDef
+})
 
 export const preguntas = defineEntity({
     pk: [...clases.pk, 'pregunta'],
@@ -124,11 +121,11 @@ export const preguntas = defineEntity({
     fields: pregunta,
 })
 
-export const opcion = {
+export const opcion = recordDef(aidaContext, {
     ...extractPk(preguntas),
     opcion           : {type: 'text'   },
     detalle          : {type: 'text'   },
-} satisfies RecordsDef
+})
 
 export const opciones = defineEntity({
     pk: [...preguntas.pk, 'opcion'],
@@ -136,10 +133,10 @@ export const opciones = defineEntity({
     fields: opcion,
 })
 
-export const inscripcion = {
+export const inscripcion = recordDef(aidaContext, {
     ...extractPk(cursos),
     ...extractPk(alumnos),
-} satisfies RecordsDef
+})
 
 export const inscripciones = defineEntity({
     pk: [...cursos.pk, 'alumno'],
@@ -153,10 +150,10 @@ export const inscripciones = defineEntity({
 /* combined pk: inscripciones and clases share periodo and materia, no repetition;
    periodo and materia belong to both fks */
 
-export const presencia = {
+export const presencia = recordDef(aidaContext, {
     ...extractPk(inscripciones),
     ...extractPk(clases),
-} satisfies RecordsDef
+})
 
 export const presencias = defineEntity({
     pk: mergePk(inscripciones.pk, clases.pk),
@@ -169,12 +166,12 @@ export const presencias = defineEntity({
 
 /* two fks to the same entity, renaming the fields */
 
-export const mesa = {
+export const mesa = recordDef(aidaContext, {
     ...extractPk(cursos),
     fecha            : {type: 'fecha'},
     presidente       : {type: 'text' },
     vocal            : {type: 'text' },
-} satisfies RecordsDef
+})
 
 export const mesas = defineEntity({
     pk: [...cursos.pk, 'fecha'],
@@ -187,9 +184,8 @@ export const mesas = defineEntity({
 })
 
 /* a record def is not only the fields of an entity: this one describes the parameters of a
-   search endpoint, so it goes through createRecordSsot, which binds it to the context it is
-   written against. There is no satisfies here: the function is the one that checks. */
-export const alumnoSearchParams = createRecordSsot(aidaContext, {
+   search endpoint and belongs to no table at all */
+export const alumnoSearchParams = recordDef(aidaContext, {
     apellido: {type: 'text' },
     desde   : {type: 'fecha'},
 })

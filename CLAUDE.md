@@ -126,12 +126,15 @@ Nombres ya elegidos:
   `tsType` es fantasma: `boxType` devuelve `null` en runtime, así que lleva un tipo de compilación
   adentro de un valor. Es el lugar donde más adelante va a vivir el comportamiento de los tipos
   (parseo, validación, tipo SQL), que no es serializable y por eso vive en el contexto y no en la Def.
-* `RecordSsot<TContext, TRecordDef>` / `createRecordSsot(context, def)`: ata un `RecordDef` al
-  contexto contra el que está escrito, sin mezclarlos (`{context, def}`). Lo serializable es `.def`;
-  el contexto es lo que tienen que compartir los dos lados de la serialización. Reemplaza al
-  `satisfies RecordsDef`: la función es la que chequea, y preserva los literales igual.
+* `recordDef(context, def)`: chequea una def de record contra el contexto y **devuelve la misma def**,
+  sin envoltorio. Reemplaza al `satisfies`, y gana dos cosas: la restricción de un parámetro de tipo
+  no hace chequeo de propiedades excedentes, así que el sistema puede poner sus propias propiedades
+  en un campo (un ancho, un tooltip) sin redeclarar un `FieldDef` ancho; y el error apunta al campo
+  que está mal en vez de al objeto entero. **No lleva `const`** en el parámetro: sin `const` el tipo
+  contextual preserva los literales donde importan (`type`, `nullable`) y ensancha los que no
+  (`label`, `description`), que es exactamente lo que hacía el `satisfies`; con `const` quedaba
+  literal hasta la `description`.
   **No completa**: la Def sin completar tiene valor propio (unas defs se escriben en función de
   otras, y completar de entrada impide eso), y todas las puntas saben completar cuando les hace falta.
-  `RecordInstanceTypeOf<TRecordSsot>` deduce el tipo de la instancia sin volver a nombrar el contexto.
   Un `RecordDef` vale por sí mismo, no solo como campos de una entidad: sirve para el payload o los
   parámetros de un endpoint (`alumnoSearchParams` en el ejemplo).

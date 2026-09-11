@@ -4,7 +4,7 @@ import * as path from "path";
 import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
-import { FieldDef, RecordDef, RecordInstanceType, RecordInstanceTypeOf, completeRecord, createRecordSsot } from "../src/common/ssot-record";
+import { FieldDef, RecordDef, RecordInstanceType, completeRecord, recordDef } from "../src/common/ssot-record";
 import { EntityDef, EntityInfoOf, EntityInstanceType, SystemEntityContext,
     completeEntity, defineEntity, defineEntities, extractPk, mergePk } from "../src/common/ssot-entity";
 import { ExpandType, Optional } from "../src/common/type-utils";
@@ -347,13 +347,15 @@ describe("aida entity completion (Def → Info)", function(){
 })
 
 describe("extended declaractions", function(){
-    type MyFieldDef = FieldDef<typeof aidaContext> & {otherText?:string, otherBool:boolean};
-    const extendedCargo = {
+    /* a system can put its own properties in a field: recordDef checks against the context
+       through the constraint of a type parameter, which does no excess property check, so
+       there is no need to declare a wider FieldDef as the satisfies used to require */
+    const extendedCargo = recordDef(aidaContext, {
         cargo            : {type: 'text'    , otherBool:true},
         denominacion     : {type: 'text'    , otherBool:true, label:'denominación'},
-        orden            : {type: 'integer' , otherBool:true},
+        orden            : {type: 'integer' , otherBool:true, otherText:'lo que el sistema quiera'},
         puede_dirigir    : {type: 'boolean' , otherBool:true},
-    } satisfies Record<string, MyFieldDef>
+    })
     const extendedCargos = defineEntity({
         fields: extendedCargo,
         pk: ['cargo']
@@ -362,6 +364,17 @@ describe("extended declaractions", function(){
         var miCargo = {cargo: '7'}
         var expected: ExpandType<Optional<DefinedType<typeof extendedCargos>>>;
         expected = miCargo;
+    })
+    it("keeps the properties the ssot knows nothing about", function(){
+        var otherBool: boolean = extendedCargo.orden.otherBool;
+        var otherText: string = extendedCargo.orden.otherText;
+        // @ts-expect-error the extra of one field does not leak into the others
+        var noExtra = extendedCargo.cargo.otherText;
+        // @ts-expect-error the extras do not loosen the check: the type must still be in the context
+        recordDef(aidaContext, {mal: {type: 'importe', otherBool: true}});
+        assert.equal(otherBool, true);
+        assert.equal(otherText, 'lo que el sistema quiera');
+        assert.equal(noExtra, undefined);
     })
 })
 
@@ -445,16 +458,16 @@ describe("one context per system, shared by every layer", function(){
     })
 })
 
-describe("record ssot: the def bound to the context it is written against", function(){
-    it("keeps the def as plain serializable data", function(){
+describe("recordDef: the def checked against the context it is written against", function(){
+    it("gives back the very same def, plain and serializable", function(){
         var plainDef = {apellido: {type: 'text'}, desde: {type: 'fecha'}};
-        assert.deepStrictEqual(alumnoSearchParams.def, plainDef);
+        assert.deepStrictEqual(alumnoSearchParams, plainDef);
         // the def travels as JSON; the context is what both ends have to share beforehand
-        assert.deepStrictEqual(JSON.parse(JSON.stringify(alumnoSearchParams.def)), plainDef);
+        assert.deepStrictEqual(JSON.parse(JSON.stringify(alumnoSearchParams)), plainDef);
     })
     it("deduces the instance type without naming the context again", function(){
         type SearchParams = {apellido: string | null, desde: Fecha | null}
-        type Deduced = RecordInstanceTypeOf<typeof alumnoSearchParams>
+        type Deduced = RecordInstanceType<typeof aidaContext, typeof alumnoSearchParams>
         var params: SearchParams = {apellido: 'Pérez', desde: null};
         // both assignments must compile: SearchParams and Deduced are mutually assignable
         var deduced: Deduced = params;
@@ -466,11 +479,11 @@ describe("record ssot: the def bound to the context it is written against", func
     })
     it("rejects a type that the context does not have", function(){
         // @ts-expect-error 'importe' is not one of the types of the aida context
-        var noSuchType = createRecordSsot(aidaContext, {total: {type: 'importe'}});
-        assert.deepStrictEqual(noSuchType.def, {total: {type: 'importe'}});
+        var noSuchType = recordDef(aidaContext, {total: {type: 'importe'}});
+        assert.deepStrictEqual(noSuchType, {total: {type: 'importe'}});
     })
     it("does not complete: completing is up to whoever needs it", function(){
-        assert.deepStrictEqual(completeRecord(alumnoSearchParams.def).apellido, {
+        assert.deepStrictEqual(completeRecord(alumnoSearchParams).apellido, {
             type: 'text', isName: false, nullable: true, label: 'apellido', description: '',
         });
     })
