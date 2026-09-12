@@ -1,6 +1,6 @@
 /* EJEMPLO del sistema de alumnos */
 
-import { boxType, commonTypeDefs, CoreFieldDef, defineTypes } from "../../src/common/ssot-types";
+import { boxType, commonTypeDefs, completeCoreField, CoreFieldDef, defineTypes } from "../../src/common/ssot-types";
 import { recordDef } from "../../src/common/ssot-record";
 import { EntityDef, EntityInstanceType, defineEntities, entityDef, extractPk, mergePk, withRecords } from "../../src/common/ssot-entity";
 
@@ -26,10 +26,8 @@ export type AidaFieldDef = CoreFieldDef<typeof types> & {
 export const aidaTypes = defineTypes({
     types,
     completeField: (fieldDef: AidaFieldDef, name: string) => ({
-        name,
-        type       : fieldDef.type,
+        ...completeCoreField(fieldDef, name),
         isName     : fieldDef.isName ?? false,
-        nullable   : fieldDef.nullable ?? true,
         label      : fieldDef.label ?? name.replace(/_/g,' '),
         description: fieldDef.description ?? '',
     }),
@@ -242,10 +240,8 @@ const metaTypes = {
 export const aidaMetaContext = defineTypes({
     types: metaTypes,
     completeField: (fieldDef: CoreFieldDef<typeof metaTypes> & {label?: string}, name: string) => ({
-        name,
-        type    : fieldDef.type,
-        nullable: fieldDef.nullable ?? true,
-        label   : fieldDef.label ?? name.replace(/_/g,' '),
+        ...completeCoreField(fieldDef, name),
+        label: fieldDef.label ?? name.replace(/_/g,' '),
     }),
 })
 

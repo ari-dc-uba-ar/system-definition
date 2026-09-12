@@ -151,9 +151,17 @@ Nombres ya elegidos:
   pone el sistema, y `completeRecord(context, fields)` no conoce ningún default propio, solo mapea.
   El `name` entra porque algunos defaults se derivan de él (el label). Escribir la Info clave por
   clave en el completador también fija el orden que van a ver los generadores.
-  Pendiente: la regla estática de nulleabilidad (`NullPart`: nulleable salvo `nullable:false`)
-  la sigue fijando el framework, así que un sistema cuyo completador ponga otro default para
-  `nullable` haría que la Info y el tipo deducido no coincidan. Hoy es una convención, no un chequeo.
+  El completador del sistema **spreadea `completeCoreField(fieldDef, name)`** en vez de escribir
+  el core a mano: así lo que el framework le agregue al core más adelante llega solo, y el sistema
+  escribe únicamente lo suyo. (El que no lo spreadee no queda mal en silencio: `defineTypes` le
+  marca la propiedad que falta.) El costo es que el core queda primero en el orden de claves; ese
+  reordenamiento del snapshot está justificado, no es casual.
+  El default de nulleabilidad vive **ahí y en ningún otro lado**, porque la regla estática
+  (`NullPart`: nulleable salvo `nullable:false`) dice lo mismo desde el otro lado — y coincide con
+  el default de SQL, que también es nulleable. Un sistema que pise `nullable` en su completador
+  hace que la Info y el tipo deducido no coincidan, en silencio; hay un test que ata las dos puntas.
+  Pendiente: si algún sistema necesita otra política, el lugar no es el completador sino el
+  contexto (algo como `fieldNullableDefault`), que lean las dos puntas.
 * `EntityDef` tiene además `uks` (uniques con nombre: `{denominacion: ['denominacion']}`) y
   `fks`. Una `FkDef` es `{entity, fields}` donde `entity` es el **nombre** de la entidad
   destino (string, no el objeto: mantiene la serializabilidad y permite fks circulares y

@@ -63,6 +63,24 @@ export type AnyFieldDef = {
     nullable?: boolean
 }
 
+/* the core part of the completion, so that a system's completer spreads it instead of writing
+   it from scratch: whatever the framework adds to the core later arrives by itself, and the
+   system only writes what is its own. The nullable default lives HERE and nowhere else, because
+   the static rule (NullPart) says the same thing from the other side — nullable unless it says
+   nullable:false, which is also the default of SQL. A system that overrides it in its completer
+   makes the info and the deduced type disagree in silence. */
+export function completeCoreField<TFieldDef extends AnyFieldDef>(fieldDef: TFieldDef, name: string): {
+    name: string
+    type: TFieldDef['type']
+    nullable: boolean
+} {
+    return {
+        name,
+        type: fieldDef.type,
+        nullable: fieldDef.nullable ?? true,
+    };
+}
+
 export const commonTypeDefs = {
     text       : {tsType: boxType<string>()},
     integer    : {tsType: boxType<number>()},

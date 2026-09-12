@@ -7,7 +7,7 @@ import { strict as LikeAr } from "like-ar";
 import { FieldDef, RecordDef, RecordInstanceType, completeRecord, recordDef } from "../src/common/ssot-record";
 import { AnyEntityDef, EntityDef, EntityInfoOf, EntityInstanceType,
     completeEntity, entityDef, defineEntities, extractPk, mergePk, withRecords } from "../src/common/ssot-entity";
-import { boxType, defineTypes } from "../src/common/ssot-types";
+import { boxType, completeCoreField, defineTypes } from "../src/common/ssot-types";
 import { ExpandType, Optional } from "../src/common/type-utils";
 import { aidaTypes, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
     cargos, alumnoSearchParams, Fecha, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef, aida, aida1
@@ -523,9 +523,7 @@ describe("each system decides what a field is and how it completes", function(){
     const billing = defineTypes({
         types: {code: {tsType: boxType<string>()}, amount: {tsType: boxType<number>()}},
         completeField: (fieldDef: {type: 'code' | 'amount', nullable?: boolean, defaultValue?: string}, name: string) => ({
-            name,
-            type        : fieldDef.type,
-            nullable    : fieldDef.nullable ?? true,
+            ...completeCoreField(fieldDef, name),
             defaultValue: fieldDef.defaultValue ?? null,
             title       : name.toUpperCase(),
         }),
@@ -659,5 +657,28 @@ describe("the info says its own name", function(){
         var elNombre: 'cursos' = cursosInfo.name;
         assert.equal(JSON.parse(JSON.stringify(cursosInfo)).name, 'cursos');
         assert.equal(elNombre, 'cursos');
+    })
+})
+
+describe("the core of the completion comes from the framework", function(){
+    it("gives name, type and nullable without the system writing them", function(){
+        assert.deepStrictEqual(completeCoreField({type: 'text'}, 'apellido'),
+            {name: 'apellido', type: 'text', nullable: true});
+        assert.deepStrictEqual(completeCoreField({type: 'fecha', nullable: false}, 'desde'),
+            {name: 'desde', type: 'fecha', nullable: false});
+    })
+    it("keeps the info and the deduced type saying the same about nullability", function(){
+        /* the two sides of one rule: completeCoreField writes it into the info and NullPart
+           deduces it from the def. A system that overrode nullable would split them in silence,
+           which is exactly why the default lives in the framework and gets spread in. */
+        var docenteInfo = completeRecord(aidaTypes, docente);
+        type Docente = RecordInstanceType<typeof aidaTypes, typeof docente>
+        // @ts-expect-error apellido says nullable:false, so the deduced type refuses null
+        var conNull: Docente = {docente: null, apellido: null, nombres: 'N', cargo: null,
+            email: null, email_alternativo: null, jefe: null};
+        assert.equal(docenteInfo.apellido.nullable, false);
+        // and the field that says nothing is nullable on both sides
+        assert.equal(docenteInfo.cargo.nullable, true);
+        assert.equal(conNull.nombres, 'N');
     })
 })
