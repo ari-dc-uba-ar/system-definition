@@ -83,7 +83,7 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
   un contexto único (`aidaContext`) y se lo pasa igual a todas las capas: cada una exige solo la
   parte que usa, así que un contexto con más cosas adentro sirve lo mismo.
 * Dos trampas de inferencia encontradas y verificadas, que conviene no repetir:
-  el `FieldDef` que recibe `recordDef` se **infiere del completador del contexto**, no se calcula
+  el `FieldDef` que recibe `defineRecord` se **infiere del completador del contexto**, no se calcula
   con `Parameters<TContext['completeField']>[0]`: a través de ese indexed access diferido el
   compilador no ve que el destino de `type` sea una unión de literales y los ensancha a todos.
   Y una propiedad opcional cuyo tipo es un **literal único** (`isName?: true`) hace que la
@@ -190,7 +190,7 @@ Nombres ya elegidos:
   `tsType` es fantasma: `boxType` devuelve `null` en runtime, así que lleva un tipo de compilación
   adentro de un valor. Es el lugar donde más adelante va a vivir el comportamiento de los tipos
   (parseo, validación, tipo SQL), que no es serializable y por eso vive en el contexto y no en la Def.
-* El sistema puede **describirse a sí mismo**: `aidaFieldInfo` es un `recordDef` que describe
+* El sistema puede **describirse a sí mismo**: `aidaFieldInfo` es un `defineRecord` que describe
   cómo es un field info de aida, escrito con el mismo vocabulario. No reemplaza a la declaración
   estática (un record plano no puede expresar que el tipo de un `defaultValue` dependa del `type`
   del campo, ni que `type` sea un enum sobre un conjunto dinámico): son dos mitades, una para las
