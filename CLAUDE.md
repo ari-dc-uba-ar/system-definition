@@ -111,15 +111,25 @@ Nombres ya elegidos:
   `Record<K, V>` de TypeScript.
 * La descripción de un campo es `FieldDef` / `FieldInfo`. `RecordDef` es el mapa de campos:
   `Record<string, FieldDef>`.
+* **Redundancia lineal sí, N-aria no.** Un dato repetido una sola vez contra su fuente se puede
+  chequear (es un doble chequeo); repetido N veces solo se chequea contra sus propias copias.
+  Por eso la pk propia de una entidad se escribe con literales (se contrasta contra los campos del
+  record que nombra) mientras que las heredadas se traen con `extractPk`, y por eso la entidad
+  lleva su `name` aunque después sea la clave en `defineEntities`: ahí se exige que coincidan.
 * `EntityDef` es el nivel contenedor (la unidad representable como grilla, como la llama el
-  documento SSOTIGAD). Se construye con `defineEntity(context, {record, pk, fks, uks})`, donde
+  documento SSOTIGAD). Se construye con `defineEntity(context, {name, record, pk, fks, uks})`, donde
   `record` es el **nombre** del record, igual que una fk nombra a su entidad destino y por el
   mismo motivo: serializabilidad. El valor que devuelve resuelve además `fields` desde el
   contexto, así que todo lo que viene después (`extractPk`, `completeEntity`, los tipos de
   instancia) sigue trabajando sobre valores. Chequea en compilación que `record` esté en el
   contexto y que los elementos de `pk` (y los de `uks` y los orígenes de `fks`) sean campos de
-  ese record; preserva los literales con parámetros `const`. `EntityInfo` también lleva el
-  `record`, para que el vínculo sobreviva a la serialización.
+  ese record; preserva los literales con parámetros `const`. `EntityInfo` lleva el `record` y el
+  `name`, para que el vínculo sobreviva a la serialización.
+  El `name` va en la Def y no es duplicación: a diferencia de un campo, la entidad no se escribe
+  adentro de un mapa, así que ese es el primer lugar donde el nombre se dice. Que la clave que
+  después recibe en `defineEntities` tenga que coincidir es un chequeo, no una segunda fuente
+  (`ValidatedEntities` lo exige). Y por llevarlo, `completeEntity(context, entityDef)` ya no
+  necesita que se lo pasen.
 * El contexto de la capa de entidades es `SystemEntityContext = SystemTypeContext & {records}`,
   y **crece por etapas** con `withRecords(context, records)`, que acumula: el tipo que devuelve
   es la intersección, que dice lo mismo que el spread del runtime. Un record que hereda la pk de
@@ -144,9 +154,8 @@ Nombres ya elegidos:
   clave ya lo dice; la Info es un valor derivado, y un valor derivado conviene que se explique solo.
   Es una desnormalización, pero segura: la escribe el framework desde la clave, no el humano, así
   que no pueden divergir. Lo pone el completador (que ya recibía el `name` para el label), y
-  `RecordInfoOf` lo fija al literal de la clave, igual que `type` y `nullable`. `completeEntity`
-  recibe el nombre por el mismo motivo: la entidad no lo sabe de ningún lado, su nombre es la clave
-  que tiene en el mapa del sistema.
+  `RecordInfoOf` lo fija al literal de la clave, igual que `type` y `nullable`. (La entidad es
+  otro caso: lleva el `name` en la propia Def, ver más arriba.)
   La razón de fondo es la serialización: un `Record<name, XxxInfo>` se puede mandar como **array**,
   y del otro lado se reindexa sin perder nada. JS garantiza el orden de las claves de un objeto
   (mientras no sean números puros), pero un sistema que no es JS no lo garantiza, y el array sí.

@@ -79,9 +79,10 @@ export const alumno = defineRecord(aidaTypes, {
 
 export const aida1 = withRecords(aidaTypes, {cargo, materia, docente, asignacion, periodo, alumno})
 
-export const cargos = defineEntity(aida1, {record: 'cargo', pk: ['cargo']})
+export const cargos = defineEntity(aida1, {name: 'cargos', record: 'cargo', pk: ['cargo']})
 
 export const docentes = defineEntity(aida1, {
+    name: 'docentes',
     record: 'docente',
     pk: ['docente'],
     // reflexive fk: inside its own definition the entity is referenced by name,
@@ -90,13 +91,14 @@ export const docentes = defineEntity(aida1, {
 })
 
 export const materias = defineEntity(aida1, {
+    name: 'materias',
     record: 'materia',
     pk: ['materia'],
     uks: {denominacion: ['denominacion']},
 })
 
-export const periodos = defineEntity(aida1, {record: 'periodo', pk: ['periodo']})
-export const alumnos  = defineEntity(aida1, {record: 'alumno' , pk: ['alumno' ]})
+export const periodos = defineEntity(aida1, {name: 'periodos', record: 'periodo', pk: ['periodo']})
+export const alumnos  = defineEntity(aida1, {name: 'alumnos', record: 'alumno' , pk: ['alumno' ]})
 
 /* LEVEL 2: curso inherits the pks of level 1, so it cannot exist before them */
 
@@ -109,6 +111,7 @@ export const curso = defineRecord(aidaTypes, {
 export const aida2 = withRecords(aida1, {curso})
 
 export const cursos = defineEntity(aida2, {
+    name: 'cursos',
     record: 'curso',
     pk: ['periodo', 'materia'],
     fks: {
@@ -130,6 +133,7 @@ export const clase = defineRecord(aidaTypes, {
 export const aida3 = withRecords(aida2, {clase})
 
 export const clases = defineEntity(aida3, {
+    name: 'clases',
     record: 'clase',
     pk: [...cursos.pk, 'orden'],
     fks: {cursos: {entity: 'cursos', fields: cursos.pk}},
@@ -162,12 +166,14 @@ export const mesa = defineRecord(aidaTypes, {
 export const aida4 = withRecords(aida3, {pregunta, inscripcion, mesa})
 
 export const preguntas = defineEntity(aida4, {
+    name: 'preguntas',
     record: 'pregunta',
     pk: [...clases.pk, 'pregunta'],
     fks: {clases: {entity: 'clases', fields: clases.pk}},
 })
 
 export const inscripciones = defineEntity(aida4, {
+    name: 'inscripciones',
     record: 'inscripcion',
     pk: [...cursos.pk, 'alumno'],
     fks: {
@@ -177,6 +183,7 @@ export const inscripciones = defineEntity(aida4, {
 })
 
 export const mesas = defineEntity(aida4, {
+    name: 'mesas',
     record: 'mesa',
     pk: [...cursos.pk, 'fecha'],
     fks: {
@@ -197,6 +204,7 @@ export const opcion = defineRecord(aidaTypes, {
 export const aida5 = withRecords(aida4, {opcion})
 
 export const opciones = defineEntity(aida5, {
+    name: 'opciones',
     record: 'opcion',
     pk: [...preguntas.pk, 'opcion'],
     fks: {preguntas: {entity: 'preguntas', fields: preguntas.pk}},
@@ -213,6 +221,7 @@ export const presencia = defineRecord(aidaTypes, {
 export const aida6 = withRecords(aida5, {presencia})
 
 export const presencias = defineEntity(aida6, {
+    name: 'presencias',
     record: 'presencia',
     pk: mergePk(inscripciones.pk, clases.pk),
     fks: {

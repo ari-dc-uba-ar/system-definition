@@ -30,6 +30,7 @@ export function withRecords<TContext extends SystemTypeContext, const TRecords e
 /* the bound for "an entity def of any system at all", the counterpart of AnyFieldDef: the
    structural checks over pks and fks do not need to know the types of anybody */
 export type AnyEntityDef = {
+    name: string
     record: string
     fields: AnyRecordDef
     pk: readonly string[]
@@ -46,6 +47,10 @@ export type FkDef = {
 }
 
 export type EntityDef<TContext extends SystemEntityContext> = {
+    /* the entity says its own name: unlike a field, it is not written inside a map, so this is
+       the first place the name is stated, not a repetition of a key. That the key it later gets
+       in defineEntities has to match is a check, not a duplication. */
+    name: string
     record: keyof TContext['records'] & string
     fields: RecordDef<TContext>
     pk: readonly string[]
@@ -55,15 +60,17 @@ export type EntityDef<TContext extends SystemEntityContext> = {
 
 export function defineEntity<
     TContext extends SystemEntityContext,
+    const TName extends string,
     const TRecord extends keyof TContext['records'] & string,
     const TPk extends readonly (keyof TContext['records'][TRecord] & string)[],
     const TUks extends Readonly<Record<string, readonly (keyof TContext['records'][TRecord] & string)[]>> = {},
     const TFks extends Readonly<Record<string, {entity: string, fields: readonly (keyof TContext['records'][TRecord] & string)[] | {readonly [K in keyof TContext['records'][TRecord]]?: string}}>> = {},
 >(
     context: TContext,
-    def: {record: TRecord, pk: TPk, fks?: TFks, uks?: TUks},
-): {record: TRecord, fields: TContext['records'][TRecord], pk: TPk, fks: TFks, uks: TUks} {
+    def: {name: TName, record: TRecord, pk: TPk, fks?: TFks, uks?: TUks},
+): {name: TName, record: TRecord, fields: TContext['records'][TRecord], pk: TPk, fks: TFks, uks: TUks} {
     return {
+        name: def.name,
         record: def.record,
         // the name is what the human writes and what gets serialized; the fields are resolved
         // from the context so that everything downstream keeps working on values
@@ -131,8 +138,8 @@ export type EntityInfo<TContext extends SystemEntityContext> = {
 /* the same reasoning as the field: the info is derived, so it says its own name. The entity
    does not receive it from anywhere else — its name is the key it has in the map of the system —
    so completeEntity takes it, the way completeField takes the name of the field. */
-export type EntityInfoOf<TContext extends SystemEntityContext, TEntityDef extends EntityDef<TContext>, TName extends string> = {
-    name: TName
+export type EntityInfoOf<TContext extends SystemEntityContext, TEntityDef extends EntityDef<TContext>> = {
+    name: TEntityDef['name']
     record: TEntityDef['record']
     fields: RecordInfoOf<TContext, NotNullableFieldsOf<TContext, TEntityDef['fields'], TEntityDef['pk'][number]>>
     pk: DedupPk<TEntityDef['pk']>
@@ -151,23 +158,18 @@ function completeFk(fkDef: FkDef): FkInfo {
     };
 }
 
-export function completeEntity<
-    TContext extends SystemEntityContext,
-    const TEntityDef extends EntityDef<TContext>,
-    const TName extends string,
->(
+export function completeEntity<TContext extends SystemEntityContext, const TEntityDef extends EntityDef<TContext>>(
     context: TContext,
     entityDef: TEntityDef,
-    name: TName,
-): EntityInfoOf<TContext, TEntityDef, TName> {
+): EntityInfoOf<TContext, TEntityDef> {
     return {
-        name,
+        name: entityDef.name,
         record: entityDef.record,
         fields: completeRecord(context, notNullableFields(entityDef.fields, entityDef.pk) as RecordDef<TContext>),
         pk: mergePk(entityDef.pk),
         fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
         uks: entityDef.uks ?? {},
-    } as EntityInfoOf<TContext, TEntityDef, TName>;
+    } as EntityInfoOf<TContext, TEntityDef>;
 }
 
 /* the instance type of a row of the entity: like the record one, but the pk fields
@@ -196,7 +198,12 @@ type ValidatedFks<TFks extends Readonly<Record<string, FkDef>>, TEntities extend
 }
 
 export type ValidatedEntities<TEntities extends Readonly<Record<string, AnyEntityDef>>> = {
-    [E in keyof TEntities]: {fks?: ValidatedFks<NonNullable<TEntities[E]['fks']>, TEntities>}
+    /* the name the entity carries has to be the key it gets here: that is what turns the
+       repetition into a double check instead of two sources that can drift apart */
+    [E in keyof TEntities]: {
+        name: E & string
+        fks?: ValidatedFks<NonNullable<TEntities[E]['fks']>, TEntities>
+    }
 }
 
 /* system-level checks, where all the entities are known: every fk must point to an entity
