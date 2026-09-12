@@ -136,6 +136,17 @@ Nombres ya elegidos:
   SSOT lee. Todo lo demás (`isName`, `label`, `description`, un `defaultValue`, un ancho de grilla)
   lo declara **cada sistema** en su propio field def, y `defineTypes(context)` es la puerta que
   chequea que ese field def traiga el core y que la Info lo complete.
+* La **Info lleva su propio nombre** y la Def no. La Def se escribe adentro de un mapa, donde la
+  clave ya lo dice; la Info es un valor derivado, y un valor derivado conviene que se explique solo.
+  Es una desnormalización, pero segura: la escribe el framework desde la clave, no el humano, así
+  que no pueden divergir. Lo pone el completador (que ya recibía el `name` para el label), y
+  `RecordInfoOf` lo fija al literal de la clave, igual que `type` y `nullable`. `completeEntity`
+  recibe el nombre por el mismo motivo: la entidad no lo sabe de ningún lado, su nombre es la clave
+  que tiene en el mapa del sistema.
+  La razón de fondo es la serialización: un `Record<name, XxxInfo>` se puede mandar como **array**,
+  y del otro lado se reindexa sin perder nada. JS garantiza el orden de las claves de un objeto
+  (mientras no sean números puros), pero un sistema que no es JS no lo garantiza, y el array sí.
+  El snapshot toon ya es exactamente esa forma.
 * Completar es comportamiento, así que vive en el contexto: `completeField(fieldDef, name)` lo
   pone el sistema, y `completeRecord(context, fields)` no conoce ningún default propio, solo mapea.
   El `name` entra porque algunos defaults se derivan de él (el label). Escribir la Info clave por

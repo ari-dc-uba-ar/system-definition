@@ -1,4 +1,5 @@
 docentes:
+  name: docentes
   record: docente
   fields[7]{name,type,isName,nullable,label,description}:
     docente,text,false,false,docente,""
@@ -16,6 +17,7 @@ docentes:
         jefe: docente
   uks:
 materias:
+  name: materias
   record: materia
   fields[2]{name,type,isName,nullable,label,description}:
     materia,text,false,false,materia,""
@@ -25,6 +27,7 @@ materias:
   uks:
     denominacion[1]: denominacion
 periodos:
+  name: periodos
   record: periodo
   fields[1]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
@@ -32,6 +35,7 @@ periodos:
   fks:
   uks:
 cursos:
+  name: cursos
   record: curso
   fields[3]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
@@ -53,6 +57,7 @@ cursos:
         docente: docente
   uks:
 clases:
+  name: clases
   record: clase
   fields[5]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
@@ -69,6 +74,7 @@ clases:
         materia: materia
   uks:
 alumnos:
+  name: alumnos
   record: alumno
   fields[4]{name,type,isName,nullable,label,description}:
     alumno,text,false,false,alumno,""
@@ -79,6 +85,7 @@ alumnos:
   fks:
   uks:
 preguntas:
+  name: preguntas
   record: pregunta
   fields[7]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
@@ -98,6 +105,7 @@ preguntas:
         orden: orden
   uks:
 opciones:
+  name: opciones
   record: opcion
   fields[6]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
@@ -117,6 +125,7 @@ opciones:
         pregunta: pregunta
   uks:
 inscripciones:
+  name: inscripciones
   record: inscripcion
   fields[3]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
@@ -135,6 +144,7 @@ inscripciones:
         alumno: alumno
   uks:
 presencias:
+  name: presencias
   record: presencia
   fields[4]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."
@@ -157,6 +167,7 @@ presencias:
         orden: orden
   uks:
 mesas:
+  name: mesas
   record: mesa
   fields[5]{name,type,isName,nullable,label,description}:
     periodo,text,false,false,periodo,"bimestre, cuatrimestre, etc..."

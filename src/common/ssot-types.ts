@@ -21,7 +21,13 @@ export type CoreFieldDef<TTypes extends TypeCollection> = {
     nullable?: boolean
 }
 
+/* the info carries the name, which the def does not: the def is written inside a map, where
+   the key already says it, but the info is a derived value and a derived value is worth having
+   self-describing. That is also what allows serializing a map of infos as an ARRAY, which is the
+   only way to guarantee the order to a system that does not share the key-order rules of JS.
+   It is a denormalization, but a safe one: the framework writes it from the key, not the human. */
 export type CoreFieldInfo<TTypes extends TypeCollection> = {
+    name: string
     type: keyof TTypes
     nullable: boolean
 }

@@ -54,7 +54,8 @@ export function recordDef<
 /* the Info of a concrete def: the shape comes from the system's completer, but type and
    nullable are pinned to what this def actually says, which is what the generators read */
 export type RecordInfoOf<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>> = {
-    [K in keyof TRecordDef]: Omit<FieldInfo<TContext>, 'type' | 'nullable'> & {
+    [K in keyof TRecordDef]: Omit<FieldInfo<TContext>, 'name' | 'type' | 'nullable'> & {
+        name: K
         type: TypeNameOf<TContext, TRecordDef[K]>
         // what is known statically is only the explicit nullable:false; the default stays boolean
         nullable: TRecordDef[K] extends {nullable: false} ? false : boolean

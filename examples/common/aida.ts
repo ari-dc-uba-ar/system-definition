@@ -26,6 +26,7 @@ export type AidaFieldDef = CoreFieldDef<typeof types> & {
 export const aidaTypes = defineTypes({
     types,
     completeField: (fieldDef: AidaFieldDef, name: string) => ({
+        name,
         type       : fieldDef.type,
         isName     : fieldDef.isName ?? false,
         nullable   : fieldDef.nullable ?? true,
@@ -241,6 +242,7 @@ const metaTypes = {
 export const aidaMetaContext = defineTypes({
     types: metaTypes,
     completeField: (fieldDef: CoreFieldDef<typeof metaTypes> & {label?: string}, name: string) => ({
+        name,
         type    : fieldDef.type,
         nullable: fieldDef.nullable ?? true,
         label   : fieldDef.label ?? name.replace(/_/g,' '),
@@ -248,6 +250,7 @@ export const aidaMetaContext = defineTypes({
 })
 
 export const aidaFieldInfo = recordDef(aidaMetaContext, {
+    name       : {type: 'text'    , nullable: false},
     type       : {type: 'typeName', nullable: false},
     isName     : {type: 'boolean' , nullable: false},
     nullable   : {type: 'boolean' , nullable: false},

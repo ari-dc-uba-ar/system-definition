@@ -87,8 +87,8 @@ describe("aida example", function(){
     it("completes a record def into a record info", function(){
         var materiaInfo = completeRecord(aidaTypes, materia);
         assert.deepStrictEqual(materiaInfo, {
-            materia      : {type: 'text', label: 'materia'     , nullable: true , description: '', isName: false},
-            denominacion : {type: 'text', label: 'denominación', nullable: false, description: 'si corresponde a más de una carrera, aclarar en el nombre', isName: true},
+            materia      : {name: 'materia'     , type: 'text', label: 'materia'     , nullable: true , description: '', isName: false},
+            denominacion : {name: 'denominacion', type: 'text', label: 'denominación', nullable: false, description: 'si corresponde a más de una carrera, aclarar en el nombre', isName: true},
         });
     })
     it("completes preserving the field set and the type literals", function(){
@@ -103,10 +103,10 @@ describe("aida example", function(){
             var dummy = cargoInfo.inexistente.type
         })
         type CargoInfoExpected = {
-            cargo        : {type: 'text'   , label: string, nullable: boolean, description: string, isName: boolean},
-            denominacion : {type: 'text'   , label: string, nullable: boolean, description: string, isName: boolean},
-            orden        : {type: 'integer', label: string, nullable: boolean, description: string, isName: boolean},
-            puede_dirigir: {type: 'boolean', label: string, nullable: boolean, description: string, isName: boolean},
+            cargo        : {name: 'cargo'        , type: 'text'   , label: string, nullable: boolean, description: string, isName: boolean},
+            denominacion : {name: 'denominacion' , type: 'text'   , label: string, nullable: boolean, description: string, isName: boolean},
+            orden        : {name: 'orden'        , type: 'integer', label: string, nullable: boolean, description: string, isName: boolean},
+            puede_dirigir: {name: 'puede_dirigir', type: 'boolean', label: string, nullable: boolean, description: string, isName: boolean},
         }
         // both assignments must compile: expected and deduced are mutually assignable
         // (this also checks that label, nullable and description are required, not optional)
@@ -265,7 +265,7 @@ describe("aida fks, uks and isName", function(){
 
 describe("aida entity completion (Def → Info)", function(){
     it("normalizes array-form fks to the source→target map form", function(){
-        var cursosInfo = completeEntity(aida, cursos);
+        var cursosInfo = completeEntity(aida, cursos, 'cursos');
         type CursosFksExpected = {
             periodos   : {entity: 'periodos', fields: {periodo: 'periodo'}},
             materias   : {entity: 'materias', fields: {materia: 'materia'}},
@@ -287,7 +287,7 @@ describe("aida entity completion (Def → Info)", function(){
         assert.equal(wrongTarget, 'periodo');
     })
     it("keeps map-form fks as they are", function(){
-        var mesasInfo = completeEntity(aida, mesas);
+        var mesasInfo = completeEntity(aida, mesas, 'mesas');
         var presidenteFk: {entity: 'docentes', fields: {presidente: 'docente'}} = mesasInfo.fks.presidente;
         var presidenteFkBack: typeof mesasInfo.fks.presidente = presidenteFk;
         // @ts-expect-error after completion the array form is gone: fields is always a map
@@ -302,14 +302,14 @@ describe("aida entity completion (Def → Info)", function(){
             // periodo and materia appear twice in the spread:
             pk: [...inscripciones.pk, ...clases.pk],
         });
-        var presenciasAltInfo = completeEntity(aida, presenciasAlt);
+        var presenciasAltInfo = completeEntity(aida, presenciasAlt, 'presencias');
         var pkExpected: readonly ['periodo', 'materia', 'alumno', 'orden'] = presenciasAltInfo.pk;
         var pkBack: typeof presenciasAltInfo.pk = pkExpected;
         assert.deepStrictEqual(presenciasAltInfo.pk, ['periodo', 'materia', 'alumno', 'orden']);
         assert.deepStrictEqual(pkBack, pkExpected);
     })
     it("completes the pk fields as not nullable", function(){
-        var clasesInfo = completeEntity(aida, clases);
+        var clasesInfo = completeEntity(aida, clases, 'clases');
         /* the type checks come first: assert.deepStrictEqual is an assertion signature, so it
            narrows the type of what it receives and any type check after it would be vacuous */
         var periodoNullable: false = clasesInfo.fields.periodo.nullable;
@@ -340,7 +340,7 @@ describe("aida entity completion (Def → Info)", function(){
         assert.equal(tema, null);
     })
     it("completes the fields and keeps the uks", function(){
-        var materiasInfo = completeEntity(aida, materias);
+        var materiasInfo = completeEntity(aida, materias, 'materias');
         // the pk field completes as not nullable; the rest, as the plain record does:
         assert.deepStrictEqual(materiasInfo.fields, {
             ...completeRecord(aidaTypes, materia),
@@ -388,7 +388,7 @@ describe("extended declaractions", function(){
         // @ts-expect-error the extra written in one field does not leak into the others
         var noExtra = extendedCargo.cargo.otherText;
         assert.deepStrictEqual(completeRecord(extendedContext, extendedCargo).cargo, {
-            type: 'text', isName: false, nullable: true, label: 'cargo', description: '',
+            name: 'cargo', type: 'text', isName: false, nullable: true, label: 'cargo', description: '',
             otherText: '', otherBool: true,
         });
         assert.equal(otherBool, true);
@@ -408,20 +408,20 @@ describe("extended declaractions", function(){
 })
 describe("aida design snapshot", function(){
     it("matches aida-design.toon", function(){
-        /* provisional flattening until TOLON exists: toon only formats arrays of uniform
-           objects as tables, so the fields map becomes an array with the name inside */
-        type FieldInfoRow<TEntityDef extends EntityDef<typeof aida>> = {
-            [K in keyof EntityInfoOf<typeof aida, TEntityDef>['fields']]: {name: K} & EntityInfoOf<typeof aida, TEntityDef>['fields'][K]
-        }[keyof TEntityDef['fields']]
+        /* provisional flattening until TOLON exists: toon only formats arrays of uniform objects
+           as tables, so the fields map becomes an array. Nothing has to be reinjected: the info
+           says its own name, which is exactly what makes the array form lossless. */
+        type FieldInfoRow<TEntityDef extends EntityDef<typeof aida>> =
+            EntityInfoOf<typeof aida, TEntityDef, string>['fields'][keyof TEntityDef['fields']]
         type DesignSnapshot<TEntities extends Record<string, EntityDef<typeof aida>>> = {
-            [E in keyof TEntities]: Omit<EntityInfoOf<typeof aida, TEntities[E]>, 'fields'> & {fields: FieldInfoRow<TEntities[E]>[]}
+            [E in keyof TEntities]: Omit<EntityInfoOf<typeof aida, TEntities[E], E & string>, 'fields'> & {fields: FieldInfoRow<TEntities[E]>[]}
         }
         function designSnapshot<const TEntities extends Record<string, EntityDef<typeof aida>>>(eds: TEntities): DesignSnapshot<TEntities> {
-            return LikeAr(eds).map(ed => {
-                var entityInfo = completeEntity(aida, ed);
+            return LikeAr(eds).map((ed, name) => {
+                var entityInfo = completeEntity(aida, ed, name as string);
                 return {
                     ...entityInfo,
-                    fields: LikeAr(entityInfo.fields).map((fieldInfo, name)=>({name, ...fieldInfo})).array(),
+                    fields: Object.values(entityInfo.fields),
                 };
             /* the cast recovers what LikeAr's map loses: its signature collapses the values
                into a union, while the mapping is done key by key */
@@ -512,7 +512,7 @@ describe("recordDef: the def checked against the context it is written against",
     })
     it("does not complete: completing is up to whoever needs it", function(){
         assert.deepStrictEqual(completeRecord(aidaTypes, alumnoSearchParams).apellido, {
-            type: 'text', isName: false, nullable: true, label: 'apellido', description: '',
+            name: 'apellido', type: 'text', isName: false, nullable: true, label: 'apellido', description: '',
         });
     })
 })
@@ -523,6 +523,7 @@ describe("each system decides what a field is and how it completes", function(){
     const billing = defineTypes({
         types: {code: {tsType: boxType<string>()}, amount: {tsType: boxType<number>()}},
         completeField: (fieldDef: {type: 'code' | 'amount', nullable?: boolean, defaultValue?: string}, name: string) => ({
+            name,
             type        : fieldDef.type,
             nullable    : fieldDef.nullable ?? true,
             defaultValue: fieldDef.defaultValue ?? null,
@@ -535,8 +536,8 @@ describe("each system decides what a field is and how it completes", function(){
     })
     it("completes with the properties and the defaults of that system", function(){
         assert.deepStrictEqual(completeRecord(billing, invoice), {
-            number: {type: 'code'  , nullable: false, defaultValue: null, title: 'NUMBER'},
-            total : {type: 'amount', nullable: true , defaultValue: '0' , title: 'TOTAL' },
+            number: {name: 'number', type: 'code'  , nullable: false, defaultValue: null, title: 'NUMBER'},
+            total : {name: 'total' , type: 'amount', nullable: true , defaultValue: '0' , title: 'TOTAL' },
         });
     })
     it("deduces the instance type against the types of that system", function(){
@@ -554,7 +555,7 @@ describe("each system decides what a field is and how it completes", function(){
         defineTypes({
             types: {code: {tsType: boxType<string>()}},
             // @ts-expect-error the completed info has to carry nullable: the ssot reads it
-            completeField: (fieldDef: {type: 'code'}) => ({type: fieldDef.type, title: 'x'}),
+            completeField: (fieldDef: {type: 'code'}, name: string) => ({name, type: fieldDef.type, title: 'x'}),
         });
     })
 })
@@ -571,7 +572,7 @@ describe("the system describing itself", function(){
         var deduced: Deduced = completed;
         var back: Declared = deduced;
         assert.deepStrictEqual(back, {
-            type: 'text', isName: true, nullable: false,
+            name: 'denominacion', type: 'text', isName: true, nullable: false,
             label: 'denominación', description: 'si corresponde a más de una carrera, aclarar en el nombre',
         });
     })
@@ -588,6 +589,7 @@ describe("the system describing itself", function(){
     })
     it("is a plain serializable def, like every other one", function(){
         assert.deepStrictEqual(JSON.parse(JSON.stringify(aidaFieldInfo)), {
+            name       : {type: 'text'    , nullable: false},
             type       : {type: 'typeName', nullable: false},
             isName     : {type: 'boolean' , nullable: false},
             nullable   : {type: 'boolean' , nullable: false},
@@ -610,7 +612,7 @@ describe("the entity names its record, and the context grows in stages", functio
         assert.equal(noCampo, undefined);
     })
     it("carries the name into the info, so the link survives the serialization", function(){
-        var info = completeEntity(aida, cursos);
+        var info = completeEntity(aida, cursos, 'cursos');
         var elNombre: 'curso' = info.record;
         assert.equal(JSON.parse(JSON.stringify(info)).record, 'curso');
         assert.equal(elNombre, 'curso');
@@ -630,5 +632,32 @@ describe("the entity names its record, and the context grows in stages", functio
         entityDef(aida, {record: 'inexistente', pk: ['x']});
         // the same entity against the stage that does have it compiles:
         assert.equal(entityDef(aida, {record: 'curso', pk: ['periodo']}).record, 'curso');
+    })
+})
+
+describe("the info says its own name", function(){
+    it("pins the name to the key of the field, not to a wide string", function(){
+        var cargoInfo = completeRecord(aidaTypes, cargo);
+        var elNombre: 'orden' = cargoInfo.orden.name;
+        // @ts-expect-error it is the key of that field and of no other
+        var otro: 'cargo' = cargoInfo.orden.name;
+        assert.equal(elNombre, 'orden');
+        assert.equal(otro, 'orden');
+    })
+    it("survives the trip through an array, which is what fixes the order", function(){
+        /* a map of infos can travel as an array to a system that does not share the key order
+           rules of js, and be reindexed on the other side without losing anything: that is
+           what having the name inside each info buys */
+        var cargoInfo = completeRecord(aidaTypes, cargo);
+        var comoArray = Object.values(cargoInfo);
+        var reindexado = Object.fromEntries(comoArray.map(fieldInfo => [fieldInfo.name, fieldInfo]));
+        assert.deepStrictEqual(comoArray.map(fieldInfo => fieldInfo.name), ['cargo', 'denominacion', 'orden', 'puede_dirigir']);
+        assert.deepStrictEqual(reindexado, cargoInfo);
+    })
+    it("does the same for the entity, whose name comes from the map of the system", function(){
+        var cursosInfo = completeEntity(aida, cursos, 'cursos');
+        var elNombre: 'cursos' = cursosInfo.name;
+        assert.equal(JSON.parse(JSON.stringify(cursosInfo)).name, 'cursos');
+        assert.equal(elNombre, 'cursos');
     })
 })

@@ -120,6 +120,7 @@ export type FkInfoOf<TFk extends FkDef> = {
 }
 
 export type EntityInfo<TContext extends SystemEntityContext> = {
+    name: string
     record: string
     fields: RecordInfo<TContext>
     pk: readonly string[]
@@ -127,7 +128,11 @@ export type EntityInfo<TContext extends SystemEntityContext> = {
     uks: Readonly<Record<string, readonly string[]>>
 }
 
-export type EntityInfoOf<TContext extends SystemEntityContext, TEntityDef extends EntityDef<TContext>> = {
+/* the same reasoning as the field: the info is derived, so it says its own name. The entity
+   does not receive it from anywhere else — its name is the key it has in the map of the system —
+   so completeEntity takes it, the way completeField takes the name of the field. */
+export type EntityInfoOf<TContext extends SystemEntityContext, TEntityDef extends EntityDef<TContext>, TName extends string> = {
+    name: TName
     record: TEntityDef['record']
     fields: RecordInfoOf<TContext, NotNullableFieldsOf<TContext, TEntityDef['fields'], TEntityDef['pk'][number]>>
     pk: DedupPk<TEntityDef['pk']>
@@ -146,17 +151,23 @@ function completeFk(fkDef: FkDef): FkInfo {
     };
 }
 
-export function completeEntity<TContext extends SystemEntityContext, const TEntityDef extends EntityDef<TContext>>(
+export function completeEntity<
+    TContext extends SystemEntityContext,
+    const TEntityDef extends EntityDef<TContext>,
+    const TName extends string,
+>(
     context: TContext,
     entityDef: TEntityDef,
-): EntityInfoOf<TContext, TEntityDef> {
+    name: TName,
+): EntityInfoOf<TContext, TEntityDef, TName> {
     return {
+        name,
         record: entityDef.record,
         fields: completeRecord(context, notNullableFields(entityDef.fields, entityDef.pk) as RecordDef<TContext>),
         pk: mergePk(entityDef.pk),
         fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
         uks: entityDef.uks ?? {},
-    } as EntityInfoOf<TContext, TEntityDef>;
+    } as EntityInfoOf<TContext, TEntityDef, TName>;
 }
 
 /* the instance type of a row of the entity: like the record one, but the pk fields
