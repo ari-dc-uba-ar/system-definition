@@ -194,6 +194,12 @@ Nombres ya elegidos:
 * `RecordInfoOf<TRecordDef>`: la Info precisa que corresponde a una Def concreta (conserva
   las claves y los literales de `type`); es lo que devuelve `completeRecord`. El sufijo `Of`
   marca "tipo derivado de una definición concreta".
+  Las versiones **anchas** (`FieldInfo`, `RecordInfo`, `EntityInfo`, sin `Of`) no sobran aunque
+  el framework no las use: son el contrato de los generadores. Un generador recorre un conjunto
+  de entidades que no conoce de antemano (`Record<string, EntityInfo<TContext>>`), así que no
+  puede tener el tipo preciso de cada una; y como los defaults ya vinieron completados a nivel
+  de la descripción del sistema, le llegan coherentes. `system-definition-pg` es el caso real:
+  genera el script de creación de la base y los data layers de unos CRUDs a partir de eso.
 * `TypeDef` es `{tsType}`, **sin parámetro de tipo**: el tipo preciso de cada uno sale del literal
   que preserva el `satisfies`, no del parámetro (que nunca se instanciaba con otra cosa que `any`).
   `tsType` es fantasma: `boxType` devuelve `null` en runtime, así que lleva un tipo de compilación
