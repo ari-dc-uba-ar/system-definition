@@ -17,6 +17,21 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
 * Los tests de tipos no deben ser flojos: probar asignabilidad **en ambos sentidos**, y
   también los rechazos con `// @ts-expect-error` (que no se pueda asignar un valor de un
   tipo que no corresponde, ni acceder a campos que no existen en la definición).
+* Criterio para `@ts-expect-error`. En `src` y `examples` **no debe haber ninguno**, con una sola
+  excepción: los tipos de una dependencia que están mal y no dejan escribir algo que en runtime
+  anda. Ahí es mejor que un cast o un `any`, porque se autodestruye — cuando upstream lo arregla
+  el directive queda sin usar y el compilador avisa — y por eso tiene que nombrar el issue.
+  (El único que hubo en `src` era el `type: null` de `completeRecord`, y desapareció solo cuando
+  el completador pasó al contexto: era un síntoma de diseño, no una necesidad.)
+  En los tests es la herramienta para probar los rechazos, pero **no es precisa**: suprime
+  *cualquier* error de esa línea, no el que uno quiso afirmar. Ya nos tapó un error de aridad
+  que solo apareció en runtime. De ahí dos reglas: una sola construcción por línea marcada
+  (cuanto más corta, menos puede tapar), y cuando lo que se afirma es una **relación de tipos**
+  (que A no sea asignable a B) usar un helper (`type IsAssignable<A,B> = [A] extends [B] ? true : false`)
+  en vez del directive, porque falla por el motivo correcto y no absorbe nada. El directive queda
+  para lo que realmente necesita que haya un error: rechazar una llamada o un literal.
+  Y donde se pueda, que la línea marcada tenga además un `assert` sobre el valor: el runtime
+  cubre lo que el compilador dejó pasar.
 * Código e identificadores dentro de `src` y `examples` en inglés.
 * Los planes y este archivo, en castellano.
 * Documentación multilingüe con la herramienta `multilang` (disponible en el PATH):
