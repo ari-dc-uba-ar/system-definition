@@ -4,9 +4,9 @@ import * as path from "path";
 import { encode } from "@toon-format/toon";
 import { strict as LikeAr } from "like-ar";
 
-import { FieldDef, RecordDef, RecordInstanceType, completeRecord, recordDef } from "../src/common/ssot-record";
+import { FieldDef, RecordDef, RecordInstanceType, completeRecord, defineRecord } from "../src/common/ssot-record";
 import { AnyEntityDef, EntityDef, EntityInfoOf, EntityInstanceType,
-    completeEntity, entityDef, defineEntities, extractPk, mergePk, withRecords } from "../src/common/ssot-entity";
+    completeEntity, defineEntity, defineEntities, extractPk, mergePk, withRecords } from "../src/common/ssot-entity";
 import { boxType, completeCoreField, defineTypes } from "../src/common/ssot-types";
 import { ExpandType, Optional } from "../src/common/type-utils";
 import { aidaTypes, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
@@ -129,10 +129,10 @@ describe("aida entities", function(){
     })
     it("rejects pk keys that are not keys of fields", function(){
         // @ts-expect-error 'inexistente' is not a field of the record the entity names
-        var wrong = entityDef(aida, {record: 'materia', pk: ['inexistente']});
+        var wrong = defineEntity(aida, {record: 'materia', pk: ['inexistente']});
         // @ts-expect-error a wrong key among valid ones is also rejected
-        var wrong2 = entityDef(aida, {record: 'materia', pk: ['materia', 'inexistente']});
-        // (the check is compile-time only: at runtime entityDef is the identity)
+        var wrong2 = defineEntity(aida, {record: 'materia', pk: ['materia', 'inexistente']});
+        // (the check is compile-time only: at runtime defineEntity only resolves the fields)
         assert.deepStrictEqual(wrong.pk, ['inexistente']);
         assert.deepStrictEqual(wrong2.pk, ['materia', 'inexistente']);
     })
@@ -227,11 +227,11 @@ describe("aida fks, uks and isName", function(){
     it("rejects fk source fields and uk fields that are not fields", function(){
         const soloMateria = withRecords(aidaTypes, {materia});
         // @ts-expect-error 'inexistente' is not a field (array form)
-        var wrongFk = entityDef(soloMateria, {record: 'materia', pk: ['materia'], fks: {x: {entity: 'materias', fields: ['inexistente']}}});
+        var wrongFk = defineEntity(soloMateria, {record: 'materia', pk: ['materia'], fks: {x: {entity: 'materias', fields: ['inexistente']}}});
         // @ts-expect-error 'inexistente' is not a field (map form: the source is the key)
-        var wrongFkMap = entityDef(soloMateria, {record: 'materia', pk: ['materia'], fks: {x: {entity: 'materias', fields: {inexistente: 'materia'}}}});
+        var wrongFkMap = defineEntity(soloMateria, {record: 'materia', pk: ['materia'], fks: {x: {entity: 'materias', fields: {inexistente: 'materia'}}}});
         // @ts-expect-error uk fields must be fields too
-        var wrongUk = entityDef(soloMateria, {record: 'materia', pk: ['materia'], uks: {u: ['inexistente']}});
+        var wrongUk = defineEntity(soloMateria, {record: 'materia', pk: ['materia'], uks: {u: ['inexistente']}});
         // (the checks are compile-time only)
         assert.equal(wrongFk.fks.x.entity, 'materias');
         assert.deepStrictEqual(wrongUk.uks, {u: ['inexistente']});
@@ -243,21 +243,21 @@ describe("aida fks, uks and isName", function(){
         assert.equal(entityDefs.presencias, presencias);
         // a fk against a uk of the target entity is accepted:
         const otros = withRecords(aidaTypes, {
-            apunte : recordDef(aidaTypes, {apunte: {type: 'text'}, denominacion_materia: {type: 'text'}}),
-            huerfano: recordDef(aidaTypes, {x: {type: 'text'}}),
-            franja : recordDef(aidaTypes, {dia: {type: 'text'}, hora: {type: 'integer'}}),
-            evento : recordDef(aidaTypes, {evento: {type: 'text'}, dia: {type: 'text'}}),
+            apunte : defineRecord(aidaTypes, {apunte: {type: 'text'}, denominacion_materia: {type: 'text'}}),
+            huerfano: defineRecord(aidaTypes, {x: {type: 'text'}}),
+            franja : defineRecord(aidaTypes, {dia: {type: 'text'}, hora: {type: 'integer'}}),
+            evento : defineRecord(aidaTypes, {evento: {type: 'text'}, dia: {type: 'text'}}),
         });
-        const apuntes = entityDef(otros, {record: 'apunte', pk: ['apunte'], fks: {materia_por_nombre: {entity: 'materias', fields: {denominacion_materia: 'denominacion'}}}});
+        const apuntes = defineEntity(otros, {record: 'apunte', pk: ['apunte'], fks: {materia_por_nombre: {entity: 'materias', fields: {denominacion_materia: 'denominacion'}}}});
         const miniSystem = defineEntities({materias, apuntes});
         assert.deepStrictEqual(Object.keys(miniSystem), ['materias', 'apuntes']);
         // a fk to an entity that is not part of the system is rejected:
-        const huerfanos = entityDef(otros, {record: 'huerfano', pk: ['x'], fks: {rota: {entity: 'inexistentes', fields: {x: 'algo'}}}});
+        const huerfanos = defineEntity(otros, {record: 'huerfano', pk: ['x'], fks: {rota: {entity: 'inexistentes', fields: {x: 'algo'}}}});
         // @ts-expect-error 'inexistentes' is not an entity of the system
         defineEntities({huerfanos});
         // a fk that references only a part of a composite pk (and no uk) is rejected:
-        const franjas = entityDef(otros, {record: 'franja', pk: ['dia', 'hora']});
-        const eventos = entityDef(otros, {record: 'evento', pk: ['evento'], fks: {franja: {entity: 'franjas', fields: {dia: 'dia'}}}});
+        const franjas = defineEntity(otros, {record: 'franja', pk: ['dia', 'hora']});
+        const eventos = defineEntity(otros, {record: 'evento', pk: ['evento'], fks: {franja: {entity: 'franjas', fields: {dia: 'dia'}}}});
         // @ts-expect-error 'hora' is missing: the fk must reference the complete pk or a uk
         defineEntities({franjas, eventos});
     })
@@ -297,7 +297,7 @@ describe("aida entity completion (Def → Info)", function(){
         assert.deepStrictEqual(noArray, {periodo: 'periodo', materia: 'materia'});
     })
     it("dedups the pk, so overlapping pks can be spread without mergePk", function(){
-        var presenciasAlt = entityDef(aida, {
+        var presenciasAlt = defineEntity(aida, {
             record: 'presencia',
             // periodo and materia appear twice in the spread:
             pk: [...inscripciones.pk, ...clases.pk],
@@ -366,14 +366,14 @@ describe("extended declaractions", function(){
             otherBool: fieldDef.otherBool ?? false,
         }),
     })
-    const extendedCargo = recordDef(extendedContext, {
+    const extendedCargo = defineRecord(extendedContext, {
         cargo            : {type: 'text'    , otherBool:true},
         denominacion     : {type: 'text'    , otherBool:true, label:'denominación'},
         orden            : {type: 'integer' , otherBool:true, otherText:'lo que el sistema quiera'},
         puede_dirigir    : {type: 'boolean' , otherBool:true},
     })
     const extendedSystem = withRecords(extendedContext, {cargo: extendedCargo})
-    const extendedCargos = entityDef(extendedSystem, {
+    const extendedCargos = defineEntity(extendedSystem, {
         record: 'cargo',
         pk: ['cargo']
     });
@@ -397,13 +397,13 @@ describe("extended declaractions", function(){
     })
     it("rejects what no system declared", function(){
         // @ts-expect-error other_text2 is in nobody's field def, not even the extended one
-        recordDef(extendedContext, {mal: {type: 'text', other_text2: 'no existe'}});
+        defineRecord(extendedContext, {mal: {type: 'text', other_text2: 'no existe'}});
         // @ts-expect-error a typo in label is a property nobody declared, not a new property
-        recordDef(aidaTypes, {mal: {type: 'text', labl: 'typo'}});
+        defineRecord(aidaTypes, {mal: {type: 'text', labl: 'typo'}});
         // @ts-expect-error the extras of the variant are not available in the plain aida context
-        recordDef(aidaTypes, {mal: {type: 'text', otherBool: true}});
+        defineRecord(aidaTypes, {mal: {type: 'text', otherBool: true}});
         // @ts-expect-error and the type is still checked against the context
-        recordDef(aidaTypes, {mal: {type: 'importe'}});
+        defineRecord(aidaTypes, {mal: {type: 'importe'}});
     })
 })
 describe("aida design snapshot", function(){
@@ -486,7 +486,7 @@ describe("one context per system, shared by every layer", function(){
     })
 })
 
-describe("recordDef: the def checked against the context it is written against", function(){
+describe("defineRecord: the def checked against the context it is written against", function(){
     it("gives back the very same def, plain and serializable", function(){
         var plainDef = {apellido: {type: 'text'}, desde: {type: 'fecha'}};
         assert.deepStrictEqual(alumnoSearchParams, plainDef);
@@ -507,7 +507,7 @@ describe("recordDef: the def checked against the context it is written against",
     })
     it("rejects a type that the context does not have", function(){
         // @ts-expect-error 'importe' is not one of the types of the aida context
-        var noSuchType = recordDef(aidaTypes, {total: {type: 'importe'}});
+        var noSuchType = defineRecord(aidaTypes, {total: {type: 'importe'}});
         assert.deepStrictEqual(noSuchType, {total: {type: 'importe'}});
     })
     it("does not complete: completing is up to whoever needs it", function(){
@@ -528,7 +528,7 @@ describe("each system decides what a field is and how it completes", function(){
             title       : name.toUpperCase(),
         }),
     })
-    const invoice = recordDef(billing, {
+    const invoice = defineRecord(billing, {
         number: {type: 'code'  , nullable: false},
         total : {type: 'amount', defaultValue: '0'},
     })
@@ -625,11 +625,11 @@ describe("the entity names its record, and the context grows in stages", functio
     })
     it("cannot define an entity before the stage that defines its record", function(){
         // @ts-expect-error curso only enters the context at the second stage
-        entityDef(aida1, {record: 'curso', pk: ['periodo']});
+        defineEntity(aida1, {record: 'curso', pk: ['periodo']});
         // @ts-expect-error and a record that no stage ever defines is rejected too
-        entityDef(aida, {record: 'inexistente', pk: ['x']});
+        defineEntity(aida, {record: 'inexistente', pk: ['x']});
         // the same entity against the stage that does have it compiles:
-        assert.equal(entityDef(aida, {record: 'curso', pk: ['periodo']}).record, 'curso');
+        assert.equal(defineEntity(aida, {record: 'curso', pk: ['periodo']}).record, 'curso');
     })
 })
 

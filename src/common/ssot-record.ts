@@ -31,7 +31,7 @@ export type ExactFieldsOf<TRecordDef, TFieldDef> = {
 }
 
 /* a record def only means something against a context: which types exist is not something the
-   def can say by itself. recordDef checks it against the context and gives back the very same
+   def can say by itself. defineRecord checks it against the context and gives back the very same
    def: what it adds is the check and the preserved literals, not a wrapper. A system that wants
    its own properties in a field (a width, a tooltip) declares them in its own field def, which
    is the one the context carries: what nobody declared is rejected.
@@ -40,7 +40,7 @@ export type ExactFieldsOf<TRecordDef, TFieldDef> = {
    The field def is inferred from the context's completer instead of being read with
    FieldDef<TContext>: through that deferred indexed access the compiler cannot see that the
    target of `type` is a union of literals, and widens every one of them to the whole union. */
-export function recordDef<
+export function defineRecord<
     TTypes extends TypeCollection,
     TFieldDef extends CoreFieldDef<TTypes>,
     TRecordDef extends Record<string, TFieldDef>,

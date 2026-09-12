@@ -53,7 +53,7 @@ export type EntityDef<TContext extends SystemEntityContext> = {
     uks?: Readonly<Record<string, readonly string[]>>
 }
 
-export function entityDef<
+export function defineEntity<
     TContext extends SystemEntityContext,
     const TRecord extends keyof TContext['records'] & string,
     const TPk extends readonly (keyof TContext['records'][TRecord] & string)[],

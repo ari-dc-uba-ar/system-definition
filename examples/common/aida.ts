@@ -1,8 +1,8 @@
 /* EJEMPLO del sistema de alumnos */
 
 import { boxType, commonTypeDefs, completeCoreField, CoreFieldDef, defineTypes } from "../../src/common/ssot-types";
-import { recordDef } from "../../src/common/ssot-record";
-import { EntityDef, EntityInstanceType, defineEntities, entityDef, extractPk, mergePk, withRecords } from "../../src/common/ssot-entity";
+import { defineRecord } from "../../src/common/ssot-record";
+import { EntityDef, EntityInstanceType, defineEntities, defineEntity, extractPk, mergePk, withRecords } from "../../src/common/ssot-entity";
 
 export type Fecha = {año: number, mes: number, día:number}
 
@@ -35,19 +35,19 @@ export const aidaTypes = defineTypes({
 
 /* THE RECORDS THAT DEPEND ON NOTHING: they only need the types */
 
-export const cargo = recordDef(aidaTypes, {
+export const cargo = defineRecord(aidaTypes, {
     cargo            : {type: 'text' },
     denominacion     : {type: 'text' , label:'denominación'},
     orden            : {type: 'integer'},
     puede_dirigir    : {type: 'boolean'},
 })
 
-export const materia = recordDef(aidaTypes, {
+export const materia = defineRecord(aidaTypes, {
     materia          : {type: 'text'   },
     denominacion     : {type: 'text'   , label:'denominación', nullable: false, isName: true, description: 'si corresponde a más de una carrera, aclarar en el nombre'},
 })
 
-export const docente = recordDef(aidaTypes, {
+export const docente = defineRecord(aidaTypes, {
     docente          : {type: 'text' },
     apellido         : {type: 'text' , nullable:false},
     nombres          : {type: 'text' , nullable:false},
@@ -57,17 +57,17 @@ export const docente = recordDef(aidaTypes, {
     jefe             : {type: 'text' , description: 'jefe de cátedra (otro docente)'},
 })
 
-export const asignacion = recordDef(aidaTypes, {
+export const asignacion = defineRecord(aidaTypes, {
     docente: docente.docente,
     materia: materia.materia,
     cargo  : cargo.cargo,
 })
 
-export const periodo = recordDef(aidaTypes, {
+export const periodo = defineRecord(aidaTypes, {
     periodo          : {type: 'text' , description: 'bimestre, cuatrimestre, etc...'},
 })
 
-export const alumno = recordDef(aidaTypes, {
+export const alumno = defineRecord(aidaTypes, {
     alumno           : {type: 'text' },
     apellido         : {type: 'text' , nullable:false},
     nombres          : {type: 'text' , nullable:false},
@@ -79,9 +79,9 @@ export const alumno = recordDef(aidaTypes, {
 
 export const aida1 = withRecords(aidaTypes, {cargo, materia, docente, asignacion, periodo, alumno})
 
-export const cargos = entityDef(aida1, {record: 'cargo', pk: ['cargo']})
+export const cargos = defineEntity(aida1, {record: 'cargo', pk: ['cargo']})
 
-export const docentes = entityDef(aida1, {
+export const docentes = defineEntity(aida1, {
     record: 'docente',
     pk: ['docente'],
     // reflexive fk: inside its own definition the entity is referenced by name,
@@ -89,18 +89,18 @@ export const docentes = entityDef(aida1, {
     fks: {jefe: {entity: 'docentes', fields: {jefe: 'docente'}}},
 })
 
-export const materias = entityDef(aida1, {
+export const materias = defineEntity(aida1, {
     record: 'materia',
     pk: ['materia'],
     uks: {denominacion: ['denominacion']},
 })
 
-export const periodos = entityDef(aida1, {record: 'periodo', pk: ['periodo']})
-export const alumnos  = entityDef(aida1, {record: 'alumno' , pk: ['alumno' ]})
+export const periodos = defineEntity(aida1, {record: 'periodo', pk: ['periodo']})
+export const alumnos  = defineEntity(aida1, {record: 'alumno' , pk: ['alumno' ]})
 
 /* LEVEL 2: curso inherits the pks of level 1, so it cannot exist before them */
 
-export const curso = recordDef(aidaTypes, {
+export const curso = defineRecord(aidaTypes, {
     ...extractPk(periodos),
     ...extractPk(materias),
     ...extractPk(docentes), // docente responsable del curso
@@ -108,7 +108,7 @@ export const curso = recordDef(aidaTypes, {
 
 export const aida2 = withRecords(aida1, {curso})
 
-export const cursos = entityDef(aida2, {
+export const cursos = defineEntity(aida2, {
     record: 'curso',
     pk: ['periodo', 'materia'],
     fks: {
@@ -120,7 +120,7 @@ export const cursos = entityDef(aida2, {
 
 /* LEVEL 3 */
 
-export const clase = recordDef(aidaTypes, {
+export const clase = defineRecord(aidaTypes, {
     ...extractPk(cursos),
     orden            : {type: 'integer'},
     fecha            : {type: 'fecha'  },
@@ -129,7 +129,7 @@ export const clase = recordDef(aidaTypes, {
 
 export const aida3 = withRecords(aida2, {clase})
 
-export const clases = entityDef(aida3, {
+export const clases = defineEntity(aida3, {
     record: 'clase',
     pk: [...cursos.pk, 'orden'],
     fks: {cursos: {entity: 'cursos', fields: cursos.pk}},
@@ -137,7 +137,7 @@ export const clases = entityDef(aida3, {
 
 /* LEVEL 4: three records at the same depth, one single stage */
 
-export const pregunta = recordDef(aidaTypes, {
+export const pregunta = defineRecord(aidaTypes, {
     ...extractPk(clases),
     pregunta         : {type: 'integer'},
     formulacion      : {type: 'text'   , nullable:false, label: 'formulación', description: 'texto principal de la pregunta'},
@@ -145,14 +145,14 @@ export const pregunta = recordDef(aidaTypes, {
     tipo_respuesta   : {type: 'text'   , nullable:false, label: 'tipo'}
 })
 
-export const inscripcion = recordDef(aidaTypes, {
+export const inscripcion = defineRecord(aidaTypes, {
     ...extractPk(cursos),
     ...extractPk(alumnos),
 })
 
 /* two fks to the same entity, renaming the fields */
 
-export const mesa = recordDef(aidaTypes, {
+export const mesa = defineRecord(aidaTypes, {
     ...extractPk(cursos),
     fecha            : {type: 'fecha'},
     presidente       : {type: 'text' },
@@ -161,13 +161,13 @@ export const mesa = recordDef(aidaTypes, {
 
 export const aida4 = withRecords(aida3, {pregunta, inscripcion, mesa})
 
-export const preguntas = entityDef(aida4, {
+export const preguntas = defineEntity(aida4, {
     record: 'pregunta',
     pk: [...clases.pk, 'pregunta'],
     fks: {clases: {entity: 'clases', fields: clases.pk}},
 })
 
-export const inscripciones = entityDef(aida4, {
+export const inscripciones = defineEntity(aida4, {
     record: 'inscripcion',
     pk: [...cursos.pk, 'alumno'],
     fks: {
@@ -176,7 +176,7 @@ export const inscripciones = entityDef(aida4, {
     },
 })
 
-export const mesas = entityDef(aida4, {
+export const mesas = defineEntity(aida4, {
     record: 'mesa',
     pk: [...cursos.pk, 'fecha'],
     fks: {
@@ -188,7 +188,7 @@ export const mesas = entityDef(aida4, {
 
 /* LEVEL 5 */
 
-export const opcion = recordDef(aidaTypes, {
+export const opcion = defineRecord(aidaTypes, {
     ...extractPk(preguntas),
     opcion           : {type: 'text'   },
     detalle          : {type: 'text'   },
@@ -196,7 +196,7 @@ export const opcion = recordDef(aidaTypes, {
 
 export const aida5 = withRecords(aida4, {opcion})
 
-export const opciones = entityDef(aida5, {
+export const opciones = defineEntity(aida5, {
     record: 'opcion',
     pk: [...preguntas.pk, 'opcion'],
     fks: {preguntas: {entity: 'preguntas', fields: preguntas.pk}},
@@ -205,14 +205,14 @@ export const opciones = entityDef(aida5, {
 /* LEVEL 6: combined pk — inscripciones and clases share periodo and materia, no repetition;
    periodo and materia belong to both fks */
 
-export const presencia = recordDef(aidaTypes, {
+export const presencia = defineRecord(aidaTypes, {
     ...extractPk(inscripciones),
     ...extractPk(clases),
 })
 
 export const aida6 = withRecords(aida5, {presencia})
 
-export const presencias = entityDef(aida6, {
+export const presencias = defineEntity(aida6, {
     record: 'presencia',
     pk: mergePk(inscripciones.pk, clases.pk),
     fks: {
@@ -245,7 +245,7 @@ export const aidaMetaContext = defineTypes({
     }),
 })
 
-export const aidaFieldInfo = recordDef(aidaMetaContext, {
+export const aidaFieldInfo = defineRecord(aidaMetaContext, {
     name       : {type: 'text'    , nullable: false},
     type       : {type: 'typeName', nullable: false},
     isName     : {type: 'boolean' , nullable: false},
@@ -256,7 +256,7 @@ export const aidaFieldInfo = recordDef(aidaMetaContext, {
 
 /* a record def is not only the fields of an entity: this one describes the parameters of a
    search endpoint and belongs to no table at all */
-export const alumnoSearchParams = recordDef(aidaTypes, {
+export const alumnoSearchParams = defineRecord(aidaTypes, {
     apellido: {type: 'text' },
     desde   : {type: 'fecha'},
 })

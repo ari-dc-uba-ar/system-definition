@@ -33,6 +33,10 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
   Y donde se pueda, que la línea marcada tenga además un `assert` sobre el valor: el runtime
   cubre lo que el compilador dejó pasar.
 * Código e identificadores dentro de `src` y `examples` en inglés.
+* **Dos nombres no pueden diferenciarse solo por el case.** Hay demasiados contextos que pliegan
+  mayúsculas (Pascal, PL/SQL, los nombres de archivo de Windows) como para que la diferencia sea
+  confiable. Por eso las funciones constructoras son `defineRecord` / `defineEntity` y no
+  `recordDef` / `entityDef`, que chocaban con los tipos `RecordDef` / `EntityDef`.
 * Los planes y este archivo, en castellano.
 * Documentación multilingüe con la herramienta `multilang` (disponible en el PATH):
   la fuente es `LEEME.md` en castellano; `README.md` en inglés se genera con `multilang LEEME.md`.
@@ -108,7 +112,7 @@ Nombres ya elegidos:
 * La descripción de un campo es `FieldDef` / `FieldInfo`. `RecordDef` es el mapa de campos:
   `Record<string, FieldDef>`.
 * `EntityDef` es el nivel contenedor (la unidad representable como grilla, como la llama el
-  documento SSOTIGAD). Se construye con `entityDef(context, {record, pk, fks, uks})`, donde
+  documento SSOTIGAD). Se construye con `defineEntity(context, {record, pk, fks, uks})`, donde
   `record` es el **nombre** del record, igual que una fk nombra a su entidad destino y por el
   mismo motivo: serializabilidad. El valor que devuelve resuelve además `fields` desde el
   contexto, así que todo lo que viene después (`extractPk`, `completeEntity`, los tipos de
@@ -170,7 +174,7 @@ Nombres ya elegidos:
   (`{jefe: 'docente'}`). La key del mapa de `fks` es el nombre de la fk (permite dos fks a
   la misma entidad: `presidente` y `vocal` → docentes).
 * Los chequeos de fks tienen dos niveles: `defineEntity` chequea lo local (campos origen y
-  de uks existen en `fields`); `defineEntities(entityDefs)` chequea lo global del sistema
+  de uks son campos del record que la entidad nombra); `defineEntities(entityDefs)` chequea lo global
   (la entidad destino existe, y los campos destino son su pk completa o una de sus uks).
   El error de `defineEntities` es críptico (mapped type a `never`), pero señala la fk mala.
 * Nulleabilidad: un campo admite null salvo que esté marcado `nullable: false` (el default que
@@ -192,7 +196,7 @@ Nombres ya elegidos:
   del campo, ni que `type` sea un enum sobre un conjunto dinámico): son dos mitades, una para las
   herramientas en runtime y otra para el compilador. El test las ata, chequeando que el tipo
   deducido del meta-record y el que devuelve el completador del sistema sean mutuamente asignables.
-* `recordDef(context, def)`: chequea una def de record contra el contexto y **devuelve la misma def**,
+* `defineRecord(context, def)`: chequea una def de record contra el contexto y **devuelve la misma def**,
   sin envoltorio. Reemplaza al `satisfies`, y gana que el error apunta al campo que está mal en vez
   de al objeto entero. Si el sistema quiere propiedades propias en un campo (un ancho, un tooltip),
   las declara en **su** field def, que es el que lleva el contexto: lo que nadie declaró se rechaza.
