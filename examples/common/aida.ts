@@ -311,4 +311,3 @@ export function validarCargo(cargoSinValidar: DefinedType<typeof cargos>){
         throw new Error('Los ayudantes no pueden dirigir. Recibido:"' + cargoSinValidar.denominacion + '"');
     }
 }
-

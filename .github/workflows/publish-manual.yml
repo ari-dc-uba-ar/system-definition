@@ -1,9 +1,7 @@
-name: Publish from tag
+name: Publish (manual)
 
 on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]*'
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -14,4 +12,4 @@ jobs:
     uses: codenautas/.github/.github/workflows/npm-publish-new-version.yaml@v2
     with:
       node_version: '24'
-      skip-tests-until-date: '2000-01-01'
+      create-tag: true
