@@ -64,12 +64,12 @@ describe("type behaviour", function(){
         assert.equal(noBehaviour, undefined);
     })
     it("accepts a behaviour written for the type of the definition, and no other", function(){
-        var ok: TypeBehaviour<string> = {parse: (text) => parsed(text), format: (value) => value};
+        var ok: TypeBehaviour<string> = {parse: (text) => parsed(text), format: (value) => value, check: esTexto};
         assert.equal(valueOf(ok.parse('a')), 'a');
         // @ts-expect-error the parsed value has to be the type the behaviour declares
-        var wrongParse: TypeBehaviour<string> = {parse: () => parsed(1), format: (value) => value};
+        var wrongParse: TypeBehaviour<string> = {parse: () => parsed(1), format: (value) => value, check: esTexto};
         // @ts-expect-error and `format` has to take it
-        var wrongFormat: TypeBehaviour<string> = {parse: (text) => parsed(text), format: (value: number) => String(value)};
+        var wrongFormat: TypeBehaviour<string> = {parse: (text) => parsed(text), format: (value: number) => String(value), check: esTexto};
         assert.ok(wrongParse != null && wrongFormat != null);
     })
     it("carries a message key and never a text", function(){
@@ -81,6 +81,8 @@ describe("type behaviour", function(){
         assert.equal(noValue, undefined);
     })
 })
+
+function esTexto(value: unknown): value is string { return typeof value === 'string'; }
 
 describe("aida behaviour", function(){
     it("covers every type aida declares", function(){
@@ -163,6 +165,7 @@ describe("a type collection with a behaviour provider", function(){
             legajo: {
                 parse: (text) => /^\d{1,6}$/.test(text) ? parsed(Number(text)) : notParsed('type.legajo'),
                 format: (value) => String(value).padStart(6, '0'),
+                check: (value): value is number => typeof value === 'number',
             },
         };
         assert.equal(valueOf(provider.legajo.parse('1234')), 1234);

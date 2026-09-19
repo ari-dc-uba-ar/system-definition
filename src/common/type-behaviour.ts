@@ -23,6 +23,11 @@ export type ParseResult<TsType> =
 export type TypeBehaviour<TsType> = {
     parse: (text: string) => ParseResult<TsType>
     format: (value: TsType) => string
+    /* parse reads a text; check looks at a value that is already built and says whether it is
+       one of these. It is what lets a record that did not come through the parser — the
+       parameters of a procedure, a row handed over by somebody else — be typed against the
+       definition instead of trusted. */
+    check: (value: unknown) => value is TsType
 }
 
 /* Exhaustive by construction: a type added to the collection without its behaviour does
@@ -38,6 +43,7 @@ export type TypeProvider<TTypeDefs extends TypeCollection> = {
 export type AnyTypeBehaviour = {
     parse: (text: string) => ParseResult<unknown>
     format: (value: never) => string
+    check: (value: unknown) => boolean
 }
 
 export type BehaviourCollection = Record<string, AnyTypeBehaviour>
@@ -56,6 +62,7 @@ export const commonTypeBehaviours: TypeProvider<typeof commonTypeDefs> = {
     text: {
         parse: (text) => parsed(text),
         format: (value) => value,
+        check: (value): value is string => typeof value === 'string',
     },
     integer: {
         /* Number() accepts '', ' 12 ' and '0x10'; the regular expression lets through only
@@ -65,6 +72,7 @@ export const commonTypeBehaviours: TypeProvider<typeof commonTypeDefs> = {
             return parsed(Number(text.trim()));
         },
         format: (value) => String(value),
+        check: (value): value is number => typeof value === 'number' && Number.isInteger(value),
     },
     boolean: {
         parse: (text) => {
@@ -74,5 +82,6 @@ export const commonTypeBehaviours: TypeProvider<typeof commonTypeDefs> = {
             return notParsed('type.boolean');
         },
         format: (value) => value ? 'true' : 'false',
+        check: (value): value is boolean => typeof value === 'boolean',
     },
 }

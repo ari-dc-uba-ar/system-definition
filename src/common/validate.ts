@@ -1,4 +1,6 @@
-import { Problem } from "./problem";
+import { Problem, problem } from "./problem";
+import { RecordDef, RecordInstanceType, completeRecord } from "./ssot-record";
+import { SystemTypeContext } from "./ssot-types";
 
 /* The rules over a record that is already built. Parsing said the values are of the type the
    field declares; these say whether the record makes sense.
@@ -38,4 +40,48 @@ export function validateInstance<TRow>(
         }
         return validator(row as never);
     });
+}
+
+/* Typing a record that did not come through the parser. The parameters of a procedure, a row
+   handed over by somebody else: the values are already built, so there is no text to read, and
+   what says whether each one belongs to the type its field declares is `check`.
+
+   It reports which field is wrong, because a bare false is useless to whoever has to fix it. */
+export function instanceProblems<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
+    context: TContext,
+    recordDef: TRecordDef,
+    value: unknown,
+): readonly Problem[] {
+    if (value == null || typeof value !== 'object') {
+        return [problem(null, 'record.notAnObject', 'blocking')];
+    }
+    const row = value as Record<string, unknown>;
+    const problems: Problem[] = [];
+    for (const [name, field] of Object.entries(completeRecord(context, recordDef))) {
+        const each = row[name];
+        if (each == null) {
+            if (!field.nullable) problems.push(problem(name, 'field.required', 'blocking'));
+            continue;
+        }
+        const typeName = String(field.type);
+        const behaviour = context.behaviours[typeName];
+        if (behaviour == null) {
+            throw new Error('no behaviour declared for type "' + typeName + '" in this system');
+        }
+        if (!behaviour.check(each)) {
+            problems.push(problem(name, 'field.notOfItsType', 'blocking', {type: typeName}));
+        }
+    }
+    return problems;
+}
+
+/* The same thing as a type predicate: past this call the compiler knows the record is what the
+   definition says, and it knows it because every value was looked at, not because somebody
+   asserted it. */
+export function isRecordInstance<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
+    context: TContext,
+    recordDef: TRecordDef,
+    value: unknown,
+): value is RecordInstanceType<TContext, TRecordDef> {
+    return instanceProblems(context, recordDef, value).length === 0;
 }

@@ -527,8 +527,8 @@ describe("each system decides what a field is and how it completes", function(){
     const billing = defineTypes({
         types: {code: {tsType: boxType<string>()}, amount: {tsType: boxType<number>()}},
         behaviours: {
-            code  : {parse: (texto) => parsed(texto), format: (valor) => valor},
-            amount: {parse: (texto) => parsed(Number(texto)), format: (valor) => String(valor)},
+            code  : {parse: (texto) => parsed(texto), format: (valor) => valor, check: (valor): valor is string => typeof valor === 'string'},
+            amount: {parse: (texto) => parsed(Number(texto)), format: (valor) => String(valor), check: (valor): valor is number => typeof valor === 'number'},
         },
         completeField: (fieldDef: {type: 'code' | 'amount', nullable?: boolean, defaultValue?: string}, name: string) => ({
             ...completeCoreField(fieldDef, name),

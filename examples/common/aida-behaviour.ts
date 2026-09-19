@@ -39,6 +39,10 @@ export const fechaBehaviour: TypeBehaviour<Fecha> = {
         return parsed<Fecha>({año, mes, día});
     },
     format: (value) => String(value.año).padStart(4, '0') + '-' + twoDigits(value.mes) + '-' + twoDigits(value.día),
+    /* la fecha es el caso que justifica que check exista aparte de parse: un valor compuesto
+       ya construido no es un texto, y mirarlo es mirar sus tres partes */
+    check: (value): value is Fecha => value != null && typeof value === 'object'
+        && ['año', 'mes', 'día'].every(parte => Number.isInteger((value as Record<string, unknown>)[parte])),
 }
 
 /* A system may also specialize a common type: aida's users type `sí` and `no`, so its
@@ -51,6 +55,7 @@ export const booleanoDeAida: TypeBehaviour<boolean> = {
         return commonTypeBehaviours.boolean.parse(text);
     },
     format: commonTypeBehaviours.boolean.format,
+    check: commonTypeBehaviours.boolean.check,
 }
 
 export const typeBehaviours: TypeProvider<typeof aidaTypeDefs> = {

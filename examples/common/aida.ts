@@ -266,6 +266,7 @@ export const aidaMetaContext = defineTypes({
                 ? parsed(texto.trim() as AidaTypeName)
                 : notParsed('type.typeName'),
             format: (valor) => valor,
+            check: (valor): valor is AidaTypeName => nombresDeTipo.includes(valor as AidaTypeName),
         },
     },
     completeField: (fieldDef: CoreFieldDef<typeof metaTypes> & {label?: string}, name: string) => ({
