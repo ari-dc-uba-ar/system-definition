@@ -1,20 +1,20 @@
 /* EJEMPLO: el comportamiento de los tipos de aida */
 
 import { TypeProvider, TypeBehaviour, commonTypeBehaviours, notParsed, parsed } from "../../src/common/type-behaviour";
-import type { aidaTypes } from "./aida";
+import type { aidaTypeDefs } from "./aida";
 
 /* aida declares its own types in aida.ts; this is what reading and writing each of them
    looks like. The two halves are apart on purpose — a description stays serializable and
    a behaviour is code — but they belong to the same system and they are kept in the same
    place, so nobody has to write `fecha` twice.
 
-   `aidaTypes` is imported here only as a type, so this module carries no entity definition
+   `aidaTypeDefs` is imported here only as a type, so this module carries no entity definition
    at runtime. That is what the `system-definition/examples/behaviour` entry point is for:
    a browser that already receives the description it needs over the wire imports the
    behaviour — which cannot travel, because it is functions — without dragging the whole
    description of the system along with it. */
 
-type Fecha = typeof aidaTypes['types']['fecha']['tsType']
+type Fecha = typeof aidaTypeDefs['fecha']['tsType']
 
 const DATE_FORMAT = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -53,7 +53,7 @@ export const booleanoDeAida: TypeBehaviour<boolean> = {
     format: commonTypeBehaviours.boolean.format,
 }
 
-export const typeBehaviours: TypeProvider<typeof aidaTypes['types']> = {
+export const typeBehaviours: TypeProvider<typeof aidaTypeDefs> = {
     ...commonTypeBehaviours,
     boolean: booleanoDeAida,
     /* email is text in aida (the same definition), so it reads and writes the same way:

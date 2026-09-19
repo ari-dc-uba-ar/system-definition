@@ -8,6 +8,7 @@ import { FieldDef, RecordDef, RecordInstanceType, completeRecord, defineRecord }
 import { AnyEntityDef, EntityDef, EntityInfoOf, EntityInstanceType,
     completeEntity, defineEntity, defineEntities, extractPk, mergePk, withRecords } from "../src/common/ssot-entity";
 import { boxType, completeCoreField, defineTypes } from "../src/common/ssot-types";
+import { parsed } from "../src/common/type-behaviour";
 import { ExpandType, Optional } from "../src/common/type-utils";
 import { aidaTypes, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
     cargos, alumnoSearchParams, Fecha, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef, aida, aida1
@@ -361,6 +362,7 @@ describe("extended declaractions", function(){
        come out in the info with the defaults this variant chose. */
     const extendedContext = defineTypes({
         types: aidaTypes.types,
+        behaviours: aidaTypes.behaviours,
         completeField: (fieldDef: AidaFieldDef & {otherText?: string, otherBool?: boolean}, name: string) => ({
             ...aidaTypes.completeField(fieldDef, name),
             otherText: fieldDef.otherText ?? '',
@@ -524,6 +526,10 @@ describe("each system decides what a field is and how it completes", function(){
        dictates neither. Only type and nullable are the core it needs to read itself. */
     const billing = defineTypes({
         types: {code: {tsType: boxType<string>()}, amount: {tsType: boxType<number>()}},
+        behaviours: {
+            code  : {parse: (texto) => parsed(texto), format: (valor) => valor},
+            amount: {parse: (texto) => parsed(Number(texto)), format: (valor) => String(valor)},
+        },
         completeField: (fieldDef: {type: 'code' | 'amount', nullable?: boolean, defaultValue?: string}, name: string) => ({
             ...completeCoreField(fieldDef, name),
             defaultValue: fieldDef.defaultValue ?? null,

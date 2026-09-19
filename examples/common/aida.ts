@@ -2,15 +2,21 @@
 
 import { boxType, commonTypeDefs, completeCoreField, CoreFieldDef, defineTypes } from "../../src/common/ssot-types";
 import { defineRecord } from "../../src/common/ssot-record";
+import { commonTypeBehaviours, notParsed, parsed } from "../../src/common/type-behaviour";
+import { typeBehaviours } from "./aida-behaviour";
 import { EntityDef, EntityInstanceType, defineEntities, defineEntity, extractPk, mergePk, withRecords } from "../../src/common/ssot-entity";
 
 export type Fecha = {año: number, mes: number, día:number}
 
-const types = {
+/* los tipos salen a su propia constante para que el comportamiento pueda tiparse contra
+   ellos sin depender del contexto, que es el que va a llevar el comportamiento adentro */
+export const aidaTypeDefs = {
     ...commonTypeDefs,
     fecha: {tsType: boxType<Fecha>()},
     email: commonTypeDefs.text,
 }
+
+const types = aidaTypeDefs;
 
 /* what a field of THIS system looks like: the core the ssot needs plus what aida wants. isName
    is not a concept of the framework, it is a decision of this system, and so are the defaults */
@@ -25,6 +31,7 @@ export type AidaFieldDef = CoreFieldDef<typeof types> & {
    builds the info key by key, which also fixes the order the generators will see. */
 export const aidaTypes = defineTypes({
     types,
+    behaviours: typeBehaviours,
     completeField: (fieldDef: AidaFieldDef, name: string) => ({
         ...completeCoreField(fieldDef, name),
         isName     : fieldDef.isName ?? false,
@@ -246,8 +253,21 @@ const metaTypes = {
     typeName: {tsType: boxType<AidaTypeName>()},
 }
 
+/* el comportamiento de typeName no es de adorno: leer un nombre de tipo desde un texto es
+   verificar que sea uno de los que el sistema declara, y eso lo sabe esta misma constante */
+const nombresDeTipo = Object.keys(aidaTypeDefs) as AidaTypeName[];
+
 export const aidaMetaContext = defineTypes({
     types: metaTypes,
+    behaviours: {
+        ...commonTypeBehaviours,
+        typeName: {
+            parse: (texto) => nombresDeTipo.includes(texto.trim() as AidaTypeName)
+                ? parsed(texto.trim() as AidaTypeName)
+                : notParsed('type.typeName'),
+            format: (valor) => valor,
+        },
+    },
     completeField: (fieldDef: CoreFieldDef<typeof metaTypes> & {label?: string}, name: string) => ({
         ...completeCoreField(fieldDef, name),
         label: fieldDef.label ?? name.replace(/_/g,' '),

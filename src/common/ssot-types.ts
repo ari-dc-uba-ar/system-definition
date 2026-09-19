@@ -1,3 +1,5 @@
+import type { BehaviourCollection, TypeProvider } from "./type-behaviour";
+
 /* the types a system is described with. Each system defines its own (Edad, Legajo): the
    framework only provides the mechanism and a handful of common ones. */
 
@@ -41,6 +43,7 @@ export type FieldCompleter = (fieldDef: never, name: string) => object
 export type SystemTypeContext = {
     types: TypeCollection
     completeField: FieldCompleter
+    behaviours: BehaviourCollection
 }
 
 /* the gate where a system's own field def and completer are checked against its types:
@@ -50,8 +53,16 @@ export function defineTypes<
     TFieldDef extends CoreFieldDef<TTypes>,
     TFieldInfo extends CoreFieldInfo<TTypes>,
 >(
-    context: {types: TTypes, completeField: (fieldDef: TFieldDef, name: string) => TFieldInfo}
-): {types: TTypes, completeField: (fieldDef: TFieldDef, name: string) => TFieldInfo} {
+    context: {
+        types: TTypes
+        completeField: (fieldDef: TFieldDef, name: string) => TFieldInfo
+        behaviours: TypeProvider<TTypes>
+    }
+): {
+    types: TTypes
+    completeField: (fieldDef: TFieldDef, name: string) => TFieldInfo
+    behaviours: TypeProvider<TTypes>
+} {
     return context;
 }
 

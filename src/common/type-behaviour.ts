@@ -31,6 +31,17 @@ export type TypeProvider<TTypeDefs extends TypeCollection> = {
     readonly [K in keyof TTypeDefs]: TypeBehaviour<TTypeDefs[K]['tsType']>
 }
 
+/* the bound for "the behaviour of any type at all", the counterpart of FieldCompleter and for
+   the same reason: format takes the value, and a parameter is contravariant, so the widest
+   collection is the one whose format takes never. Declared this way, the behaviour of every
+   concrete type fits the bound. */
+export type AnyTypeBehaviour = {
+    parse: (text: string) => ParseResult<unknown>
+    format: (value: never) => string
+}
+
+export type BehaviourCollection = Record<string, AnyTypeBehaviour>
+
 export function parsed<TsType>(value: TsType): ParseResult<TsType> {
     return {ok: true, value};
 }
