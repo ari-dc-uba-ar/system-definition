@@ -23,6 +23,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "test": "tsc && mocha --exit --node-option enable-source-maps dist/test/",
     "test-ci": "tsc && c8 mocha --node-option enable-source-maps dist/test/"
   },
