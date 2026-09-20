@@ -29,7 +29,20 @@ descripciones, generadores de código o implementaciones on-the-fly pueden deriv
 de creación de tablas, los endpoints CRUD con su capa de base de datos, las pantallas del
 frontend, los serializadores en ambos sentidos, los validadores de tipo, etc.
 
-Este módulo cubre solo la parte descriptiva de los sistemas: no genera nada por sí mismo.
+Este módulo cubre la parte descriptiva de los sistemas y las herramientas que operan sobre
+esa descripción. No genera código: no escribe el DDL, ni los endpoints, ni las pantallas —
+eso lo hacen los módulos de arriba leyendo estas descripciones.
+
+Lo que sí provee, además del vocabulario, es lo que ningún consumidor puede escribir sin
+volver a escribir una parte de la verdad: convertir un texto en el valor que la definición
+declara, mirar un valor ya construido y decir si le corresponde, y correr las reglas de un
+record. Un `parse` de una fecha escrito afuera se escribe distinto en cada implementación, y
+ahí la fuente de verdad deja de ser única.
+
+La regla que eso no rompe es la que importa: **las descripciones siguen sin llevar
+funciones**. Un `TypeDef` es el mismo de antes y una def se sigue serializando como JSON
+plano. El comportamiento vive en el contexto, que no es una descripción y nunca lo fue —
+ya llevaba el completador de campos.
 
 <!--lang:en--]
 
@@ -41,7 +54,20 @@ or on-the-fly implementations can derive the table creation scripts, the CRUD en
 their database layer, the frontend screens, the serializers in both directions, the type
 validators, and so on.
 
-This module covers only the descriptive part of systems: it does not generate anything itself.
+This module covers the descriptive part of systems and the tools that operate on that
+description. It generates no code: it does not write the DDL, the endpoints or the screens —
+the modules above do that by reading these descriptions.
+
+What it does provide, beyond the vocabulary, is what no consumer can write without writing a
+piece of the truth again: turning a text into the value the definition declares, looking at a
+value that is already built and saying whether it belongs, and running the rules of a record.
+A date's `parse` written outside gets written differently by each implementation, and there
+the single source of truth stops being single.
+
+The rule that this does not break is the one that matters: **descriptions still carry no
+functions**. A `TypeDef` is the same as before and a def still serializes as plain JSON. The
+behaviour lives in the context, which is not a description and never was — it already carried
+the field completer.
 
 [!--lang:es-->
 

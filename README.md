@@ -21,7 +21,20 @@ or on-the-fly implementations can derive the table creation scripts, the CRUD en
 their database layer, the frontend screens, the serializers in both directions, the type
 validators, and so on.
 
-This module covers only the descriptive part of systems: it does not generate anything itself.
+This module covers the descriptive part of systems and the tools that operate on that
+description. It generates no code: it does not write the DDL, the endpoints or the screens —
+the modules above do that by reading these descriptions.
+
+What it does provide, beyond the vocabulary, is what no consumer can write without writing a
+piece of the truth again: turning a text into the value the definition declares, looking at a
+value that is already built and saying whether it belongs, and running the rules of a record.
+A date's `parse` written outside gets written differently by each implementation, and there
+the single source of truth stops being single.
+
+The rule that this does not break is the one that matters: **descriptions still carry no
+functions**. A `TypeDef` is the same as before and a def still serializes as plain JSON. The
+behaviour lives in the context, which is not a description and never was — it already carried
+the field completer.
 
 
 ## What it runs on

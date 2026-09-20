@@ -7,7 +7,10 @@ Este módulo provee el vocabulario para describir sistemas (tipos de dominio, en
 procedimientos, etc.) de modo que generadores automáticos o implementaciones on-the-fly puedan
 derivar los scripts de creación de tablas, los endpoints CRUD con su capa de base de datos,
 las pantallas del frontend, los serializadores en ambos sentidos y los validadores de tipo.
-Este módulo cubre **solo la parte descriptiva**: no genera nada.
+Este módulo cubre la parte descriptiva **y las herramientas que operan sobre ella**: parsear un
+texto al valor que la definición declara, verificar un valor ya construido y correr las reglas de
+un record. No genera código. Las descripciones siguen sin llevar funciones; el comportamiento vive
+en el contexto, que nunca fue una descripción.
 
 ## Forma de trabajo
 
@@ -69,7 +72,15 @@ Este módulo cubre **solo la parte descriptiva**: no genera nada.
 * TypeScript estricto, sin `any`.
 * Las descripciones son valores TypeScript fuertemente tipados y **serializables** (representables
   como JSON plano, sin funciones embebidas). Los comportamientos especiales se referencian por
-  nombre y se resuelven contra implementaciones registradas aparte.
+  nombre y se resuelven contra implementaciones registradas aparte: el contexto es ese registro.
+* Hay **dos pares de lectura y escritura, y no son intercambiables**. El canónico (`parse`/`format`)
+  tiene que redondear y ser inequívoco: es el de una url, un csv nuestro, un string adentro de un
+  json. El humano (`read`/`display`) es el de lo que una persona tipea y ve, y depende del locale,
+  que va por parámetro porque el mismo sistema atiende gente en varios. No se pueden unificar: en
+  es-AR `123.456` son ciento veintitrés mil y en la forma canónica no es ni un entero.
+* El parseo es **el único lugar que convierte**. Un nombre de entidad que llega de un POST no es un
+  problema a esquivar: es una entrada a parsear, y pasado ese punto todo es un valor del tipo que
+  el SSOT declara. Si otro lugar parece necesitar un cast, el parseo ocurrió demasiado tarde.
 * Los tipos de dominio (por ejemplo "Edad", "Legajo") los define cada sistema (en `examples`),
   no el framework. El framework provee el mecanismo para definirlos.
 * Del valor de una definición se deriva el tipo estático correspondiente (por ejemplo, el tipo
@@ -197,8 +208,9 @@ Nombres ya elegidos:
 * `TypeDef` es `{tsType}`, **sin parámetro de tipo**: el tipo preciso de cada uno sale del literal
   que preserva el `satisfies`, no del parámetro (que nunca se instanciaba con otra cosa que `any`).
   `tsType` es fantasma: `boxType` devuelve `null` en runtime, así que lleva un tipo de compilación
-  adentro de un valor. Es el lugar donde más adelante va a vivir el comportamiento de los tipos
-  (parseo, validación, tipo SQL), que no es serializable y por eso vive en el contexto y no en la Def.
+  adentro de un valor. El comportamiento de los tipos no es serializable, así que vive en el
+  contexto y no en la Def: `behaviours` (obligatorio) lleva el par canónico `parse`/`format` más
+  `check`, y `human` (opcional) el par `read`/`display`, que recibe el locale por parámetro.
 * El sistema puede **describirse a sí mismo**: `aidaFieldInfo` es un `defineRecord` que describe
   cómo es un field info de aida, escrito con el mismo vocabulario. No reemplaza a la declaración
   estática (un record plano no puede expresar que el tipo de un `defaultValue` dependa del `type`
