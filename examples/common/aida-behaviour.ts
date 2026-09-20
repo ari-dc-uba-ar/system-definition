@@ -36,22 +36,8 @@ export const fechaBehaviour: TypeBehaviour<Fecha> = {
     check: (value): value is Fecha => value instanceof Temporal.PlainDate,
 }
 
-/* A system may also specialize a common type: aida's users type `sí` and `no`, so its
-   boolean reads them, while the common one stays language neutral. */
-export const booleanoDeAida: TypeBehaviour<boolean> = {
-    parse: (text) => {
-        const normalizado = text.trim().toLowerCase();
-        if (normalizado === 'sí' || normalizado === 'si') return parsed(true);
-        if (normalizado === 'no') return parsed(false);
-        return commonTypeBehaviours.boolean.parse(text);
-    },
-    format: commonTypeBehaviours.boolean.format,
-    check: commonTypeBehaviours.boolean.check,
-}
-
 export const typeBehaviours: TypeProvider<typeof aidaTypeDefs> = {
     ...commonTypeBehaviours,
-    boolean: booleanoDeAida,
     /* email is text in aida (the same definition), so it reads and writes the same way:
        that it looks like an email is a rule, not a parse */
     email: commonTypeBehaviours.text,

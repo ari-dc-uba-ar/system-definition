@@ -119,17 +119,6 @@ describe("aida behaviour", function(){
         typeBehaviours.fecha.format('2026-07-15');
         assert.ok(asDate != null);
     })
-    it("specializes boolean without losing the common one", function(){
-        assert.equal(valueOf(typeBehaviours.boolean.parse('sí')), true);
-        assert.equal(valueOf(typeBehaviours.boolean.parse('si')), true);
-        assert.equal(valueOf(typeBehaviours.boolean.parse('NO')), false);
-        // what the common behaviour reads, the specialized one still reads
-        assert.equal(valueOf(typeBehaviours.boolean.parse('true')), true);
-        assert.equal(valueOf(typeBehaviours.boolean.parse('false')), false);
-        assert.equal(messageKeyOf(typeBehaviours.boolean.parse('quizás')), 'type.boolean');
-        // and it writes the same texts
-        assert.equal(typeBehaviours.boolean.format(true), 'true');
-    })
     it("gives email the behaviour of the type it is defined as", function(){
         // email is commonTypeDefs.text in aida: the check that it looks like an email is a
         // rule over the value, not a parse
