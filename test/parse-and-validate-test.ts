@@ -4,7 +4,9 @@ import { Problem, ValidationResult } from "../src/common/problem";
 import { parseRecord, parseProblems } from "../src/common/parse";
 import { ValidatorNamesFor, instanceProblems, isRecordInstance, validateInstance } from "../src/common/validate";
 import { RecordInstanceType } from "../src/common/ssot-record";
-import { aidaTypes, docente, mesa } from "../examples/common/index";
+import { aida, aida1, aidaTypes, alumnos, clases, docente, docentes, mesa } from "../examples/common/index";
+import { completeEntity, defineEntity } from "../src/common/ssot-entity";
+import { validateInstance as runRules } from "../src/common/validate";
 
 function valueOf<T>(result: ValidationResult<T>): T {
     assert.ok(result.ok, 'expected the text to parse: ' + JSON.stringify(result));
@@ -125,5 +127,41 @@ describe("isRecordInstance", function(){
         assert.deepStrictEqual(instanceProblems(aidaTypes, mesa, 'una mesa').map(p => p.messageKey),
             ['record.notAnObject']);
         assert.ok(!isRecordInstance(aidaTypes, mesa, null));
+    })
+})
+
+describe("an entity names its own rules", function(){
+    it("carries the names in the def and in the info", function(){
+        assert.deepStrictEqual(docentes.validators, ['emailRazonable']);
+        assert.deepStrictEqual(clases.validators, ['ordenPositivo']);
+        assert.deepStrictEqual(completeEntity(aida, docentes).validators, ['emailRazonable']);
+        /* una entidad que no nombra ninguna no queda con undefined */
+        assert.deepStrictEqual(completeEntity(aida, alumnos).validators, ['emailRazonable']);
+    })
+    it("may only name a rule whose shape its row has", function(){
+        const bien = defineEntity(aida1, {name: 'alumnos', record: 'alumno', pk: ['alumno'], validators: ['emailRazonable']});
+        assert.deepStrictEqual(bien.validators, ['emailRazonable']);
+        const mal = defineEntity(aida1, {
+            name: 'alumnos', record: 'alumno', pk: ['alumno'],
+            // @ts-expect-error alumno no tiene orden, así que ordenPositivo no está entre sus nombres
+            validators: ['ordenPositivo'],
+        });
+        assert.ok(mal != null);
+    })
+    it("runs them over a row that was parsed first", function(){
+        const fila = valueOf(parseRecord(aidaTypes, docente, {
+            docente: '1', apellido: 'Perez', nombres: 'Ana', email: 'sin-arroba',
+        }));
+        const info = completeEntity(aida, docentes);
+        assert.deepStrictEqual(
+            runRules(aida.validators, info.validators, fila).map(p => [p.field, p.messageKey, p.severity]),
+            [['email', 'email.forma', 'regular']],
+        );
+    })
+    it("and says nothing when the row is fine", function(){
+        const fila = valueOf(parseRecord(aidaTypes, docente, {
+            docente: '1', apellido: 'Perez', nombres: 'Ana', email: 'ana@uba.ar',
+        }));
+        assert.deepStrictEqual(runRules(aida.validators, completeEntity(aida, docentes).validators, fila), []);
     })
 })

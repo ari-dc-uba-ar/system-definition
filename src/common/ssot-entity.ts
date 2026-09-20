@@ -4,6 +4,7 @@
 import { AnyFieldDef, SystemTypeContext } from "./ssot-types";
 import { AnyRecordDef, RecordDef, RecordInfo, RecordInfoOf, RecordInstanceType,
     NotNullableFieldsOf, completeRecord, notNullableFields } from "./ssot-record";
+import { ValidatorCollection, ValidatorNamesFor } from "./validate";
 
 /* the entity references its record BY NAME, like an fk references its target entity and for
    the same reason, so the context of the entity layer is the one of the types plus the records
@@ -15,6 +16,30 @@ export type RecordCollection = Record<string, AnyRecordDef>
 export type SystemEntityContext = SystemTypeContext & {records: RecordCollection}
 
 type RecordsOf<TContext> = TContext extends {records: infer TRecords} ? TRecords : {}
+
+/* which rules a system has, so an entity can name the ones it uses. They are behaviour, so
+   they live in the context and not in the description, like the completer and the type
+   behaviours; what the description carries is the name, which is what gets serialized.
+   Another stage, and it has to come before the entities because they name them. */
+export type SystemValidatorContext = SystemEntityContext & {validators: ValidatorCollection}
+
+type ValidatorsOf<TContext> = TContext extends {validators: infer TValidators extends ValidatorCollection}
+    ? TValidators
+    : {}
+
+export function withValidators<TContext extends SystemTypeContext, const TValidators extends ValidatorCollection>(
+    context: TContext,
+    validators: TValidators,
+): TContext & {validators: TValidators} {
+    return {
+        ...context,
+        validators: {...(context as Partial<SystemValidatorContext>).validators, ...validators},
+    } as TContext & {validators: TValidators};
+}
+
+/* the row of an entity as its rules see it: the record, with the pk not nullable */
+type EntityRowOf<TContext extends SystemEntityContext, TRecord extends keyof TContext['records'] & string, TPk extends readonly string[]> =
+    RecordInstanceType<TContext, NotNullableFieldsOf<TContext, TContext['records'][TRecord] & RecordDef<TContext>, TPk[number]>>
 
 export function withRecords<TContext extends SystemTypeContext, const TRecords extends RecordCollection>(
     context: TContext,
@@ -36,6 +61,7 @@ export type AnyEntityDef = {
     pk: readonly string[]
     fks?: Readonly<Record<string, FkDef>>
     uks?: Readonly<Record<string, readonly string[]>>
+    validators?: readonly string[]
 }
 
 /* fks reference the target entity BY NAME (a string, not the object): that keeps the defs
@@ -56,6 +82,8 @@ export type EntityDef<TContext extends SystemEntityContext> = {
     pk: readonly string[]
     fks?: Readonly<Record<string, FkDef>>
     uks?: Readonly<Record<string, readonly string[]>>
+    /* by name, like the record and the fks: a def carries no functions */
+    validators?: readonly string[]
 }
 
 export function defineEntity<
@@ -65,10 +93,13 @@ export function defineEntity<
     const TPk extends readonly (keyof TContext['records'][TRecord] & string)[],
     const TUks extends Readonly<Record<string, readonly (keyof TContext['records'][TRecord] & string)[]>> = {},
     const TFks extends Readonly<Record<string, {entity: string, fields: readonly (keyof TContext['records'][TRecord] & string)[] | {readonly [K in keyof TContext['records'][TRecord]]?: string}}>> = {},
+    /* only the rules whose shape this entity's row has: naming one that asks for a field the
+       record has not got is not in the union and does not compile */
+    const TValidators extends readonly ValidatorNamesFor<EntityRowOf<TContext, TRecord, TPk>, ValidatorsOf<TContext>>[] = [],
 >(
     context: TContext,
-    def: {name: TName, record: TRecord, pk: TPk, fks?: TFks, uks?: TUks},
-): {name: TName, record: TRecord, fields: TContext['records'][TRecord], pk: TPk, fks: TFks, uks: TUks} {
+    def: {name: TName, record: TRecord, pk: TPk, fks?: TFks, uks?: TUks, validators?: TValidators},
+): {name: TName, record: TRecord, fields: TContext['records'][TRecord], pk: TPk, fks: TFks, uks: TUks, validators: TValidators} {
     return {
         name: def.name,
         record: def.record,
@@ -78,6 +109,7 @@ export function defineEntity<
         pk: def.pk,
         fks: def.fks ?? {} as TFks,
         uks: def.uks ?? {} as TUks,
+        validators: def.validators ?? [] as unknown as TValidators,
     };
 }
 
@@ -133,6 +165,7 @@ export type EntityInfo<TContext extends SystemEntityContext> = {
     pk: readonly string[]
     fks: Readonly<Record<string, FkInfo>>
     uks: Readonly<Record<string, readonly string[]>>
+    validators: readonly string[]
 }
 
 /* the same reasoning as the field: the info is derived, so it says its own name. The entity
@@ -147,6 +180,7 @@ export type EntityInfoOf<TContext extends SystemEntityContext, TEntityDef extend
         ? {[F in keyof TEntityDef['fks']]: FkInfoOf<TEntityDef['fks'][F]>}
         : {}
     uks: TEntityDef['uks'] extends Readonly<Record<string, readonly string[]>> ? TEntityDef['uks'] : {}
+    validators: TEntityDef['validators'] extends readonly string[] ? TEntityDef['validators'] : readonly []
 }
 
 function completeFk(fkDef: FkDef): FkInfo {
@@ -169,6 +203,7 @@ export function completeEntity<TContext extends SystemEntityContext, const TEnti
         pk: mergePk(entityDef.pk),
         fks: Object.fromEntries(Object.entries(entityDef.fks ?? {}).map(([name, fkDef]) => [name, completeFk(fkDef)])),
         uks: entityDef.uks ?? {},
+        validators: entityDef.validators ?? [],
     } as EntityInfoOf<TContext, TEntityDef>;
 }
 

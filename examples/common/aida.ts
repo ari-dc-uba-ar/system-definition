@@ -4,7 +4,8 @@ import { boxType, commonTypeDefs, completeCoreField, CoreFieldDef, defineTypes }
 import { defineRecord } from "../../src/common/ssot-record";
 import { commonTypeBehaviours, notParsed, parsed } from "../../src/common/type-behaviour";
 import { humanBehaviours, typeBehaviours } from "./aida-behaviour";
-import { EntityDef, EntityInstanceType, defineEntities, defineEntity, extractPk, mergePk, withRecords } from "../../src/common/ssot-entity";
+import { validadores } from "./aida-validators";
+import { EntityDef, EntityInstanceType, defineEntities, defineEntity, extractPk, mergePk, withRecords, withValidators } from "../../src/common/ssot-entity";
 
 /* los tipos salen a su propia constante para que el comportamiento pueda tiparse contra
    ellos sin depender del contexto, que es el que va a llevar el comportamiento adentro */
@@ -83,7 +84,11 @@ export const alumno = defineRecord(aidaTypes, {
 /* LEVEL 1 of the data model: the entities whose records stand on their own.
    Plural names wrap the singular record defs, and the entity names its record. */
 
-export const aida1 = withRecords(aidaTypes, {cargo, materia, docente, asignacion, periodo, alumno})
+/* las reglas entran al contexto antes que las entidades, porque son las entidades las que
+   las nombran */
+export const aidaConReglas = withValidators(aidaTypes, validadores)
+
+export const aida1 = withRecords(aidaConReglas, {cargo, materia, docente, asignacion, periodo, alumno})
 
 export const cargos = defineEntity(aida1, {name: 'cargos', record: 'cargo', pk: ['cargo']})
 
@@ -94,6 +99,7 @@ export const docentes = defineEntity(aida1, {
     // reflexive fk: inside its own definition the entity is referenced by name,
     // and the source field (jefe) is mapped to the target field (docente)
     fks: {jefe: {entity: 'docentes', fields: {jefe: 'docente'}}},
+    validators: ['emailRazonable'],
 })
 
 export const materias = defineEntity(aida1, {
@@ -104,7 +110,7 @@ export const materias = defineEntity(aida1, {
 })
 
 export const periodos = defineEntity(aida1, {name: 'periodos', record: 'periodo', pk: ['periodo']})
-export const alumnos  = defineEntity(aida1, {name: 'alumnos', record: 'alumno' , pk: ['alumno' ]})
+export const alumnos  = defineEntity(aida1, {name: 'alumnos', record: 'alumno' , pk: ['alumno' ], validators: ['emailRazonable']})
 
 /* LEVEL 2: curso inherits the pks of level 1, so it cannot exist before them */
 
@@ -143,6 +149,7 @@ export const clases = defineEntity(aida3, {
     record: 'clase',
     pk: [...cursos.pk, 'orden'],
     fks: {cursos: {entity: 'cursos', fields: cursos.pk}},
+    validators: ['ordenPositivo'],
 })
 
 /* LEVEL 4: three records at the same depth, one single stage */
