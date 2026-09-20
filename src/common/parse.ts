@@ -1,5 +1,6 @@
 import { Problem, ValidationResult, problem } from "./problem";
 import { RecordDef, RecordInstanceType, completeRecord } from "./ssot-record";
+import { ParseResult } from "./type-behaviour";
 import { SystemTypeContext } from "./ssot-types";
 
 /* Turning text into the values a record declares. Text and not another interchange format
@@ -16,11 +17,14 @@ export type ParseOptions = {
     requireMandatory?: boolean
 }
 
-function parseFields<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
+/* The walk over the fields of a record, shared by the canonical reading and the human one:
+   what changes between them is how one value is read, and nothing else. */
+export function walkTextRecord<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
     context: TContext,
     recordDef: TRecordDef,
     text: TextRecord,
     options: ParseOptions,
+    readOne: (typeName: string, raw: string) => ParseResult<unknown>,
 ): {problems: Problem[], values: Record<string, unknown>} {
     const requireMandatory = options.requireMandatory ?? true;
     const problems: Problem[] = [];
@@ -41,11 +45,7 @@ function parseFields<TContext extends SystemTypeContext, TRecordDef extends Reco
             continue;
         }
         const typeName = String(field.type);
-        const behaviour = context.behaviours[typeName];
-        if (behaviour == null) {
-            throw new Error('no behaviour declared for type "' + typeName + '" in this system');
-        }
-        const result = behaviour.parse(raw);
+        const result = readOne(typeName, raw);
         if (result.ok) {
             values[name] = result.value;
         } else {
@@ -53,6 +53,16 @@ function parseFields<TContext extends SystemTypeContext, TRecordDef extends Reco
         }
     }
     return {problems, values};
+}
+
+export function canonicalReader(context: SystemTypeContext): (typeName: string, raw: string) => ParseResult<unknown> {
+    return (typeName, raw) => {
+        const behaviour = context.behaviours[typeName];
+        if (behaviour == null) {
+            throw new Error('no behaviour declared for type "' + typeName + '" in this system');
+        }
+        return behaviour.parse(raw);
+    };
 }
 
 /* THE ONE CONVERSION. Every value in `values` came out of the behaviour of the very type the
@@ -65,7 +75,7 @@ export function parseRecord<TContext extends SystemTypeContext, TRecordDef exten
     text: TextRecord,
     options: ParseOptions = {},
 ): ValidationResult<RecordInstanceType<TContext, TRecordDef>> {
-    const {problems, values} = parseFields(context, recordDef, text, options);
+    const {problems, values} = walkTextRecord(context, recordDef, text, options, canonicalReader(context));
     if (problems.length > 0) return {ok: false, problems};
     return {ok: true, value: values as RecordInstanceType<TContext, TRecordDef>};
 }
@@ -78,5 +88,5 @@ export function parseProblems<TContext extends SystemTypeContext, TRecordDef ext
     text: TextRecord,
     options: ParseOptions = {},
 ): readonly Problem[] {
-    return parseFields(context, recordDef, text, options).problems;
+    return walkTextRecord(context, recordDef, text, options, canonicalReader(context)).problems;
 }

@@ -1,6 +1,7 @@
 /* EJEMPLO: el comportamiento de los tipos de aida */
 
 import { TypeProvider, TypeBehaviour, commonTypeBehaviours, notParsed, parsed } from "../../src/common/type-behaviour";
+import { HumanBehaviour, HumanProvider, Locale, commonHumanBehaviours } from "../../src/common/human";
 import type { aidaTypeDefs } from "./aida";
 
 /* aida declares its own types in aida.ts; this is what reading and writing each of them
@@ -42,4 +43,37 @@ export const typeBehaviours: TypeProvider<typeof aidaTypeDefs> = {
        that it looks like an email is a rule, not a parse */
     email: commonTypeBehaviours.text,
     fecha: fechaBehaviour,
+}
+
+/* EL PAR HUMANO. Nadie escribe 2026-07-15 en un formulario: en es-AR escribe 15/07/2026 y en
+   en-US 7/15/2026, y las dos cosas son la misma fecha. El orden no se adivina ni se declara,
+   lo sabe Intl para cada locale. */
+function ordenDeLaFecha(locale: Locale): ('year' | 'month' | 'day')[] {
+    return new Intl.DateTimeFormat(locale).formatToParts(new Date(Date.UTC(2026, 6, 15)))
+        .map(parte => parte.type)
+        .filter((tipo): tipo is 'year' | 'month' | 'day' => tipo === 'year' || tipo === 'month' || tipo === 'day');
+}
+
+export const fechaHumana: HumanBehaviour<Fecha> = {
+    read: (text, locale) => {
+        const partes = text.trim().split(/\D+/).filter(parte => parte !== '');
+        const orden = ordenDeLaFecha(locale);
+        if (partes.length !== 3 || orden.length !== 3) return notParsed('type.date');
+        const leido: Record<string, number> = {};
+        orden.forEach((cual, i) => leido[cual] = Number(partes[i]));
+        try {
+            return parsed(Temporal.PlainDate.from(
+                {year: leido['year']!, month: leido['month']!, day: leido['day']!},
+                {overflow: 'reject'},
+            ));
+        } catch {
+            return notParsed('type.date');
+        }
+    },
+    display: (value, locale) => value.toLocaleString(locale),
+}
+
+export const humanBehaviours: HumanProvider<typeof aidaTypeDefs> = {
+    ...commonHumanBehaviours,
+    fecha: fechaHumana,
 }

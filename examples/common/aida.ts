@@ -3,7 +3,7 @@
 import { boxType, commonTypeDefs, completeCoreField, CoreFieldDef, defineTypes } from "../../src/common/ssot-types";
 import { defineRecord } from "../../src/common/ssot-record";
 import { commonTypeBehaviours, notParsed, parsed } from "../../src/common/type-behaviour";
-import { typeBehaviours } from "./aida-behaviour";
+import { humanBehaviours, typeBehaviours } from "./aida-behaviour";
 import { EntityDef, EntityInstanceType, defineEntities, defineEntity, extractPk, mergePk, withRecords } from "../../src/common/ssot-entity";
 
 /* los tipos salen a su propia constante para que el comportamiento pueda tiparse contra
@@ -30,6 +30,7 @@ export type AidaFieldDef = CoreFieldDef<typeof types> & {
 export const aidaTypes = defineTypes({
     types,
     behaviours: typeBehaviours,
+    human: humanBehaviours,
     completeField: (fieldDef: AidaFieldDef, name: string) => ({
         ...completeCoreField(fieldDef, name),
         isName     : fieldDef.isName ?? false,

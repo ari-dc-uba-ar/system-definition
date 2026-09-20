@@ -1,4 +1,5 @@
 import type { BehaviourCollection, TypeProvider } from "./type-behaviour";
+import type { HumanCollection, HumanProvider } from "./human";
 
 /* the types a system is described with. Each system defines its own (Edad, Legajo): the
    framework only provides the mechanism and a handful of common ones. */
@@ -44,6 +45,8 @@ export type SystemTypeContext = {
     types: TypeCollection
     completeField: FieldCompleter
     behaviours: BehaviourCollection
+    /* optional: what a type does not say here is read and written the canonical way */
+    human?: HumanCollection
 }
 
 /* the gate where a system's own field def and completer are checked against its types:
@@ -57,11 +60,13 @@ export function defineTypes<
         types: TTypes
         completeField: (fieldDef: TFieldDef, name: string) => TFieldInfo
         behaviours: TypeProvider<TTypes>
+        human?: HumanProvider<TTypes>
     }
 ): {
     types: TTypes
     completeField: (fieldDef: TFieldDef, name: string) => TFieldInfo
     behaviours: TypeProvider<TTypes>
+    human?: HumanProvider<TTypes>
 } {
     return context;
 }
