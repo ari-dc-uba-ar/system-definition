@@ -16,33 +16,24 @@ import type { aidaTypeDefs } from "./aida";
 
 type Fecha = typeof aidaTypeDefs['fecha']['tsType']
 
-const DATE_FORMAT = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-function twoDigits(number: number): string {
-    return String(number).padStart(2, '0');
-}
+/* la forma canónica de una fecha es la del calendario ISO y nada más: Temporal.PlainDate.from
+   acepta bastante más que eso, y lo de más no es canónico */
+const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
 export const fechaBehaviour: TypeBehaviour<Fecha> = {
     parse: (text) => {
-        const parts = DATE_FORMAT.exec(text.trim());
-        if (parts == null) return notParsed('type.date');
-        const año = Number(parts[1]);
-        const mes = Number(parts[2]);
-        const día = Number(parts[3]);
-        /* having the right shape is not enough: 2026-02-31 has it */
-        const check = new Date(Date.UTC(año, mes - 1, día));
-        if (
-            check.getUTCFullYear() !== año
-            || check.getUTCMonth() !== mes - 1
-            || check.getUTCDate() !== día
-        ) return notParsed('type.date');
-        return parsed<Fecha>({año, mes, día});
+        const trimmed = text.trim();
+        if (!DATE_FORMAT.test(trimmed)) return notParsed('type.date');
+        try {
+            /* reject y no el constrain que viene por default: 2026-02-31 tiene la forma
+               correcta y no existe, y constrain la convertiría en el 28 sin avisar */
+            return parsed(Temporal.PlainDate.from(trimmed, {overflow: 'reject'}));
+        } catch {
+            return notParsed('type.date');
+        }
     },
-    format: (value) => String(value.año).padStart(4, '0') + '-' + twoDigits(value.mes) + '-' + twoDigits(value.día),
-    /* la fecha es el caso que justifica que check exista aparte de parse: un valor compuesto
-       ya construido no es un texto, y mirarlo es mirar sus tres partes */
-    check: (value): value is Fecha => value != null && typeof value === 'object'
-        && ['año', 'mes', 'día'].every(parte => Number.isInteger((value as Record<string, unknown>)[parte])),
+    format: (value) => value.toString(),
+    check: (value): value is Fecha => value instanceof Temporal.PlainDate,
 }
 
 /* A system may also specialize a common type: aida's users type `sí` and `no`, so its

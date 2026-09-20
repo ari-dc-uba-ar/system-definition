@@ -31,7 +31,7 @@ describe("parseRecord", function(){
         const fila = valueOf(parseRecord(aidaTypes, mesa, {
             periodo: '2026c1', materia: 'BD', fecha: '2026-07-15', presidente: null, vocal: null,
         }));
-        assert.deepStrictEqual(fila.fecha, {año: 2026, mes: 7, día: 15});
+        assert.ok(fila.fecha!.equals(Temporal.PlainDate.from('2026-07-15')));
     })
     it("rejects a date with the right shape and no existence", function(){
         const problemas = problemsOf(parseRecord(aidaTypes, mesa, {
@@ -98,11 +98,11 @@ describe("validateInstance", function(){
 
 describe("isRecordInstance", function(){
     it("types an anonymous object against the definition", function(){
-        const anonimo: unknown = {periodo: '2026c1', materia: 'BD', fecha: {año: 2026, mes: 7, día: 15}};
+        const anonimo: unknown = {periodo: '2026c1', materia: 'BD', fecha: Temporal.PlainDate.from('2026-07-15')};
         assert.ok(isRecordInstance(aidaTypes, mesa, anonimo));
         /* pasado el predicado el compilador sabe qué es, y lo sabe porque se miró cada valor */
-        const laFecha: {año: number, mes: number, día: number} | null = anonimo.fecha;
-        assert.deepStrictEqual(laFecha, {año: 2026, mes: 7, día: 15});
+        const laFecha: Temporal.PlainDate | null = anonimo.fecha;
+        assert.equal(laFecha!.toString(), '2026-07-15');
     })
     it("rejects a value that is not of the type its field declares", function(){
         const conFechaDeTexto: unknown = {periodo: '2026c1', materia: 'BD', fecha: '2026-07-15'};

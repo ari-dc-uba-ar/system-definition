@@ -90,9 +90,9 @@ describe("aida behaviour", function(){
         assert.deepStrictEqual(Object.keys(provider).sort(), Object.keys(aidaTypes.types).sort());
     })
     it("reads and writes a fecha", function(){
-        assert.deepStrictEqual(valueOf(typeBehaviours.fecha.parse('2026-07-15')), {año: 2026, mes: 7, día: 15});
-        assert.equal(typeBehaviours.fecha.format({año: 2026, mes: 7, día: 15}), '2026-07-15');
-        assert.equal(typeBehaviours.fecha.format({año: 26, mes: 1, día: 2}), '0026-01-02');
+        assert.ok(valueOf(typeBehaviours.fecha.parse('2026-07-15')).equals(Temporal.PlainDate.from('2026-07-15')));
+        assert.equal(typeBehaviours.fecha.format(Temporal.PlainDate.from('2026-07-15')), '2026-07-15');
+        assert.equal(typeBehaviours.fecha.format(Temporal.PlainDate.from('0026-01-02')), '0026-01-02');
     })
     it("rejects a date with the right shape and no existence", function(){
         assert.equal(messageKeyOf(typeBehaviours.fecha.parse('2026-02-31')), 'type.date');
@@ -106,11 +106,13 @@ describe("aida behaviour", function(){
         var leap = '2028-02-29';
         assert.equal(typeBehaviours.fecha.format(valueOf(typeBehaviours.fecha.parse(leap))), leap);
     })
-    it("types a fecha as the composite value the definition declares", function(){
+    it("types a fecha as the value the definition declares", function(){
         var fecha: Fecha = valueOf(typeBehaviours.fecha.parse('2026-07-15'));
-        var asDeclared: {año: number, mes: number, día: number} = fecha;
+        var asDeclared: Temporal.PlainDate = fecha;
         var backAgain: Fecha = asDeclared;
-        assert.deepStrictEqual(backAgain, {año: 2026, mes: 7, día: 15});
+        assert.equal(backAgain.year, 2026);
+        assert.equal(backAgain.month, 7);
+        assert.equal(backAgain.day, 15);
         // @ts-expect-error a fecha is not a Date
         var asDate: Date = valueOf(typeBehaviours.fecha.parse('2026-07-15'));
         // @ts-expect-error nor a string

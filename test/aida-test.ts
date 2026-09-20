@@ -11,7 +11,7 @@ import { boxType, completeCoreField, defineTypes } from "../src/common/ssot-type
 import { parsed } from "../src/common/type-behaviour";
 import { ExpandType, Optional } from "../src/common/type-utils";
 import { aidaTypes, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
-    cargos, alumnoSearchParams, Fecha, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef, aida, aida1
+    cargos, alumnoSearchParams, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef, aida, aida1
 } from "../examples/common/aida";
 
 describe("aida example", function(){
@@ -457,7 +457,7 @@ describe("the parametric type collection must be explicit", function(){
             periodo: '2025-1',
             materia: 'ALG',
             orden  : 1,
-            fecha  : {año: 2025, mes: 3, día: 10},
+            fecha  : Temporal.PlainDate.from('2025-03-10'),
             tema   : 'introducción',
         };
         assert.equal(unaClase.orden, 1);
@@ -498,7 +498,7 @@ describe("defineRecord: the def checked against the context it is written agains
         assert.deepStrictEqual(JSON.parse(JSON.stringify(alumnoSearchParams)), plainDef);
     })
     it("deduces the instance type without naming the context again", function(){
-        type SearchParams = {apellido: string | null, desde: Fecha | null}
+        type SearchParams = {apellido: string | null, desde: Temporal.PlainDate | null}
         type Deduced = RecordInstanceType<typeof aidaTypes, typeof alumnoSearchParams>
         var params: SearchParams = {apellido: 'Pérez', desde: null};
         // both assignments must compile: SearchParams and Deduced are mutually assignable

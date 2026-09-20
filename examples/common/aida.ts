@@ -6,13 +6,11 @@ import { commonTypeBehaviours, notParsed, parsed } from "../../src/common/type-b
 import { typeBehaviours } from "./aida-behaviour";
 import { EntityDef, EntityInstanceType, defineEntities, defineEntity, extractPk, mergePk, withRecords } from "../../src/common/ssot-entity";
 
-export type Fecha = {año: number, mes: number, día:number}
-
 /* los tipos salen a su propia constante para que el comportamiento pueda tiparse contra
    ellos sin depender del contexto, que es el que va a llevar el comportamiento adentro */
 export const aidaTypeDefs = {
     ...commonTypeDefs,
-    fecha: {tsType: boxType<Fecha>()},
+    fecha: {tsType: boxType<Temporal.PlainDate>()},
     email: commonTypeDefs.text,
 }
 
