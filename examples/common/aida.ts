@@ -2,15 +2,20 @@
 
 import { boxType, commonTypeDefs, completeCoreField, CoreFieldDef, defineTypes } from "../../src/common/ssot-types";
 import { defineRecord } from "../../src/common/ssot-record";
-import { EntityDef, EntityInstanceType, defineEntities, defineEntity, extractPk, mergePk, withRecords } from "../../src/common/ssot-entity";
+import { commonTypeBehaviours, notParsed, parsed } from "../../src/common/type-behaviour";
+import { humanBehaviours, typeBehaviours } from "./aida-behaviour";
+import { validadores } from "./aida-validators";
+import { EntityDef, EntityInstanceType, defineEntities, defineEntity, extractPk, mergePk, withRecords, withValidators } from "../../src/common/ssot-entity";
 
-export type Fecha = {año: number, mes: number, día:number}
-
-const types = {
+/* los tipos salen a su propia constante para que el comportamiento pueda tiparse contra
+   ellos sin depender del contexto, que es el que va a llevar el comportamiento adentro */
+export const aidaTypeDefs = {
     ...commonTypeDefs,
-    fecha: {tsType: boxType<Fecha>()},
+    fecha: {tsType: boxType<Temporal.PlainDate>()},
     email: commonTypeDefs.text,
 }
+
+const types = aidaTypeDefs;
 
 /* what a field of THIS system looks like: the core the ssot needs plus what aida wants. isName
    is not a concept of the framework, it is a decision of this system, and so are the defaults */
@@ -25,6 +30,8 @@ export type AidaFieldDef = CoreFieldDef<typeof types> & {
    builds the info key by key, which also fixes the order the generators will see. */
 export const aidaTypes = defineTypes({
     types,
+    behaviours: typeBehaviours,
+    human: humanBehaviours,
     completeField: (fieldDef: AidaFieldDef, name: string) => ({
         ...completeCoreField(fieldDef, name),
         isName     : fieldDef.isName ?? false,
@@ -77,7 +84,11 @@ export const alumno = defineRecord(aidaTypes, {
 /* LEVEL 1 of the data model: the entities whose records stand on their own.
    Plural names wrap the singular record defs, and the entity names its record. */
 
-export const aida1 = withRecords(aidaTypes, {cargo, materia, docente, asignacion, periodo, alumno})
+/* las reglas entran al contexto antes que las entidades, porque son las entidades las que
+   las nombran */
+export const aidaConReglas = withValidators(aidaTypes, validadores)
+
+export const aida1 = withRecords(aidaConReglas, {cargo, materia, docente, asignacion, periodo, alumno})
 
 export const cargos = defineEntity(aida1, {name: 'cargos', record: 'cargo', pk: ['cargo']})
 
@@ -88,6 +99,7 @@ export const docentes = defineEntity(aida1, {
     // reflexive fk: inside its own definition the entity is referenced by name,
     // and the source field (jefe) is mapped to the target field (docente)
     fks: {jefe: {entity: 'docentes', fields: {jefe: 'docente'}}},
+    validators: ['emailRazonable'],
 })
 
 export const materias = defineEntity(aida1, {
@@ -98,7 +110,7 @@ export const materias = defineEntity(aida1, {
 })
 
 export const periodos = defineEntity(aida1, {name: 'periodos', record: 'periodo', pk: ['periodo']})
-export const alumnos  = defineEntity(aida1, {name: 'alumnos', record: 'alumno' , pk: ['alumno' ]})
+export const alumnos  = defineEntity(aida1, {name: 'alumnos', record: 'alumno' , pk: ['alumno' ], validators: ['emailRazonable']})
 
 /* LEVEL 2: curso inherits the pks of level 1, so it cannot exist before them */
 
@@ -137,6 +149,7 @@ export const clases = defineEntity(aida3, {
     record: 'clase',
     pk: [...cursos.pk, 'orden'],
     fks: {cursos: {entity: 'cursos', fields: cursos.pk}},
+    validators: ['ordenPositivo'],
 })
 
 /* LEVEL 4: three records at the same depth, one single stage */
@@ -246,8 +259,22 @@ const metaTypes = {
     typeName: {tsType: boxType<AidaTypeName>()},
 }
 
+/* el comportamiento de typeName no es de adorno: leer un nombre de tipo desde un texto es
+   verificar que sea uno de los que el sistema declara, y eso lo sabe esta misma constante */
+const nombresDeTipo = Object.keys(aidaTypeDefs) as AidaTypeName[];
+
 export const aidaMetaContext = defineTypes({
     types: metaTypes,
+    behaviours: {
+        ...commonTypeBehaviours,
+        typeName: {
+            parse: (texto) => nombresDeTipo.includes(texto.trim() as AidaTypeName)
+                ? parsed(texto.trim() as AidaTypeName)
+                : notParsed('type.typeName'),
+            format: (valor) => valor,
+            check: (valor): valor is AidaTypeName => nombresDeTipo.includes(valor as AidaTypeName),
+        },
+    },
     completeField: (fieldDef: CoreFieldDef<typeof metaTypes> & {label?: string}, name: string) => ({
         ...completeCoreField(fieldDef, name),
         label: fieldDef.label ?? name.replace(/_/g,' '),

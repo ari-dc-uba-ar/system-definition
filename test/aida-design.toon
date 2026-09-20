@@ -16,6 +16,7 @@ docentes:
       fields:
         jefe: docente
   uks:
+  validators[1]: emailRazonable
 materias:
   name: materias
   record: materia
@@ -26,6 +27,7 @@ materias:
   fks:
   uks:
     denominacion[1]: denominacion
+  validators: []
 periodos:
   name: periodos
   record: periodo
@@ -34,6 +36,7 @@ periodos:
   pk[1]: periodo
   fks:
   uks:
+  validators: []
 cursos:
   name: cursos
   record: curso
@@ -56,6 +59,7 @@ cursos:
       fields:
         docente: docente
   uks:
+  validators: []
 clases:
   name: clases
   record: clase
@@ -73,6 +77,7 @@ clases:
         periodo: periodo
         materia: materia
   uks:
+  validators[1]: ordenPositivo
 alumnos:
   name: alumnos
   record: alumno
@@ -84,6 +89,7 @@ alumnos:
   pk[1]: alumno
   fks:
   uks:
+  validators[1]: emailRazonable
 preguntas:
   name: preguntas
   record: pregunta
@@ -104,6 +110,7 @@ preguntas:
         materia: materia
         orden: orden
   uks:
+  validators: []
 opciones:
   name: opciones
   record: opcion
@@ -124,6 +131,7 @@ opciones:
         orden: orden
         pregunta: pregunta
   uks:
+  validators: []
 inscripciones:
   name: inscripciones
   record: inscripcion
@@ -143,6 +151,7 @@ inscripciones:
       fields:
         alumno: alumno
   uks:
+  validators: []
 presencias:
   name: presencias
   record: presencia
@@ -166,6 +175,7 @@ presencias:
         materia: materia
         orden: orden
   uks:
+  validators: []
 mesas:
   name: mesas
   record: mesa
@@ -191,3 +201,4 @@ mesas:
       fields:
         vocal: docente
   uks:
+  validators: []

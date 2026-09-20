@@ -8,9 +8,10 @@ import { FieldDef, RecordDef, RecordInstanceType, completeRecord, defineRecord }
 import { AnyEntityDef, EntityDef, EntityInfoOf, EntityInstanceType,
     completeEntity, defineEntity, defineEntities, extractPk, mergePk, withRecords } from "../src/common/ssot-entity";
 import { boxType, completeCoreField, defineTypes } from "../src/common/ssot-types";
+import { parsed } from "../src/common/type-behaviour";
 import { ExpandType, Optional } from "../src/common/type-utils";
 import { aidaTypes, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
-    cargos, alumnoSearchParams, Fecha, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef, aida, aida1
+    cargos, alumnoSearchParams, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef, aida, aida1
 } from "../examples/common/aida";
 
 describe("aida example", function(){
@@ -361,6 +362,7 @@ describe("extended declaractions", function(){
        come out in the info with the defaults this variant chose. */
     const extendedContext = defineTypes({
         types: aidaTypes.types,
+        behaviours: aidaTypes.behaviours,
         completeField: (fieldDef: AidaFieldDef & {otherText?: string, otherBool?: boolean}, name: string) => ({
             ...aidaTypes.completeField(fieldDef, name),
             otherText: fieldDef.otherText ?? '',
@@ -455,7 +457,7 @@ describe("the parametric type collection must be explicit", function(){
             periodo: '2025-1',
             materia: 'ALG',
             orden  : 1,
-            fecha  : {año: 2025, mes: 3, día: 10},
+            fecha  : Temporal.PlainDate.from('2025-03-10'),
             tema   : 'introducción',
         };
         assert.equal(unaClase.orden, 1);
@@ -496,7 +498,7 @@ describe("defineRecord: the def checked against the context it is written agains
         assert.deepStrictEqual(JSON.parse(JSON.stringify(alumnoSearchParams)), plainDef);
     })
     it("deduces the instance type without naming the context again", function(){
-        type SearchParams = {apellido: string | null, desde: Fecha | null}
+        type SearchParams = {apellido: string | null, desde: Temporal.PlainDate | null}
         type Deduced = RecordInstanceType<typeof aidaTypes, typeof alumnoSearchParams>
         var params: SearchParams = {apellido: 'Pérez', desde: null};
         // both assignments must compile: SearchParams and Deduced are mutually assignable
@@ -524,6 +526,10 @@ describe("each system decides what a field is and how it completes", function(){
        dictates neither. Only type and nullable are the core it needs to read itself. */
     const billing = defineTypes({
         types: {code: {tsType: boxType<string>()}, amount: {tsType: boxType<number>()}},
+        behaviours: {
+            code  : {parse: (texto) => parsed(texto), format: (valor) => valor, check: (valor): valor is string => typeof valor === 'string'},
+            amount: {parse: (texto) => parsed(Number(texto)), format: (valor) => String(valor), check: (valor): valor is number => typeof valor === 'number'},
+        },
         completeField: (fieldDef: {type: 'code' | 'amount', nullable?: boolean, defaultValue?: string}, name: string) => ({
             ...completeCoreField(fieldDef, name),
             defaultValue: fieldDef.defaultValue ?? null,

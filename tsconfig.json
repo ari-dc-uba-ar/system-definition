@@ -4,6 +4,7 @@
         "outDir": "dist",
         "module": "nodenext",
         "target": "es2022",
+        "lib": ["esnext"],
         "sourceMap": true,
         "strict": true,
         "types": ["node", "mocha"]
