@@ -3,7 +3,7 @@ import * as assert from "assert";
 import { ValidationResult } from "../src/common/problem";
 import { parseRecord, parseProblems } from "../src/common/parse";
 import { displayRecord, readProblems, readRecord } from "../src/common/human";
-import { aidaTypes, clase, mesa } from "../examples/common/index";
+import { aidaTypes, cargo, clase, mesa } from "../examples/common/index";
 
 function valueOf<T>(result: ValidationResult<T>): T {
     assert.ok(result.ok, 'esperaba que leyera: ' + JSON.stringify(result));
@@ -53,6 +53,24 @@ describe("the human pair", function(){
         /* text se lee igual en todo locale, así que aida no declara nada y no hace falta */
         const fila = valueOf(readRecord(aidaTypes, mesa, {periodo: '2026c1', materia: 'BD', fecha: '15/07/2026'}, 'es-AR'));
         assert.equal(fila.periodo, '2026c1');
+    })
+    it("the system decides its own human form, and may ignore the locale", function(){
+        /* nadie en una secretaría escribe `true`, y la jerga es de aida y no del locale */
+        for (const dicho of ['S', 'si', 'Sí', 'SÍ']) {
+            assert.equal(valueOf(readRecord(aidaTypes, cargo, {cargo: 'TIT', puede_dirigir: dicho}, 'es-AR')).puede_dirigir, true);
+        }
+        assert.equal(valueOf(readRecord(aidaTypes, cargo, {cargo: 'TIT', puede_dirigir: 'N'}, 'es-AR')).puede_dirigir, false);
+        assert.equal(valueOf(readRecord(aidaTypes, cargo, {cargo: 'TIT', puede_dirigir: 'no'}, 'en-US')).puede_dirigir, false);
+    })
+    it("and writes it back in that same jargon", function(){
+        const fila = valueOf(readRecord(aidaTypes, cargo, {cargo: 'TIT', puede_dirigir: 'S'}, 'es-AR'));
+        assert.equal(displayRecord(aidaTypes, cargo, fila, 'es-AR')['puede_dirigir'], 'Sí');
+    })
+    it("the canonical pair keeps reading and writing true/false", function(){
+        const fila = valueOf(parseRecord(aidaTypes, cargo, {cargo: 'TIT', puede_dirigir: 'true'}));
+        assert.equal(fila.puede_dirigir, true);
+        assert.deepStrictEqual(parseProblems(aidaTypes, cargo, {cargo: 'TIT', puede_dirigir: 'Sí'}).map(p => p.field),
+            ['puede_dirigir']);
     })
     it("a null is an empty cell and not the word null", function(){
         const fila = valueOf(readRecord(aidaTypes, mesa, {periodo: 'p', materia: 'm'}, 'es-AR'));

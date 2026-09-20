@@ -73,7 +73,26 @@ export const fechaHumana: HumanBehaviour<Fecha> = {
     display: (value, locale) => value.toLocaleString(locale),
 }
 
+/* El booleano de aida, que es donde se ve que la forma humana la decide el sistema. Nadie en
+   una secretaría escribe `true`: escribe S, Si, Sí o sí. El locale llega igual y aida elige no
+   mirarlo, porque su oficina habla castellano; el día que atienda en otro idioma, ramifica acá
+   y en ningún otro lado. Eso es también lo que deja ajustar la jerga de cada cliente sin tocar
+   nada más que esta constante.
+
+   Es humano y no canónico: el par canónico sigue leyendo y escribiendo `true`/`false`, que es
+   lo que viaja por una url. */
+export const booleanoHumano: HumanBehaviour<boolean> = {
+    read: (text) => {
+        const dicho = text.trim().toLowerCase();
+        if (['s', 'si', 'sí'].includes(dicho)) return parsed(true);
+        if (['n', 'no'].includes(dicho)) return parsed(false);
+        return notParsed('type.boolean');
+    },
+    display: (value) => value ? 'Sí' : 'No',
+}
+
 export const humanBehaviours: HumanProvider<typeof aidaTypeDefs> = {
     ...commonHumanBehaviours,
+    boolean: booleanoHumano,
     fecha: fechaHumana,
 }
