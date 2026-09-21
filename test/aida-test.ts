@@ -10,9 +10,12 @@ import { AnyEntityDef, EntityDef, EntityInfoOf, EntityInstanceType,
 import { boxType, completeCoreField, defineTypes } from "../src/common/ssot-types";
 import { parsed } from "../src/common/type-behaviour";
 import { ExpandType, Optional } from "../src/common/type-utils";
-import { aidaTypes, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
-    cargos, alumnoSearchParams, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef, aida, aida1
+import { cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones,
+    presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, cargos,
+    alumnoSearchParams, aidaFieldInfo, aida, aida1
 } from "../examples/common/aida";
+import { aidaTypes, aidaMetaContext, AidaTypeName, AidaFieldDef } from "../examples/common/aida-context";
+import { validarCargo } from "../examples/common/aida-validators";
 
 describe("aida example", function(){
     it("deduces the record instance type", function(){

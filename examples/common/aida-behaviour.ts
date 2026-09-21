@@ -2,7 +2,7 @@
 
 import { TypeProvider, TypeBehaviour, commonTypeBehaviours, notParsed, parsed } from "../../src/common/type-behaviour";
 import { HumanBehaviour, HumanProvider, Locale, commonHumanBehaviours } from "../../src/common/human";
-import type { aidaTypeDefs } from "./aida";
+import type { aidaTypeDefs } from "./aida-context";
 
 /* aida declares its own types in aida.ts; this is what reading and writing each of them
    looks like. The two halves are apart on purpose — a description stays serializable and
