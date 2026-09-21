@@ -1,44 +1,15 @@
 /* EJEMPLO del sistema de alumnos */
 
-import { boxType, commonTypeDefs, completeCoreField, CoreFieldDef, defineTypes } from "../../src/common/ssot-types";
+/* ACÁ NO SE DECLARA COMPORTAMIENTO. Este archivo describe: llama a las funciones que definen
+   y pone datos, incluidos los strings con los que apunta por nombre a un record, a una entidad
+   o a una regla. Que importe el contexto está bien y hace falta — es lo que le permite al
+   compilador verificar que esos nombres existan. Lo que no hay acá es una sola función
+   declarada: el completador, el comportamiento de los tipos y las reglas viven cada uno en su
+   archivo. */
+
 import { defineRecord } from "../../src/common/ssot-record";
-import { commonTypeBehaviours, notParsed, parsed } from "../../src/common/type-behaviour";
-import { humanBehaviours, typeBehaviours } from "./aida-behaviour";
-import { validadores } from "./aida-validators";
-import { EntityDef, EntityInstanceType, defineEntities, defineEntity, extractPk, mergePk, withRecords, withValidators } from "../../src/common/ssot-entity";
-
-/* los tipos salen a su propia constante para que el comportamiento pueda tiparse contra
-   ellos sin depender del contexto, que es el que va a llevar el comportamiento adentro */
-export const aidaTypeDefs = {
-    ...commonTypeDefs,
-    fecha: {tsType: boxType<Temporal.PlainDate>()},
-    email: commonTypeDefs.text,
-}
-
-const types = aidaTypeDefs;
-
-/* what a field of THIS system looks like: the core the ssot needs plus what aida wants. isName
-   is not a concept of the framework, it is a decision of this system, and so are the defaults */
-export type AidaFieldDef = CoreFieldDef<typeof types> & {
-    isName?: boolean
-    label?: string
-    description?: string
-}
-
-/* the context this system is described against: one value that every layer of the SSOT
-   receives, so a def never has to say twice which types it is talking about. The completer
-   builds the info key by key, which also fixes the order the generators will see. */
-export const aidaTypes = defineTypes({
-    types,
-    behaviours: typeBehaviours,
-    human: humanBehaviours,
-    completeField: (fieldDef: AidaFieldDef, name: string) => ({
-        ...completeCoreField(fieldDef, name),
-        isName     : fieldDef.isName ?? false,
-        label      : fieldDef.label ?? name.replace(/_/g,' '),
-        description: fieldDef.description ?? '',
-    }),
-})
+import { EntityDef, EntityInstanceType, defineEntities, defineEntity, extractPk, mergePk, withRecords } from "../../src/common/ssot-entity";
+import { aidaConReglas, aidaMetaContext, aidaTypes } from "./aida-context";
 
 /* THE RECORDS THAT DEPEND ON NOTHING: they only need the types */
 
@@ -83,10 +54,6 @@ export const alumno = defineRecord(aidaTypes, {
 
 /* LEVEL 1 of the data model: the entities whose records stand on their own.
    Plural names wrap the singular record defs, and the entity names its record. */
-
-/* las reglas entran al contexto antes que las entidades, porque son las entidades las que
-   las nombran */
-export const aidaConReglas = withValidators(aidaTypes, validadores)
 
 export const aida1 = withRecords(aidaConReglas, {cargo, materia, docente, asignacion, periodo, alumno})
 
@@ -252,35 +219,6 @@ export const aida = aida6
    express that the type of defaultValue depends on the type of the field — so they are two
    halves, and the test checks that they did not drift apart. */
 
-export type AidaTypeName = keyof typeof types
-
-const metaTypes = {
-    ...commonTypeDefs,
-    typeName: {tsType: boxType<AidaTypeName>()},
-}
-
-/* el comportamiento de typeName no es de adorno: leer un nombre de tipo desde un texto es
-   verificar que sea uno de los que el sistema declara, y eso lo sabe esta misma constante */
-const nombresDeTipo = Object.keys(aidaTypeDefs) as AidaTypeName[];
-
-export const aidaMetaContext = defineTypes({
-    types: metaTypes,
-    behaviours: {
-        ...commonTypeBehaviours,
-        typeName: {
-            parse: (texto) => nombresDeTipo.includes(texto.trim() as AidaTypeName)
-                ? parsed(texto.trim() as AidaTypeName)
-                : notParsed('type.typeName'),
-            format: (valor) => valor,
-            check: (valor): valor is AidaTypeName => nombresDeTipo.includes(valor as AidaTypeName),
-        },
-    },
-    completeField: (fieldDef: CoreFieldDef<typeof metaTypes> & {label?: string}, name: string) => ({
-        ...completeCoreField(fieldDef, name),
-        label: fieldDef.label ?? name.replace(/_/g,' '),
-    }),
-})
-
 export const aidaFieldInfo = defineRecord(aidaMetaContext, {
     name       : {type: 'text'    , nullable: false},
     type       : {type: 'typeName', nullable: false},
@@ -331,10 +269,3 @@ export const entityDefs = defineEntities({
    not marked nullable:false admit null):
    DefinedType<typeof cargos> = {cargo: string, orden?: number|null, ...} */
 export type DefinedType<TEntityDef extends EntityDef<typeof aida>> = EntityInstanceType<typeof aida, TEntityDef>
-
-export function validarCargo(cargoSinValidar: DefinedType<typeof cargos>){
-    // denominacion is nullable in the def, so the deduced type forces the null check here
-    if (cargoSinValidar.puede_dirigir && cargoSinValidar.denominacion?.match(/ayudante/i)) {
-        throw new Error('Los ayudantes no pueden dirigir. Recibido:"' + cargoSinValidar.denominacion + '"');
-    }
-}

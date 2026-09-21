@@ -10,9 +10,12 @@ import { AnyEntityDef, EntityDef, EntityInfoOf, EntityInstanceType,
 import { boxType, completeCoreField, defineTypes } from "../src/common/ssot-types";
 import { parsed } from "../src/common/type-behaviour";
 import { ExpandType, Optional } from "../src/common/type-utils";
-import { aidaTypes, cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones, presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, validarCargo,
-    cargos, alumnoSearchParams, aidaMetaContext, aidaFieldInfo, AidaTypeName, AidaFieldDef, aida, aida1
+import { cargo, materia, docente, curso, clase, cursos, clases, opcion, opciones, inscripciones,
+    presencia, presencias, docentes, materias, mesas, entityDefs, DefinedType, cargos,
+    alumnoSearchParams, aidaFieldInfo, aida, aida1
 } from "../examples/common/aida";
+import { aidaTypes, aidaMetaContext, AidaTypeName, AidaFieldDef } from "../examples/common/aida-context";
+import { validarCargo } from "../examples/common/aida-validators";
 
 describe("aida example", function(){
     it("deduces the record instance type", function(){
@@ -527,8 +530,8 @@ describe("each system decides what a field is and how it completes", function(){
     const billing = defineTypes({
         types: {code: {tsType: boxType<string>()}, amount: {tsType: boxType<number>()}},
         behaviours: {
-            code  : {parse: (texto) => parsed(texto), format: (valor) => valor, check: (valor): valor is string => typeof valor === 'string'},
-            amount: {parse: (texto) => parsed(Number(texto)), format: (valor) => String(valor), check: (valor): valor is number => typeof valor === 'number'},
+            code  : {deserialize: (texto) => parsed(texto), serialize: (valor) => valor, check: (valor): valor is string => typeof valor === 'string'},
+            amount: {deserialize: (texto) => parsed(Number(texto)), serialize: (valor) => String(valor), check: (valor): valor is number => typeof valor === 'number'},
         },
         completeField: (fieldDef: {type: 'code' | 'amount', nullable?: boolean, defaultValue?: string}, name: string) => ({
             ...completeCoreField(fieldDef, name),

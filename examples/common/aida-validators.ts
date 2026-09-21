@@ -2,6 +2,7 @@
 
 import type { Problem } from "../../src/common/problem";
 import { problem } from "../../src/common/problem";
+import type { DefinedType, cargos } from "./aida";
 
 /* Cada regla declara la forma que necesita y no la entidad a la que pertenece, así que
    `emailRazonable` sirve para docentes y para alumnos sin duplicarse, y nombrarla desde una
@@ -25,3 +26,11 @@ export const ordenPositivo = (fila: {orden: number | null}): readonly Problem[] 
 }
 
 export const validadores = {emailRazonable, ordenPositivo};
+
+/* Escrita a mano y no como una de las de arriba: está para mostrar que el tipo deducido de la
+   definición obliga al chequeo de null, porque `denominacion` es nulleable en la def. */
+export function validarCargo(cargoSinValidar: DefinedType<typeof cargos>){
+    if (cargoSinValidar.puede_dirigir && cargoSinValidar.denominacion?.match(/ayudante/i)) {
+        throw new Error('Los ayudantes no pueden dirigir. Recibido:"' + cargoSinValidar.denominacion + '"');
+    }
+}

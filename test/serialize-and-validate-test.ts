@@ -1,15 +1,15 @@
 import * as assert from "assert";
 
 import { Problem, ValidationResult } from "../src/common/problem";
-import { parseRecord, parseProblems } from "../src/common/parse";
+import { serializeFields, deserializeRecord, deserializeProblems } from "../src/common/serialize";
 import { ValidatorNamesFor, instanceProblems, isRecordInstance, validateInstance } from "../src/common/validate";
 import { RecordInstanceType } from "../src/common/ssot-record";
-import { aida, aida1, aidaTypes, alumnos, clases, docente, docentes, mesa } from "../examples/common/index";
+import { aida, aida1, aidaTypes, alumnos, cargo, clases, docente, docentes, mesa } from "../examples/common/index";
 import { completeEntity, defineEntity } from "../src/common/ssot-entity";
 import { validateInstance as runRules } from "../src/common/validate";
 
 function valueOf<T>(result: ValidationResult<T>): T {
-    assert.ok(result.ok, 'expected the text to parse: ' + JSON.stringify(result));
+    assert.ok(result.ok, 'expected the text to deserialize: ' + JSON.stringify(result));
     return result.value;
 }
 
@@ -18,9 +18,9 @@ function problemsOf<T>(result: ValidationResult<T>): readonly Problem[] {
     return result.problems;
 }
 
-describe("parseRecord", function(){
+describe("deserializeRecord", function(){
     it("turns the text of every field into the value its type declares", function(){
-        const fila = valueOf(parseRecord(aidaTypes, docente, {
+        const fila = valueOf(deserializeRecord(aidaTypes, docente, {
             docente: '1', apellido: 'Perez', nombres: 'Ana',
             cargo: 'TIT', email: 'ana@uba.ar', email_alternativo: null, jefe: null,
         }));
@@ -30,35 +30,35 @@ describe("parseRecord", function(){
         assert.equal(comoDeclara, 'Ana');
     })
     it("builds the composite value of a composite type", function(){
-        const fila = valueOf(parseRecord(aidaTypes, mesa, {
+        const fila = valueOf(deserializeRecord(aidaTypes, mesa, {
             periodo: '2026c1', materia: 'BD', fecha: '2026-07-15', presidente: null, vocal: null,
         }));
         assert.ok(fila.fecha!.equals(Temporal.PlainDate.from('2026-07-15')));
     })
     it("rejects a date with the right shape and no existence", function(){
-        const problemas = problemsOf(parseRecord(aidaTypes, mesa, {
+        const problemas = problemsOf(deserializeRecord(aidaTypes, mesa, {
             periodo: '2026c1', materia: 'BD', fecha: '2026-02-31',
         }));
         assert.deepStrictEqual(problemas.map(p => [p.field, p.messageKey, p.severity]),
             [['fecha', 'type.date', 'blocking']]);
     })
     it("an empty input is the absence of a value, not the empty string", function(){
-        const fila = valueOf(parseRecord(aidaTypes, docente, {
+        const fila = valueOf(deserializeRecord(aidaTypes, docente, {
             docente: '1', apellido: 'Perez', nombres: 'Ana', email: '',
         }));
         assert.equal(fila.email, null);
     })
     it("reports what is mandatory and missing", function(){
-        const problemas = problemsOf(parseRecord(aidaTypes, docente, {docente: '1'}));
+        const problemas = problemsOf(deserializeRecord(aidaTypes, docente, {docente: '1'}));
         assert.deepStrictEqual(problemas.map(p => p.field).sort(), ['apellido', 'nombres']);
         assert.ok(problemas.every(p => p.messageKey === 'field.required'));
     })
     it("does not report them when the text is not meant to be complete", function(){
-        const fila = valueOf(parseRecord(aidaTypes, docente, {docente: '1'}, {requireMandatory: false}));
+        const fila = valueOf(deserializeRecord(aidaTypes, docente, {docente: '1'}, {requireMandatory: false}));
         assert.equal(fila.apellido, null);
     })
     it("still reports what does not read, complete or not", function(){
-        const problemas = parseProblems(aidaTypes, mesa, {fecha: 'ayer'}, {requireMandatory: false});
+        const problemas = deserializeProblems(aidaTypes, mesa, {fecha: 'ayer'}, {requireMandatory: false});
         assert.deepStrictEqual(problemas.map(p => p.field), ['fecha']);
     })
 })
@@ -78,7 +78,7 @@ describe("validateInstance", function(){
     };
 
     it("runs the named rules over a record that is already built", function(){
-        const fila = valueOf(parseRecord(aidaTypes, docente, {
+        const fila = valueOf(deserializeRecord(aidaTypes, docente, {
             docente: '1', apellido: 'Perez', nombres: 'Ana', email: 'sin-arroba',
         }));
         const problemas = validateInstance(validadores, ['emailRazonable'], fila);
@@ -149,7 +149,7 @@ describe("an entity names its own rules", function(){
         assert.ok(mal != null);
     })
     it("runs them over a row that was parsed first", function(){
-        const fila = valueOf(parseRecord(aidaTypes, docente, {
+        const fila = valueOf(deserializeRecord(aidaTypes, docente, {
             docente: '1', apellido: 'Perez', nombres: 'Ana', email: 'sin-arroba',
         }));
         const info = completeEntity(aida, docentes);
@@ -159,9 +159,32 @@ describe("an entity names its own rules", function(){
         );
     })
     it("and says nothing when the row is fine", function(){
-        const fila = valueOf(parseRecord(aidaTypes, docente, {
+        const fila = valueOf(deserializeRecord(aidaTypes, docente, {
             docente: '1', apellido: 'Perez', nombres: 'Ana', email: 'ana@uba.ar',
         }));
         assert.deepStrictEqual(runRules(aida.validators, completeEntity(aida, docentes).validators, fila), []);
+    })
+})
+
+describe("serializeFields", function(){
+    it("writes each field as the text its own deserialize reads back", function(){
+        const fila = valueOf(deserializeRecord(aidaTypes, mesa, {
+            periodo: '2026c1', materia: 'BD', fecha: '2026-07-15',
+        }));
+        assert.deepStrictEqual(serializeFields(aidaTypes, mesa, fila), {
+            periodo: '2026c1', materia: 'BD', fecha: '2026-07-15', presidente: null, vocal: null,
+        });
+    })
+    it("round-trips: what it writes is what deserializeRecord reads", function(){
+        const original = {periodo: '2026c1', materia: 'BD', fecha: '2026-07-15'};
+        const fila = valueOf(deserializeRecord(aidaTypes, mesa, original));
+        const texto = serializeFields(aidaTypes, mesa, fila);
+        const otraVez = valueOf(deserializeRecord(aidaTypes, mesa, texto));
+        assert.ok(otraVez.fecha!.equals(fila.fecha!));
+        assert.equal(otraVez.periodo, fila.periodo);
+    })
+    it("is not the human one: no locale, and the machine form of a boolean", function(){
+        const fila = valueOf(deserializeRecord(aidaTypes, cargo, {cargo: 'TIT', puede_dirigir: 'true'}));
+        assert.equal(serializeFields(aidaTypes, cargo, fila)['puede_dirigir'], 'true');
     })
 })

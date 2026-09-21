@@ -28,7 +28,7 @@ the modules above do that by reading these descriptions.
 What it does provide, beyond the vocabulary, is what no consumer can write without writing a
 piece of the truth again: turning a text into the value the definition declares, looking at a
 value that is already built and saying whether it belongs, and running the rules of a record.
-A date's `parse` written outside gets written differently by each implementation, and there
+A date's `deserialize` written outside gets written differently by each implementation, and there
 the single source of truth stops being single.
 
 The rule that this does not break is the one that matters: **descriptions still carry no
