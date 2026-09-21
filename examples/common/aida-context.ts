@@ -79,4 +79,3 @@ export const aidaMetaContext = defineTypes({
         label: fieldDef.label ?? name.replace(/_/g,' '),
     }),
 })
-

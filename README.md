@@ -37,14 +37,6 @@ behaviour lives in the context, which is not a description and never was — it 
 the field completer.
 
 
-## What it runs on
-
-The library itself needs nothing beyond a current Node. The **aida example** uses
-`Temporal.PlainDate` for its `fecha` type, which is native from Node 26 on; on 22 and 24 it
-needs `--node-option harmony-temporal`, which is what the test scripts here pass. Nothing in
-`src/` uses Temporal, so a consumer that does not import the example is unaffected.
-
-
 ## Naming convention: Def and Info
 
 Every descriptive concept has (at least) two versions, distinguished by a suffix:
