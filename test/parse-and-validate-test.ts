@@ -1,10 +1,10 @@
 import * as assert from "assert";
 
 import { Problem, ValidationResult } from "../src/common/problem";
-import { parseRecord, parseProblems } from "../src/common/parse";
+import { formatFields, parseRecord, parseProblems } from "../src/common/parse";
 import { ValidatorNamesFor, instanceProblems, isRecordInstance, validateInstance } from "../src/common/validate";
 import { RecordInstanceType } from "../src/common/ssot-record";
-import { aida, aida1, aidaTypes, alumnos, clases, docente, docentes, mesa } from "../examples/common/index";
+import { aida, aida1, aidaTypes, alumnos, cargo, clases, docente, docentes, mesa } from "../examples/common/index";
 import { completeEntity, defineEntity } from "../src/common/ssot-entity";
 import { validateInstance as runRules } from "../src/common/validate";
 
@@ -163,5 +163,28 @@ describe("an entity names its own rules", function(){
             docente: '1', apellido: 'Perez', nombres: 'Ana', email: 'ana@uba.ar',
         }));
         assert.deepStrictEqual(runRules(aida.validators, completeEntity(aida, docentes).validators, fila), []);
+    })
+})
+
+describe("formatFields", function(){
+    it("writes each field as the canonical text its parse reads back", function(){
+        const fila = valueOf(parseRecord(aidaTypes, mesa, {
+            periodo: '2026c1', materia: 'BD', fecha: '2026-07-15',
+        }));
+        assert.deepStrictEqual(formatFields(aidaTypes, mesa, fila), {
+            periodo: '2026c1', materia: 'BD', fecha: '2026-07-15', presidente: null, vocal: null,
+        });
+    })
+    it("round-trips: what it writes is what parseRecord reads", function(){
+        const original = {periodo: '2026c1', materia: 'BD', fecha: '2026-07-15'};
+        const fila = valueOf(parseRecord(aidaTypes, mesa, original));
+        const texto = formatFields(aidaTypes, mesa, fila);
+        const otraVez = valueOf(parseRecord(aidaTypes, mesa, texto));
+        assert.ok(otraVez.fecha!.equals(fila.fecha!));
+        assert.equal(otraVez.periodo, fila.periodo);
+    })
+    it("is not the human one: no locale, and the machine form of a boolean", function(){
+        const fila = valueOf(parseRecord(aidaTypes, cargo, {cargo: 'TIT', puede_dirigir: 'true'}));
+        assert.equal(formatFields(aidaTypes, cargo, fila)['puede_dirigir'], 'true');
     })
 })

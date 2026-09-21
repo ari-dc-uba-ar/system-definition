@@ -103,8 +103,10 @@ export function readProblems<TContext extends SystemTypeContext, TRecordDef exte
         (typeName, raw) => humanBehaviourOf(context, typeName).read(raw, locale)).problems;
 }
 
-/* What the person is shown. A null is an empty cell and not the word "null". */
-export function displayRecord<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
+/* Los campos del record, cada uno como el texto que la persona ve. No se llama displayRecord
+   porque no despliega el registro: despliega cada uno de sus campos, y quien arma la pantalla
+   decide qué hace con ellos. Un null es una celda vacía y no la palabra "null". */
+export function displayFields<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
     context: TContext,
     recordDef: TRecordDef,
     row: Readonly<Record<string, unknown>>,

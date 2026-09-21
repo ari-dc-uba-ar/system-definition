@@ -90,3 +90,30 @@ export function parseProblems<TContext extends SystemTypeContext, TRecordDef ext
 ): readonly Problem[] {
     return walkTextRecord(context, recordDef, text, options, canonicalReader(context)).problems;
 }
+
+/* La vuelta de parseRecord: los campos del record, cada uno como el texto canónico que
+   redondea con su parse. Es lo que viaja por el cable, y por eso no lleva locale: del otro
+   lado hay una máquina. La contracara con locale es displayFields.
+
+   Da los campos y no el registro, como displayFields y por el mismo motivo. */
+export function formatFields<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
+    context: TContext,
+    recordDef: TRecordDef,
+    row: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, string | null>> {
+    const text: Record<string, string | null> = {};
+    for (const [name, field] of Object.entries(completeRecord(context, recordDef))) {
+        const value = row[name];
+        if (value == null) {
+            text[name] = null;
+            continue;
+        }
+        const typeName = String(field.type);
+        const behaviour = context.behaviours[typeName];
+        if (behaviour == null) {
+            throw new Error('no behaviour declared for type "' + typeName + '" in this system');
+        }
+        text[name] = behaviour.format(value as never);
+    }
+    return text;
+}

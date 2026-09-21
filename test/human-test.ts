@@ -2,7 +2,7 @@ import * as assert from "assert";
 
 import { ValidationResult } from "../src/common/problem";
 import { parseRecord, parseProblems } from "../src/common/parse";
-import { displayRecord, readProblems, readRecord } from "../src/common/human";
+import { displayFields, readProblems, readRecord } from "../src/common/human";
 import { aidaTypes, cargo, clase, mesa } from "../examples/common/index";
 
 function valueOf<T>(result: ValidationResult<T>): T {
@@ -27,8 +27,8 @@ describe("the human pair", function(){
     })
     it("writes the date back the way the locale writes it", function(){
         const fila = valueOf(readRecord(aidaTypes, mesa, {periodo: 'p', materia: 'm', fecha: '15/07/2026'}, 'es-AR'));
-        assert.equal(displayRecord(aidaTypes, mesa, fila, 'es-AR')['fecha'], '15/7/2026');
-        assert.equal(displayRecord(aidaTypes, mesa, fila, 'en-US')['fecha'], '7/15/2026');
+        assert.equal(displayFields(aidaTypes, mesa, fila, 'es-AR')['fecha'], '15/7/2026');
+        assert.equal(displayFields(aidaTypes, mesa, fila, 'en-US')['fecha'], '7/15/2026');
     })
     it("the canonical pair does not read what a person writes, and that is the point", function(){
         assert.deepStrictEqual(
@@ -64,7 +64,7 @@ describe("the human pair", function(){
     })
     it("and writes it back in that same jargon", function(){
         const fila = valueOf(readRecord(aidaTypes, cargo, {cargo: 'TIT', puede_dirigir: 'S'}, 'es-AR'));
-        assert.equal(displayRecord(aidaTypes, cargo, fila, 'es-AR')['puede_dirigir'], 'Sí');
+        assert.equal(displayFields(aidaTypes, cargo, fila, 'es-AR')['puede_dirigir'], 'Sí');
     })
     it("the canonical pair keeps reading and writing true/false", function(){
         const fila = valueOf(parseRecord(aidaTypes, cargo, {cargo: 'TIT', puede_dirigir: 'true'}));
@@ -74,6 +74,6 @@ describe("the human pair", function(){
     })
     it("a null is an empty cell and not the word null", function(){
         const fila = valueOf(readRecord(aidaTypes, mesa, {periodo: 'p', materia: 'm'}, 'es-AR'));
-        assert.equal(displayRecord(aidaTypes, mesa, fila, 'es-AR')['fecha'], null);
+        assert.equal(displayFields(aidaTypes, mesa, fila, 'es-AR')['fecha'], null);
     })
 })
