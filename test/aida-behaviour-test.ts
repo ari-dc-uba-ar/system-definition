@@ -19,35 +19,35 @@ function messageKeyOf(result: ParseResult<unknown>): string {
 
 describe("type behaviour", function(){
     it("reads and writes the common types", function(){
-        assert.deepStrictEqual(valueOf(commonTypeBehaviours.text.parse('hola')), 'hola');
-        assert.deepStrictEqual(valueOf(commonTypeBehaviours.integer.parse(' 12 ')), 12);
-        assert.deepStrictEqual(valueOf(commonTypeBehaviours.integer.parse('-3')), -3);
-        assert.deepStrictEqual(valueOf(commonTypeBehaviours.boolean.parse('TRUE')), true);
-        assert.equal(commonTypeBehaviours.integer.format(12), '12');
-        assert.equal(commonTypeBehaviours.boolean.format(false), 'false');
+        assert.deepStrictEqual(valueOf(commonTypeBehaviours.text.deserialize('hola')), 'hola');
+        assert.deepStrictEqual(valueOf(commonTypeBehaviours.integer.deserialize(' 12 ')), 12);
+        assert.deepStrictEqual(valueOf(commonTypeBehaviours.integer.deserialize('-3')), -3);
+        assert.deepStrictEqual(valueOf(commonTypeBehaviours.boolean.deserialize('TRUE')), true);
+        assert.equal(commonTypeBehaviours.integer.serialize(12), '12');
+        assert.equal(commonTypeBehaviours.boolean.serialize(false), 'false');
     })
     it("rejects what Number() would have accepted", function(){
         // Number('') is 0, Number('0x10') is 16 and Number('1.5') is 1.5: none of them is this integer
-        assert.equal(messageKeyOf(commonTypeBehaviours.integer.parse('')), 'type.integer');
-        assert.equal(messageKeyOf(commonTypeBehaviours.integer.parse('0x10')), 'type.integer');
-        assert.equal(messageKeyOf(commonTypeBehaviours.integer.parse('1.5')), 'type.integer');
-        assert.equal(messageKeyOf(commonTypeBehaviours.boolean.parse('sí')), 'type.boolean');
+        assert.equal(messageKeyOf(commonTypeBehaviours.integer.deserialize('')), 'type.integer');
+        assert.equal(messageKeyOf(commonTypeBehaviours.integer.deserialize('0x10')), 'type.integer');
+        assert.equal(messageKeyOf(commonTypeBehaviours.integer.deserialize('1.5')), 'type.integer');
+        assert.equal(messageKeyOf(commonTypeBehaviours.boolean.deserialize('sí')), 'type.boolean');
     })
     it("round-trips every common type", function(){
-        assert.equal(commonTypeBehaviours.text.format(valueOf(commonTypeBehaviours.text.parse('x'))), 'x');
-        assert.equal(commonTypeBehaviours.integer.format(valueOf(commonTypeBehaviours.integer.parse('42'))), '42');
-        assert.equal(commonTypeBehaviours.boolean.format(valueOf(commonTypeBehaviours.boolean.parse('true'))), 'true');
+        assert.equal(commonTypeBehaviours.text.serialize(valueOf(commonTypeBehaviours.text.deserialize('x'))), 'x');
+        assert.equal(commonTypeBehaviours.integer.serialize(valueOf(commonTypeBehaviours.integer.deserialize('42'))), '42');
+        assert.equal(commonTypeBehaviours.boolean.serialize(valueOf(commonTypeBehaviours.boolean.deserialize('true'))), 'true');
     })
     it("types the parsed value after the type of the definition", function(){
         // the behaviour of `integer` yields a number, and that is checked in both directions
-        var asNumber: number = valueOf(commonTypeBehaviours.integer.parse('7'));
-        var asParsed: ParseResult<number> = commonTypeBehaviours.integer.parse('7');
+        var asNumber: number = valueOf(commonTypeBehaviours.integer.deserialize('7'));
+        var asParsed: ParseResult<number> = commonTypeBehaviours.integer.deserialize('7');
         assert.equal(asNumber, 7);
         assert.equal(valueOf(asParsed), 7);
         // @ts-expect-error the parsed value of `integer` is not a string
-        var asString: string = valueOf(commonTypeBehaviours.integer.parse('7'));
+        var asString: string = valueOf(commonTypeBehaviours.integer.deserialize('7'));
         // @ts-expect-error `format` of `integer` does not take a string either
-        commonTypeBehaviours.integer.format('7');
+        commonTypeBehaviours.integer.serialize('7');
         assert.equal(asString, 7);
     })
     it("is exhaustive over the type collection", function(){
@@ -64,12 +64,12 @@ describe("type behaviour", function(){
         assert.equal(noBehaviour, undefined);
     })
     it("accepts a behaviour written for the type of the definition, and no other", function(){
-        var ok: TypeBehaviour<string> = {parse: (text) => parsed(text), format: (value) => value, check: esTexto};
-        assert.equal(valueOf(ok.parse('a')), 'a');
+        var ok: TypeBehaviour<string> = {deserialize: (text) => parsed(text), serialize: (value) => value, check: esTexto};
+        assert.equal(valueOf(ok.deserialize('a')), 'a');
         // @ts-expect-error the parsed value has to be the type the behaviour declares
-        var wrongParse: TypeBehaviour<string> = {parse: () => parsed(1), format: (value) => value, check: esTexto};
+        var wrongParse: TypeBehaviour<string> = {deserialize: () => parsed(1), serialize: (value) => value, check: esTexto};
         // @ts-expect-error and `format` has to take it
-        var wrongFormat: TypeBehaviour<string> = {parse: (text) => parsed(text), format: (value: number) => String(value), check: esTexto};
+        var wrongFormat: TypeBehaviour<string> = {deserialize: (text) => parsed(text), serialize: (value: number) => String(value), check: esTexto};
         assert.ok(wrongParse != null && wrongFormat != null);
     })
     it("carries a message key and never a text", function(){
@@ -90,40 +90,40 @@ describe("aida behaviour", function(){
         assert.deepStrictEqual(Object.keys(provider).sort(), Object.keys(aidaTypes.types).sort());
     })
     it("reads and writes a fecha", function(){
-        assert.ok(valueOf(typeBehaviours.fecha.parse('2026-07-15')).equals(Temporal.PlainDate.from('2026-07-15')));
-        assert.equal(typeBehaviours.fecha.format(Temporal.PlainDate.from('2026-07-15')), '2026-07-15');
-        assert.equal(typeBehaviours.fecha.format(Temporal.PlainDate.from('0026-01-02')), '0026-01-02');
+        assert.ok(valueOf(typeBehaviours.fecha.deserialize('2026-07-15')).equals(Temporal.PlainDate.from('2026-07-15')));
+        assert.equal(typeBehaviours.fecha.serialize(Temporal.PlainDate.from('2026-07-15')), '2026-07-15');
+        assert.equal(typeBehaviours.fecha.serialize(Temporal.PlainDate.from('0026-01-02')), '0026-01-02');
     })
     it("rejects a date with the right shape and no existence", function(){
-        assert.equal(messageKeyOf(typeBehaviours.fecha.parse('2026-02-31')), 'type.date');
-        assert.equal(messageKeyOf(typeBehaviours.fecha.parse('2026-13-01')), 'type.date');
-        assert.equal(messageKeyOf(typeBehaviours.fecha.parse('15/07/2026')), 'type.date');
-        assert.equal(messageKeyOf(typeBehaviours.fecha.parse('')), 'type.date');
+        assert.equal(messageKeyOf(typeBehaviours.fecha.deserialize('2026-02-31')), 'type.date');
+        assert.equal(messageKeyOf(typeBehaviours.fecha.deserialize('2026-13-01')), 'type.date');
+        assert.equal(messageKeyOf(typeBehaviours.fecha.deserialize('15/07/2026')), 'type.date');
+        assert.equal(messageKeyOf(typeBehaviours.fecha.deserialize('')), 'type.date');
     })
     it("round-trips a fecha through its text", function(){
         var text = '2026-02-29'; // 2026 is not a leap year
-        assert.equal(messageKeyOf(typeBehaviours.fecha.parse(text)), 'type.date');
+        assert.equal(messageKeyOf(typeBehaviours.fecha.deserialize(text)), 'type.date');
         var leap = '2028-02-29';
-        assert.equal(typeBehaviours.fecha.format(valueOf(typeBehaviours.fecha.parse(leap))), leap);
+        assert.equal(typeBehaviours.fecha.serialize(valueOf(typeBehaviours.fecha.deserialize(leap))), leap);
     })
     it("types a fecha as the value the definition declares", function(){
-        var fecha: Fecha = valueOf(typeBehaviours.fecha.parse('2026-07-15'));
+        var fecha: Fecha = valueOf(typeBehaviours.fecha.deserialize('2026-07-15'));
         var asDeclared: Temporal.PlainDate = fecha;
         var backAgain: Fecha = asDeclared;
         assert.equal(backAgain.year, 2026);
         assert.equal(backAgain.month, 7);
         assert.equal(backAgain.day, 15);
         // @ts-expect-error a fecha is not a Date
-        var asDate: Date = valueOf(typeBehaviours.fecha.parse('2026-07-15'));
+        var asDate: Date = valueOf(typeBehaviours.fecha.deserialize('2026-07-15'));
         // @ts-expect-error nor a string
-        typeBehaviours.fecha.format('2026-07-15');
+        typeBehaviours.fecha.serialize('2026-07-15');
         assert.ok(asDate != null);
     })
     it("gives email the behaviour of the type it is defined as", function(){
         // email is commonTypeDefs.text in aida: the check that it looks like an email is a
         // rule over the value, not a parse
-        assert.equal(valueOf(typeBehaviours.email.parse('no-arroba')), 'no-arroba');
-        assert.equal(typeBehaviours.email.parse('a@b.c').ok, true);
+        assert.equal(valueOf(typeBehaviours.email.deserialize('no-arroba')), 'no-arroba');
+        assert.equal(typeBehaviours.email.deserialize('a@b.c').ok, true);
     })
     it("keeps the definition serializable", function(){
         // the behaviours are functions and the definition has none: it still survives JSON
@@ -134,7 +134,7 @@ describe("aida behaviour", function(){
             fecha  : {tsType: null},
             email  : {tsType: null},
         });
-        assert.equal(typeof fechaBehaviour.parse, 'function');
+        assert.equal(typeof fechaBehaviour.deserialize, 'function');
     })
     it("resolves a behaviour by the type name a field carries", function(){
         // this is how an implementation uses it: the description says `fecha`, and that
@@ -154,14 +154,14 @@ describe("a type collection with a behaviour provider", function(){
         var collection: TypeCollection = legajo;
         var provider: TypeProvider<typeof legajo> = {
             legajo: {
-                parse: (text) => /^\d{1,6}$/.test(text) ? parsed(Number(text)) : notParsed('type.legajo'),
-                format: (value) => String(value).padStart(6, '0'),
+                deserialize: (text) => /^\d{1,6}$/.test(text) ? parsed(Number(text)) : notParsed('type.legajo'),
+                serialize: (value) => String(value).padStart(6, '0'),
                 check: (value): value is number => typeof value === 'number',
             },
         };
-        assert.equal(valueOf(provider.legajo.parse('1234')), 1234);
-        assert.equal(provider.legajo.format(1234), '001234');
-        assert.equal(messageKeyOf(provider.legajo.parse('1234567')), 'type.legajo');
+        assert.equal(valueOf(provider.legajo.deserialize('1234')), 1234);
+        assert.equal(provider.legajo.serialize(1234), '001234');
+        assert.equal(messageKeyOf(provider.legajo.deserialize('1234567')), 'type.legajo');
         assert.ok(collection != null);
     })
 })

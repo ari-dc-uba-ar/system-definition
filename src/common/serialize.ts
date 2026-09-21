@@ -3,11 +3,16 @@ import { RecordDef, RecordInstanceType, completeRecord } from "./ssot-record";
 import { ParseResult } from "./type-behaviour";
 import { SystemTypeContext } from "./ssot-types";
 
-/* Turning text into the values a record declares. Text and not another interchange format
-   because text is what every boundary outside the domain already carries: an http body, a url
-   parameter, a form input, a csv cell. Which is also why this is the only place that converts:
-   the name of an entity arriving from a POST is not a problem to be worked around, it is an
-   input to be parsed, and past this point everything is a value of the type the SSOT declares. */
+/* Turning a record into text a machine reads back, and the other way around. Text and not
+   another interchange format because text is what every boundary outside the domain already
+   carries: an http body, a url parameter, a form input, a csv cell.
+
+   This is the only place that converts. The name of an entity arriving from a POST is not a
+   problem to be worked around, it is an input to be deserialized, and past this point
+   everything is a value of the type the SSOT declares.
+
+   The human counterpart — what a person types and is shown, which depends on the locale —
+   is in human.ts. */
 
 export type TextRecord = Readonly<Record<string, string | null>>
 
@@ -17,20 +22,20 @@ export type ParseOptions = {
     requireMandatory?: boolean
 }
 
-/* The walk over the fields of a record, shared by the canonical reading and the human one:
-   what changes between them is how one value is read, and nothing else. */
+/* The walk over the fields of a record, shared by the machine conversion and the human one:
+   what changes between them is how one value is converted, and nothing else. */
 export function walkTextRecord<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
     context: TContext,
     recordDef: TRecordDef,
     text: TextRecord,
     options: ParseOptions,
-    readOne: (typeName: string, raw: string) => ParseResult<unknown>,
+    convertOne: (typeName: string, raw: string) => ParseResult<unknown>,
 ): {problems: Problem[], values: Record<string, unknown>} {
     const requireMandatory = options.requireMandatory ?? true;
     const problems: Problem[] = [];
     const values: Record<string, unknown> = {};
     /* completed and not read raw, because the default of nullable lives in completeCoreField
-       and nowhere else. It costs a completion per parse; when that matters, the caller that
+       and nowhere else. It costs a completion per call; when that matters, the caller that
        already holds the info is the one to receive it. */
     const fields = completeRecord(context, recordDef);
     for (const [name, field] of Object.entries(fields)) {
@@ -45,7 +50,7 @@ export function walkTextRecord<TContext extends SystemTypeContext, TRecordDef ex
             continue;
         }
         const typeName = String(field.type);
-        const result = readOne(typeName, raw);
+        const result = convertOne(typeName, raw);
         if (result.ok) {
             values[name] = result.value;
         } else {
@@ -55,48 +60,46 @@ export function walkTextRecord<TContext extends SystemTypeContext, TRecordDef ex
     return {problems, values};
 }
 
-export function canonicalReader(context: SystemTypeContext): (typeName: string, raw: string) => ParseResult<unknown> {
-    return (typeName, raw) => {
-        const behaviour = context.behaviours[typeName];
-        if (behaviour == null) {
-            throw new Error('no behaviour declared for type "' + typeName + '" in this system');
-        }
-        return behaviour.parse(raw);
-    };
+export function behaviourOf(context: SystemTypeContext, typeName: string) {
+    const behaviour = context.behaviours[typeName];
+    if (behaviour == null) {
+        throw new Error('no behaviour declared for type "' + typeName + '" in this system');
+    }
+    return behaviour;
 }
 
 /* THE ONE CONVERSION. Every value in `values` came out of the behaviour of the very type the
    field declares, so the record is an instance of what the def says; what the compiler cannot
    follow is the trip through the runtime string that indexes the behaviours. Nothing else in
-   this package converts: if another place seems to need it, the parsing happened too late. */
-export function parseRecord<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
+   this package converts: if another place seems to need it, the conversion happened too late. */
+export function deserializeRecord<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
     context: TContext,
     recordDef: TRecordDef,
     text: TextRecord,
     options: ParseOptions = {},
 ): ValidationResult<RecordInstanceType<TContext, TRecordDef>> {
-    const {problems, values} = walkTextRecord(context, recordDef, text, options, canonicalReader(context));
+    const {problems, values} = walkTextRecord(context, recordDef, text, options,
+        (typeName, raw) => behaviourOf(context, typeName).deserialize(raw));
     if (problems.length > 0) return {ok: false, problems};
     return {ok: true, value: values as RecordInstanceType<TContext, TRecordDef>};
 }
 
-/* Asking only whether the text reads, without building anything: what a field-by-field check
-   in a form needs, where most of the record is still empty. */
-export function parseProblems<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
+/* Asking only whether the text converts, without building anything: what a field-by-field
+   check in a form needs, where most of the record is still empty. */
+export function deserializeProblems<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
     context: TContext,
     recordDef: TRecordDef,
     text: TextRecord,
     options: ParseOptions = {},
 ): readonly Problem[] {
-    return walkTextRecord(context, recordDef, text, options, canonicalReader(context)).problems;
+    return walkTextRecord(context, recordDef, text, options,
+        (typeName, raw) => behaviourOf(context, typeName).deserialize(raw)).problems;
 }
 
-/* La vuelta de parseRecord: los campos del record, cada uno como el texto canónico que
-   redondea con su parse. Es lo que viaja por el cable, y por eso no lleva locale: del otro
-   lado hay una máquina. La contracara con locale es displayFields.
-
-   Da los campos y no el registro, como displayFields y por el mismo motivo. */
-export function formatFields<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
+/* Field by field and not the whole record in one string, because the caller decides the
+   envelope: the same fields go into a query string, a csv row or a json object. A null stays
+   null and does not become the text "null". */
+export function serializeFields<TContext extends SystemTypeContext, TRecordDef extends RecordDef<TContext>>(
     context: TContext,
     recordDef: TRecordDef,
     row: Readonly<Record<string, unknown>>,
@@ -104,16 +107,7 @@ export function formatFields<TContext extends SystemTypeContext, TRecordDef exte
     const text: Record<string, string | null> = {};
     for (const [name, field] of Object.entries(completeRecord(context, recordDef))) {
         const value = row[name];
-        if (value == null) {
-            text[name] = null;
-            continue;
-        }
-        const typeName = String(field.type);
-        const behaviour = context.behaviours[typeName];
-        if (behaviour == null) {
-            throw new Error('no behaviour declared for type "' + typeName + '" in this system');
-        }
-        text[name] = behaviour.format(value as never);
+        text[name] = value == null ? null : behaviourOf(context, String(field.type)).serialize(value as never);
     }
     return text;
 }

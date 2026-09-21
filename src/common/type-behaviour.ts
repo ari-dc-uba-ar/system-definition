@@ -16,15 +16,17 @@ import { TypeCollection, commonTypeDefs } from "./ssot-types";
    Text, and not any other interchange format, because text is what every boundary outside
    the domain already carries: an http body, a url parameter, a form input, a csv cell. */
 
+/* The outcome of turning a text into a value: both conversions of the framework return it,
+   the machine one here and the human one in human.ts. */
 export type ParseResult<TsType> =
     | {ok: true, value: TsType}
     | {ok: false, messageKey: string}
 
 export type TypeBehaviour<TsType> = {
-    parse: (text: string) => ParseResult<TsType>
-    format: (value: TsType) => string
-    /* parse reads a text; check looks at a value that is already built and says whether it is
-       one of these. It is what lets a record that did not come through the parser — the
+    deserialize: (text: string) => ParseResult<TsType>
+    serialize: (value: TsType) => string
+    /* deserialize reads a text; check looks at a value that is already built and says whether
+       it is one of these. It is what lets a record that did not come through a conversion — the
        parameters of a procedure, a row handed over by somebody else — be typed against the
        definition instead of trusted. */
     check: (value: unknown) => value is TsType
@@ -37,12 +39,12 @@ export type TypeProvider<TTypeDefs extends TypeCollection> = {
 }
 
 /* the bound for "the behaviour of any type at all", the counterpart of FieldCompleter and for
-   the same reason: format takes the value, and a parameter is contravariant, so the widest
-   collection is the one whose format takes never. Declared this way, the behaviour of every
+   the same reason: serialize takes the value, and a parameter is contravariant, so the widest
+   collection is the one whose serialize takes never. Declared this way, the behaviour of every
    concrete type fits the bound. */
 export type AnyTypeBehaviour = {
-    parse: (text: string) => ParseResult<unknown>
-    format: (value: never) => string
+    deserialize: (text: string) => ParseResult<unknown>
+    serialize: (value: never) => string
     check: (value: unknown) => boolean
 }
 
@@ -60,28 +62,28 @@ export function notParsed<TsType>(messageKey: string): ParseResult<TsType> {
 
 export const commonTypeBehaviours: TypeProvider<typeof commonTypeDefs> = {
     text: {
-        parse: (text) => parsed(text),
-        format: (value) => value,
+        deserialize: (text) => parsed(text),
+        serialize: (value) => value,
         check: (value): value is string => typeof value === 'string',
     },
     integer: {
         /* Number() accepts '', ' 12 ' and '0x10'; the regular expression lets through only
            what an integer is */
-        parse: (text) => {
+        deserialize: (text) => {
             if (!/^-?\d+$/.test(text.trim())) return notParsed('type.integer');
             return parsed(Number(text.trim()));
         },
-        format: (value) => String(value),
+        serialize: (value) => String(value),
         check: (value): value is number => typeof value === 'number' && Number.isInteger(value),
     },
     boolean: {
-        parse: (text) => {
+        deserialize: (text) => {
             const normalized = text.trim().toLowerCase();
             if (normalized === 'true') return parsed(true);
             if (normalized === 'false') return parsed(false);
             return notParsed('type.boolean');
         },
-        format: (value) => value ? 'true' : 'false',
+        serialize: (value) => value ? 'true' : 'false',
         check: (value): value is boolean => typeof value === 'boolean',
     },
 }

@@ -36,7 +36,7 @@ eso lo hacen los módulos de arriba leyendo estas descripciones.
 Lo que sí provee, además del vocabulario, es lo que ningún consumidor puede escribir sin
 volver a escribir una parte de la verdad: convertir un texto en el valor que la definición
 declara, mirar un valor ya construido y decir si le corresponde, y correr las reglas de un
-record. Un `parse` de una fecha escrito afuera se escribe distinto en cada implementación, y
+record. Un `deserialize` de una fecha escrito afuera se escribe distinto en cada implementación, y
 ahí la fuente de verdad deja de ser única.
 
 La regla que eso no rompe es la que importa: **las descripciones siguen sin llevar
@@ -61,7 +61,7 @@ the modules above do that by reading these descriptions.
 What it does provide, beyond the vocabulary, is what no consumer can write without writing a
 piece of the truth again: turning a text into the value the definition declares, looking at a
 value that is already built and saying whether it belongs, and running the rules of a record.
-A date's `parse` written outside gets written differently by each implementation, and there
+A date's `deserialize` written outside gets written differently by each implementation, and there
 the single source of truth stops being single.
 
 The rule that this does not break is the one that matters: **descriptions still carry no

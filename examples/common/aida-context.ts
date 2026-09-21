@@ -67,10 +67,10 @@ export const aidaMetaContext = defineTypes({
     behaviours: {
         ...commonTypeBehaviours,
         typeName: {
-            parse: (texto) => nombresDeTipo.includes(texto.trim() as AidaTypeName)
+            deserialize: (texto) => nombresDeTipo.includes(texto.trim() as AidaTypeName)
                 ? parsed(texto.trim() as AidaTypeName)
                 : notParsed('type.typeName'),
-            format: (valor) => valor,
+            serialize: (valor) => valor,
             check: (valor): valor is AidaTypeName => nombresDeTipo.includes(valor as AidaTypeName),
         },
     },

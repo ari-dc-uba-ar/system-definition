@@ -4,25 +4,24 @@ import { TypeProvider, TypeBehaviour, commonTypeBehaviours, notParsed, parsed } 
 import { HumanBehaviour, HumanProvider, Locale, commonHumanBehaviours } from "../../src/common/human";
 import type { aidaTypeDefs } from "./aida-context";
 
-/* aida declares its own types in aida.ts; this is what reading and writing each of them
-   looks like. The two halves are apart on purpose — a description stays serializable and
-   a behaviour is code — but they belong to the same system and they are kept in the same
-   place, so nobody has to write `fecha` twice.
+/* aida declara sus tipos en aida-context.ts; acá está cómo se lee y cómo se escribe cada uno.
+   Las dos mitades están separadas a propósito —una descripción es serializable y un
+   comportamiento es código— pero son del mismo sistema y viven al lado, así que nadie escribe
+   `fecha` dos veces.
 
-   `aidaTypeDefs` is imported here only as a type, so this module carries no entity definition
-   at runtime. That is what the `system-definition/examples/behaviour` entry point is for:
-   a browser that already receives the description it needs over the wire imports the
-   behaviour — which cannot travel, because it is functions — without dragging the whole
-   description of the system along with it. */
+   `aidaTypeDefs` se importa solamente como tipo, así que este módulo no arrastra ninguna
+   definición en runtime. Para eso está el entry point `system-definition/examples/behaviour`:
+   un navegador que ya recibió la descripción que necesita importa el comportamiento —que no
+   puede viajar, porque son funciones— sin traerse la descripción entera del sistema. */
 
 type Fecha = typeof aidaTypeDefs['fecha']['tsType']
 
-/* la forma canónica de una fecha es la del calendario ISO y nada más: Temporal.PlainDate.from
-   acepta bastante más que eso, y lo de más no es canónico */
+/* serializada, una fecha es la del calendario ISO y nada más: Temporal.PlainDate.from acepta
+   bastante más que eso, y lo de más no es una fecha serializada */
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
 export const fechaBehaviour: TypeBehaviour<Fecha> = {
-    parse: (text) => {
+    deserialize: (text) => {
         const trimmed = text.trim();
         if (!DATE_FORMAT.test(trimmed)) return notParsed('type.date');
         try {
@@ -33,14 +32,14 @@ export const fechaBehaviour: TypeBehaviour<Fecha> = {
             return notParsed('type.date');
         }
     },
-    format: (value) => value.toString(),
+    serialize: (value) => value.toString(),
     check: (value): value is Fecha => value instanceof Temporal.PlainDate,
 }
 
 export const typeBehaviours: TypeProvider<typeof aidaTypeDefs> = {
     ...commonTypeBehaviours,
-    /* email is text in aida (the same definition), so it reads and writes the same way:
-       that it looks like an email is a rule, not a parse */
+    /* email es text en aida (la misma definición), así que se lee y se escribe igual: que
+       tenga forma de email es una regla, no una conversión */
     email: commonTypeBehaviours.text,
     fecha: fechaBehaviour,
 }
@@ -55,7 +54,7 @@ function ordenDeLaFecha(locale: Locale): ('year' | 'month' | 'day')[] {
 }
 
 export const fechaHumana: HumanBehaviour<Fecha> = {
-    read: (text, locale) => {
+    parse: (text, locale) => {
         const partes = text.trim().split(/\D+/).filter(parte => parte !== '');
         const orden = ordenDeLaFecha(locale);
         if (partes.length !== 3 || orden.length !== 3) return notParsed('type.date');
@@ -70,7 +69,7 @@ export const fechaHumana: HumanBehaviour<Fecha> = {
             return notParsed('type.date');
         }
     },
-    display: (value, locale) => value.toLocaleString(locale),
+    format: (value, locale) => value.toLocaleString(locale),
 }
 
 /* El booleano de aida, que es donde se ve que la forma humana la decide el sistema. Nadie en
@@ -79,16 +78,16 @@ export const fechaHumana: HumanBehaviour<Fecha> = {
    y en ningún otro lado. Eso es también lo que deja ajustar la jerga de cada cliente sin tocar
    nada más que esta constante.
 
-   Es humano y no canónico: el par canónico sigue leyendo y escribiendo `true`/`false`, que es
-   lo que viaja por una url. */
+   Es el par humano: deserialize/serialize siguen leyendo y escribiendo `true`/`false`, que es
+   lo que va en una url. */
 export const booleanoHumano: HumanBehaviour<boolean> = {
-    read: (text) => {
+    parse: (text) => {
         const dicho = text.trim().toLowerCase();
         if (['s', 'si', 'sí'].includes(dicho)) return parsed(true);
         if (['n', 'no'].includes(dicho)) return parsed(false);
         return notParsed('type.boolean');
     },
-    display: (value) => value ? 'Sí' : 'No',
+    format: (value) => value ? 'Sí' : 'No',
 }
 
 export const humanBehaviours: HumanProvider<typeof aidaTypeDefs> = {

@@ -45,7 +45,7 @@ export type SystemTypeContext = {
     types: TypeCollection
     completeField: FieldCompleter
     behaviours: BehaviourCollection
-    /* optional: what a type does not say here is read and written the canonical way */
+    /* optional: what a type does not say here is read and written the way it serializes */
     human?: HumanCollection
 }
 

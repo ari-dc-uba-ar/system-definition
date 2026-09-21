@@ -4,6 +4,6 @@ export * from "./ssot-record";
 export * from "./ssot-entity";
 export * from "./type-utils";
 export * from "./problem";
-export * from "./parse";
+export * from "./serialize";
 export * from "./validate";
 export * from "./human";
