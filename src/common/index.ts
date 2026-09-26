@@ -15,3 +15,4 @@ export * from "./system-persistence";
 
 export * from "./migration";
 
+export * from "./migration-plan";
