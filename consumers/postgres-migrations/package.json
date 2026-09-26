@@ -1,0 +1,20 @@
+{
+  "name": "@system-definition/postgres-migrations",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PostgreSQL migration consumer for system-definition artifacts",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && mocha --exit --node-option enable-source-maps dist/test/",
+    "test-ci": "tsc && c8 mocha --exit --node-option enable-source-maps dist/test/",
+    "prebuild": "npm run bootstrap-repository",
+    "pretest": "npm run bootstrap-repository",
+    "pretest-ci": "npm run bootstrap-repository",
+    "bootstrap-repository": "node scripts/bootstrap-repository.js"
+  },
+  "dependencies": {
+    "system-definition": "file:../.."
+  }
+}
