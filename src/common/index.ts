@@ -11,4 +11,6 @@ export * from "./json-value";
 
 export * from "./system-snapshot";
 
+export * from "./system-persistence";
+
 
