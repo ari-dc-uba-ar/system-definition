@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T05 cerradas. T06: rojo limpio ejecutado y aprobado; implementación completa con checks locales verdes; pendiente verificación autoritativa Docker Node 24.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T05 cerradas. T06: rojo aprobado; implementación y verificación autoritativa completas; pendiente revisión final del desarrollador.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
 | Tarea activa | T06 — Artifacts, manifests e integridad |
-| Estado / bloqueo concreto | T01–T05 cerradas. T06: implementación completa; verificación autoritativa pendiente en Docker Node 24. |
+| Estado / bloqueo concreto | T01–T05 cerradas. T06: implementación y verificación autoritativa completas; pendiente revisión final del desarrollador. |
 | Revisión del rojo y autorización vigente | T06 rojo limpio ejecutado por el desarrollador y aprobado explícitamente con `T06 red approved`. |
 | Archivos modificados durante implementación | T06: `consumers/postgres-migrations/src/{artifact.ts,index.ts}`, package manifest/lock y bootstrap local del paquete, `.gitattributes`, más evidencia/checklist. |
-| Última evidencia válida / revisión de código | T06 local no autoritativa: contrato focalizado compila contra declaraciones públicas reales; 9/9 casos runtime de artifact pasan. Falta `npm test` real en Docker Node 24. |
-| Próxima acción | Aplicar implementación T06 y ejecutar `docker compose exec node npm test` más contrato focalizado del consumidor; si ambos pasan, registrar verificación y solicitar revisión final. |
+| Última evidencia válida / revisión de código | T06 autoritativa: `docker compose exec node npm test` exit 0 con core 146 passing + consumer 9 passing; `npx tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` exit 0 sin diagnósticos. |
+| Próxima acción | Solicitar revisión final del desarrollador para T06; si aprueba, cerrar T06 y habilitar T07/T10 según dependencias. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -140,9 +140,9 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** canonicalización T01, snapshots/persistencia T02/T03 y recursos T04. SHA-256 y filesystem son nuevos sólo en consumidor.
 - **Entregar:** paquete separado `consumers/postgres-migrations`, `artifact.ts`, loader/publicador con referencias históricas verificadas y formatos versionados.
 - **Aceptar:** byte SQL alterado falla antes de escritura; IDs publicados inmutables; rutas/escapes/case collisions rechazados; manifiestos sin ciclo de su propio hash; release antigua no carga Def viva. Extensiones de autoría se integran/reverifican en T22.
-- **Evidencia:** [Evidencia T06](migraciones-evidencia/T06.md). Rojo limpio ejecutado/aprobado; implementación completa y checks locales verdes; pendiente verificación autoritativa Docker Node 24.
+- **Evidencia:** [Evidencia T06](migraciones-evidencia/T06.md). Rojo limpio ejecutado/aprobado; implementación y verificación autoritativa completas; pendiente revisión final del desarrollador.
 - [x] Implementación
-- [ ] Verificación
+- [x] Verificación
 - [ ] Revisión del desarrollador
 
 ## T07
