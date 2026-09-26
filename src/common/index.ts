@@ -13,4 +13,5 @@ export * from "./system-snapshot";
 
 export * from "./system-persistence";
 
+export * from "./migration";
 
