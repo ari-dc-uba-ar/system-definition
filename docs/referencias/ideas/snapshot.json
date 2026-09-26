@@ -1,0 +1,32 @@
+{
+  "formatVersion": 1,
+  "sourceCheckout": "ideas (sibling checkout used to prepare the handoff)",
+  "hashAlgorithm": "SHA-256",
+  "content": "exact source bytes",
+  "files": [
+    {
+      "path": "src/SSOTIGAD.md",
+      "source": "ideas/src/SSOTIGAD.md",
+      "sha256": "9a6a62672c57ea5e54a12481871987b95ad1585d90b8489ab27c404602f73607",
+      "byteLength": 19234
+    },
+    {
+      "path": "src/SSOTIGAD-details/definición-entidades.md",
+      "source": "ideas/src/SSOTIGAD-details/definición-entidades.md",
+      "sha256": "a479fd79e0f1f3328c64c0cdd19bf6e17f2a8d313b1f8725d36728d137034e9e",
+      "byteLength": 15498
+    },
+    {
+      "path": "src/mantener-actualizada-estructura-db.md",
+      "source": "ideas/src/mantener-actualizada-estructura-db.md",
+      "sha256": "4ab9782704f2f5649b17486c0e9a1649a9d962bf5ac6bbb53273e082849ba467",
+      "byteLength": 4180
+    },
+    {
+      "path": "LICENSE",
+      "source": "ideas/LICENSE",
+      "sha256": "3e1ab9d9022b0d5ebd07815b36b7e1dd6b43eb37318a751a53bff4fc6d29e552",
+      "byteLength": 1084
+    }
+  ]
+}
