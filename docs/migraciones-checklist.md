@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T07 cerradas. T08: rojo limpio aprobado; implementación preparada y pendiente verificación autoritativa.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T07 cerradas. T08: rojo limpio aprobado; implementación y verificación autoritativa completas; pendiente revisión final del desarrollador.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
 | Tarea activa | T08 — Inspección y comparación semántica |
-| Estado / bloqueo concreto | T01–T07 cerradas. T08: rojo limpio aprobado; implementación completa localmente, pendiente verificación Docker Node 24. |
+| Estado / bloqueo concreto | T01–T07 cerradas. T08: implementación y verificación autoritativa completas; pendiente revisión final del desarrollador. |
 | Revisión del rojo y autorización vigente | T08 rojo aprobado por el desarrollador con `T08 red approved`. |
 | Archivos modificados durante implementación | T08: `consumers/postgres-migrations/src/{inspect-schema,compare-schema,index}.ts`, tests de aceptación ya aprobados y evidencia/checklist. |
-| Última evidencia válida / revisión de código | T08 local: contrato compila y 5/5 casos runtime pasan; falta suite autoritativa Docker. |
-| Próxima acción | Aplicar patch T08 y ejecutar consumer/full suite + typecheck consumidor en Docker Node 24; registrar verde antes de revisión final. |
+| Última evidencia válida / revisión de código | T08 autoritativa: `docker compose exec node npm test` verde con core 146 passing + consumer 19 passing (incluye 5 casos T08); `npx tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos observados. |
+| Próxima acción | Solicitar revisión final del desarrollador para T08; si aprueba, cerrar T08 y habilitar T09 según dependencias. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -166,9 +166,9 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** identidades/proyección T07 y JSON T01; wrapper PgSession especificado. Inspector y comparer nuevos, con fixtures SQL independientes del generador.
 - **Entregar:** `inspect-schema.ts`, `compare-schema.ts`, inventario completo del scope y reporte unknown/excluded/diff.
 - **Aceptar:** ve DDL sin commit en misma sesión; modificación semántica detectada; orden irrelevante normalizado; no comparar OIDs; nullability/defaults/acciones FK no desaparecen; unknown bloquea.
-- **Evidencia:** [Evidencia T08](migraciones-evidencia/T08.md). Rojo limpio aprobado; implementación lista y checks locales verdes; pendiente verificación autoritativa.
+- **Evidencia:** [Evidencia T08](migraciones-evidencia/T08.md). Rojo limpio ejecutado/aprobado; implementación y verificación autoritativa completas; pendiente revisión final del desarrollador.
 - [x] Implementación
-- [ ] Verificación
+- [x] Verificación
 - [ ] Revisión del desarrollador
 
 ## T09
