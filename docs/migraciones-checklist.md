@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T06 cerradas. T07: rojo aprobado; implementación y verificación autoritativa completas; pendiente revisión final del desarrollador.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T07 cerradas. T08: rojo limpio aprobado; implementación preparada y pendiente verificación autoritativa.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T07 — Creación desde SSOT en PostgreSQL 18.6 |
-| Estado / bloqueo concreto | T01–T06 cerradas. T07: implementación y verificación autoritativa completas; pendiente revisión final del desarrollador. |
-| Revisión del rojo y autorización vigente | T07 rojo limpio de 4× `TS2307` ejecutado por el desarrollador y aprobado explícitamente con `T07 red approved`. |
-| Archivos modificados durante implementación | T07: `consumers/postgres-migrations/src/{pg-schema.ts,generate-create.ts,index.ts}`, más evidencia/checklist. |
-| Última evidencia válida / revisión de código | T07 autoritativa: `docker compose exec node npm test` verde con core 146 passing + consumer 14 passing (incluye 5 casos T07); `npx tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos observados. |
-| Próxima acción | Solicitar revisión final del desarrollador para T07; si aprueba, cerrar T07 y habilitar T08 según dependencias. |
+| Tarea activa | T08 — Inspección y comparación semántica |
+| Estado / bloqueo concreto | T01–T07 cerradas. T08: rojo limpio aprobado; implementación completa localmente, pendiente verificación Docker Node 24. |
+| Revisión del rojo y autorización vigente | T08 rojo aprobado por el desarrollador con `T08 red approved`. |
+| Archivos modificados durante implementación | T08: `consumers/postgres-migrations/src/{inspect-schema,compare-schema,index}.ts`, tests de aceptación ya aprobados y evidencia/checklist. |
+| Última evidencia válida / revisión de código | T08 local: contrato compila y 5/5 casos runtime pasan; falta suite autoritativa Docker. |
+| Próxima acción | Aplicar patch T08 y ejecutar consumer/full suite + typecheck consumidor en Docker Node 24; registrar verde antes de revisión final. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -153,10 +153,10 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** EntityInfo/FkInfo completados, T03/T06; `extractPk`, `mergePk` en fixtures Aida. Generador/adapter PostgreSQL son nuevos, no código SQL ya existente en core.
 - **Entregar:** `pg-schema.ts`, `generate-create.ts`, planes de creación, SQL/identificadores/valores emitidos de forma comprobable.
 - **Aceptar:** PK/UK/FK compuestas, reflexivas y circulares; tablas primero y FK después; tipos/mappings exhaustivos; versión exacta comprobada; representación desconocida bloquea.
-- **Evidencia:** [Evidencia T07](migraciones-evidencia/T07.md). Rojo limpio ejecutado/aprobado; implementación y verificación autoritativa completas; pendiente revisión final del desarrollador.
+- **Evidencia:** [Evidencia T07](migraciones-evidencia/T07.md). Rojo limpio ejecutado/aprobado; implementación y verificación autoritativa completas; revisión final aprobada el 2026-09-26.
 - [x] Implementación
 - [x] Verificación
-- [ ] Revisión del desarrollador
+- [x] Revisión del desarrollador
 
 ## T08
 
@@ -166,8 +166,8 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** identidades/proyección T07 y JSON T01; wrapper PgSession especificado. Inspector y comparer nuevos, con fixtures SQL independientes del generador.
 - **Entregar:** `inspect-schema.ts`, `compare-schema.ts`, inventario completo del scope y reporte unknown/excluded/diff.
 - **Aceptar:** ve DDL sin commit en misma sesión; modificación semántica detectada; orden irrelevante normalizado; no comparar OIDs; nullability/defaults/acciones FK no desaparecen; unknown bloquea.
-- **Evidencia:** Pendiente.
-- [ ] Implementación
+- **Evidencia:** [Evidencia T08](migraciones-evidencia/T08.md). Rojo limpio aprobado; implementación lista y checks locales verdes; pendiente verificación autoritativa.
+- [x] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador
 
