@@ -9,3 +9,4 @@ export * from "./journal";
 export * from "./sql-resource";
 export * from "./execute-migration";
 export * from "./runner";
+export * from "./recovery";

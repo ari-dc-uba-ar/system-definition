@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T10 cerradas. T11: rojo aprobado; implementación completa localmente, pendiente verificación autoritativa Docker.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T11 cerradas. T12: rojo registrado; revisión pendiente.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T11 — Ejecución atómica |
-| Estado / bloqueo concreto | T01–T10 cerradas. T11 implementada; pendiente ejecutar verificación autoritativa en Docker Node 24. |
-| Revisión del rojo y autorización vigente | T11 rojo aprobado explícitamente con `T11 red approved` el 2026-09-28; autorización vigente para implementar T11. |
-| Archivos modificados durante implementación | T11: `src/sql-resource.ts`, `src/execute-migration.ts`, `src/runner.ts`, `src/index.ts`, tests rojos ya aprobados, checklist y evidencia. |
-| Última evidencia válida / revisión de código | T11 local aislada: contrato TypeScript exit 0 y 5/5 casos runtime verdes; pendiente suite Docker autoritativa. |
-| Próxima acción | Aplicar patch de implementación T11 y ejecutar suite consumidor, suite completa y typecheck consumidor en Docker Node 24. |
+| Tarea activa | T12 — Recuperación y commit ambiguo |
+| Estado / bloqueo concreto | T01–T11 cerradas. T12 rojo agregado; implementación detenida hasta revisión según CLAUDE.md. |
+| Revisión del rojo y autorización vigente | T11 revisión final aprobada con `T11 approved` el 2026-09-28. T12 rojo registrado; aprobación pendiente. |
+| Archivos modificados durante implementación | T12 rojo: `test/recovery-contract-test.ts`, `test/recovery-test.ts`, checklist y evidencia; sin código productivo T12. |
+| Última evidencia válida / revisión de código | T11 verificada: core 146 passing, consumidor 34 passing y typecheck consumidor exit 0; revisión final aprobada. T12 rojo aislado localmente. |
+| Próxima acción | Ejecutar el rojo T12 en Docker y esperar revisión/autorización antes de implementar recuperación. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -205,10 +205,10 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** T05/T08/T09/T10 y mismo PgSession; motor único para verificación y aplicación.
 - **Entregar:** `sql-resource.ts`, `execute-migration.ts`, `runner.ts`; prechecks/steps/postchecks/esquema/head dentro de una transacción.
 - **Aceptar:** check tardío revierte datos+DDL+historia/head; checks no booleanos o con cardinalidad incorrecta fallan; drift bloquea antes de recursos; parser rechaza control transaccional/efectos incompatibles; cero commits parciales por step.
-- **Evidencia:** [Evidencia T11](migraciones-evidencia/T11.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 34 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final pendiente.
+- **Evidencia:** [Evidencia T11](migraciones-evidencia/T11.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 34 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final aprobada con `T11 approved` el 2026-09-28.
 - [x] Implementación
 - [x] Verificación
-- [ ] Revisión del desarrollador
+- [x] Revisión del desarrollador
 
 ## T12
 
@@ -218,9 +218,9 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** journal y unidad T10/T11; planes T05. Reconciliación por registro durable, nunca sólo flags en memoria.
 - **Entregar:** recuperación en nueva instancia de runner y diagnósticos que distingan failed/unknown/succeeded.
 - **Aceptar:** respuesta de COMMIT perdida no duplica cambios; origen/destino no demostrables bloquean retry/deploy; éxito A→B y fallo B→C deja head B, no A ni C; mantenimiento continúa activo.
-- **Evidencia:** Pendiente.
-- [ ] Implementación
-- [ ] Verificación
+- **Evidencia:** [Evidencia T12](migraciones-evidencia/T12.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 38 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final pendiente.
+- [x] Implementación
+- [x] Verificación
 - [ ] Revisión del desarrollador
 
 ## T13
