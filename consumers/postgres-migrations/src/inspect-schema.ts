@@ -373,6 +373,65 @@ WITH managed_schemas AS (
       LEFT JOIN pg_catalog.pg_constraint AS owner_con ON owner_con.conindid = i.indexrelid
       LEFT JOIN pg_catalog.pg_class AS owner_tbl ON owner_tbl.oid = owner_con.conrelid
       LEFT JOIN pg_catalog.pg_namespace AS owner_ns ON owner_ns.oid = owner_tbl.relnamespace
+), views_inventory AS (
+    SELECT 'view'::text, n.nspname, c.relname, NULL::text, ARRAY[]::text[],
+           NULL::text, NULL::text, NULL::text, NULL::text, ARRAY[]::text[], NULL::integer,
+           NULL::text, NULL::boolean, NULL::text, NULL::text, NULL::text,
+           NULL::text, pg_catalog.pg_get_viewdef(c.oid, true),
+           ARRAY(
+               SELECT a.attname
+                 FROM pg_catalog.pg_attribute AS a
+                WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+                ORDER BY a.attnum
+           ),
+           NULL::text, NULL::text, '[]'::jsonb,
+           NULL::boolean, NULL::boolean, NULL::boolean, NULL::boolean,
+           NULL::boolean, NULL::boolean, NULL::text, NULL::text, NULL::text,
+           COALESCE((
+               SELECT pg_catalog.jsonb_object_agg(option_name, option_value)
+                 FROM pg_catalog.pg_options_to_table(c.reloptions)
+           ), '{}'::jsonb),
+           NULL::text, NULL::text
+      FROM pg_catalog.pg_class AS c
+      JOIN managed_schemas AS n ON n.oid = c.relnamespace
+     WHERE c.relkind = 'v'
+), routines_inventory AS (
+    SELECT 'routine'::text, n.nspname, p.proname, NULL::text,
+           ARRAY(
+               SELECT pg_catalog.format_type(argument_type, NULL)
+                 FROM unnest(p.proargtypes::oid[]) WITH ORDINALITY AS args(argument_type, ordinal)
+                ORDER BY ordinal
+           ),
+           NULL::text, NULL::text, NULL::text, NULL::text, ARRAY[]::text[], NULL::integer,
+           NULL::text, NULL::boolean, NULL::text, NULL::text, NULL::text,
+           NULL::text, pg_catalog.pg_get_functiondef(p.oid), ARRAY[]::text[],
+           NULL::text, NULL::text, '[]'::jsonb,
+           NULL::boolean, NULL::boolean, NULL::boolean, NULL::boolean,
+           NULL::boolean, NULL::boolean, NULL::text, NULL::text, NULL::text,
+           NULL::jsonb,
+           CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END,
+           NULL::text
+      FROM pg_catalog.pg_proc AS p
+      JOIN managed_schemas AS n ON n.oid = p.pronamespace
+     WHERE p.prokind IN ('f','p')
+), unsupported_routines AS (
+    SELECT CASE p.prokind WHEN 'a' THEN 'aggregate' ELSE 'window' END::text,
+           n.nspname, p.proname, NULL::text,
+           ARRAY(
+               SELECT pg_catalog.format_type(argument_type, NULL)
+                 FROM unnest(p.proargtypes::oid[]) WITH ORDINALITY AS args(argument_type, ordinal)
+                ORDER BY ordinal
+           ),
+           NULL::text, NULL::text, NULL::text, NULL::text, ARRAY[]::text[], NULL::integer,
+           NULL::text, NULL::boolean, NULL::text, NULL::text, NULL::text,
+           NULL::text, NULL::text, ARRAY[]::text[], NULL::text, NULL::text, '[]'::jsonb,
+           NULL::boolean, NULL::boolean, NULL::boolean, NULL::boolean,
+           NULL::boolean, NULL::boolean, NULL::text, NULL::text, NULL::text,
+           NULL::jsonb, NULL::text,
+           CASE p.prokind WHEN 'a' THEN 'aggregate' ELSE 'window function' END::text
+      FROM pg_catalog.pg_proc AS p
+      JOIN managed_schemas AS n ON n.oid = p.pronamespace
+     WHERE p.prokind IN ('a','w')
 ), unsupported_triggers AS (
     SELECT 'trigger'::text, n.nspname, t.tgname, c.relname, ARRAY[]::text[],
            NULL::text, NULL::text, NULL::text, NULL::text, ARRAY[]::text[], NULL::integer,
@@ -390,6 +449,9 @@ SELECT * FROM relations
 UNION ALL SELECT * FROM columns_inventory
 UNION ALL SELECT * FROM constraints_inventory
 UNION ALL SELECT * FROM indexes_inventory
+UNION ALL SELECT * FROM views_inventory
+UNION ALL SELECT * FROM routines_inventory
+UNION ALL SELECT * FROM unsupported_routines
 UNION ALL SELECT * FROM unsupported_triggers
 ORDER BY schema_name, object_kind, parent_name NULLS FIRST, object_name
 `;

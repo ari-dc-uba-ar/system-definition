@@ -3,3 +3,5 @@ export * from "./pg-schema";
 export * from "./generate-create";
 export * from "./inspect-schema";
 export * from "./compare-schema";
+export * from "./create-resources";
+export * from "./managed-data";
