@@ -218,10 +218,10 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** journal y unidad T10/T11; planes T05. Reconciliación por registro durable, nunca sólo flags en memoria.
 - **Entregar:** recuperación en nueva instancia de runner y diagnósticos que distingan failed/unknown/succeeded.
 - **Aceptar:** respuesta de COMMIT perdida no duplica cambios; origen/destino no demostrables bloquean retry/deploy; éxito A→B y fallo B→C deja head B, no A ni C; mantenimiento continúa activo.
-- **Evidencia:** [Evidencia T12](migraciones-evidencia/T12.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 38 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final pendiente.
+- **Evidencia:** [Evidencia T12](migraciones-evidencia/T12.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 38 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final aprobada el 2026-09-28.
 - [x] Implementación
 - [x] Verificación
-- [ ] Revisión del desarrollador
+- [x] Revisión del desarrollador
 
 ## T13
 
@@ -231,9 +231,9 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** create plan, runner, inspector y comparer T07–T12; Def de fixtures con defineRecord/withRecords/defineEntity/defineEntities existentes.
 - **Entregar:** `verify.ts`, harness dueño de scratch y fixture histórico aida-email con dos rutas A→B/B limpio.
 - **Aceptar:** quitar ALTER NOT NULL falla estructura aunque filas pasen checks; creación verifica intención SSOT independientemente; datos/valores preservados; scratch no exige recibo circular ni expone skipVerification a targets; cleanup limitado a scratch propio.
-- **Evidencia:** Pendiente.
-- [ ] Implementación
-- [ ] Verificación
+- **Evidencia:** [Evidencia T13](migraciones-evidencia/T13.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 42 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final pendiente.
+- [x] Implementación
+- [x] Verificación
 - [ ] Revisión del desarrollador
 
 ## T14
