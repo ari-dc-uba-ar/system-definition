@@ -483,6 +483,16 @@ export async function bootstrapJournal(
             started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
             finished_at timestamptz NULL
         )`,
+        `CREATE TABLE IF NOT EXISTS ${schema}.verification_run (
+            verification_id text PRIMARY KEY,
+            deployment_id text NOT NULL,
+            ordinal integer NOT NULL CHECK (ordinal > 0),
+            binding jsonb NOT NULL,
+            status text NOT NULL CHECK (status IN ('passed','failed','incomplete')),
+            checks jsonb NOT NULL,
+            created_at text NOT NULL,
+            UNIQUE (deployment_id, ordinal)
+        )`,
     ];
 
     for (const statement of statements) {

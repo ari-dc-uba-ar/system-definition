@@ -13,3 +13,5 @@ export * from "./recovery";
 export * from "./verify";
 
 export * from "./rehearsal";
+
+export * from "./evidence";
