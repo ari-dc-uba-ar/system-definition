@@ -6,3 +6,6 @@ export * from "./compare-schema";
 export * from "./create-resources";
 export * from "./managed-data";
 export * from "./journal";
+export * from "./sql-resource";
+export * from "./execute-migration";
+export * from "./runner";
