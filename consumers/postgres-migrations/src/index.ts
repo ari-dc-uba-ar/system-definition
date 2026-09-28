@@ -5,3 +5,4 @@ export * from "./inspect-schema";
 export * from "./compare-schema";
 export * from "./create-resources";
 export * from "./managed-data";
+export * from "./journal";
