@@ -11,3 +11,5 @@ export * from "./execute-migration";
 export * from "./runner";
 export * from "./recovery";
 export * from "./verify";
+
+export * from "./rehearsal";

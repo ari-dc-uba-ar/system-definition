@@ -231,10 +231,10 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** create plan, runner, inspector y comparer T07–T12; Def de fixtures con defineRecord/withRecords/defineEntity/defineEntities existentes.
 - **Entregar:** `verify.ts`, harness dueño de scratch y fixture histórico aida-email con dos rutas A→B/B limpio.
 - **Aceptar:** quitar ALTER NOT NULL falla estructura aunque filas pasen checks; creación verifica intención SSOT independientemente; datos/valores preservados; scratch no exige recibo circular ni expone skipVerification a targets; cleanup limitado a scratch propio.
-- **Evidencia:** [Evidencia T13](migraciones-evidencia/T13.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 42 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final pendiente.
+- **Evidencia:** [Evidencia T13](migraciones-evidencia/T13.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 42 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final aprobada por el desarrollador el 2026-09-28.
 - [x] Implementación
 - [x] Verificación
-- [ ] Revisión del desarrollador
+- [x] Revisión del desarrollador
 
 ## T14
 
@@ -244,9 +244,9 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** verificador/motor T13 y formatos de reportes/errores; copia provista por infraestructura, no restore sobre target.
 - **Entregar:** rehearsal de segmento completo en copia y reporte de origen, alcance, artifacts y checks ejecutados.
 - **Aceptar:** upgrade productivo sin copia o con ensayo fallido bloquea; copia de otro estado/artifact no habilita; install nuevo no requiere backup inexistente; ensayo no sustituye checks reales bajo mantenimiento.
-- **Evidencia:** Pendiente.
-- [ ] Implementación
-- [ ] Verificación
+- **Evidencia:** [Evidencia T14](migraciones-evidencia/T14.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 46 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final pendiente.
+- [x] Implementación
+- [x] Verificación
 - [ ] Revisión del desarrollador
 
 ## T15
