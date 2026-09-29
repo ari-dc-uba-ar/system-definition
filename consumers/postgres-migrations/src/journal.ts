@@ -493,6 +493,19 @@ export async function bootstrapJournal(
             created_at text NOT NULL,
             UNIQUE (deployment_id, ordinal)
         )`,
+        `CREATE TABLE IF NOT EXISTS ${schema}.deployment_readiness (
+            deployment_id text PRIMARY KEY,
+            installation_id text NOT NULL,
+            binding jsonb NOT NULL,
+            state text NOT NULL CHECK (state IN ('pending','blocked','ready','consumed')),
+            verification_id text NULL,
+            apply_attempt_id text NULL,
+            confirmed_target_system_id text NULL,
+            confirmed_target_release_id text NULL,
+            confirmed_target_release_hash text NULL,
+            problems jsonb NOT NULL DEFAULT '[]'::jsonb,
+            updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+        )`,
     ];
 
     for (const statement of statements) {

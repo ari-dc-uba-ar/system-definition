@@ -15,3 +15,4 @@ export * from "./verify";
 export * from "./rehearsal";
 
 export * from "./evidence";
+export * from "./deployment-gate";

@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T14 cerradas. T15: rojo aprobado, implementación y verificación autoritativa completas; revisión final pendiente.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T15 cerradas. T16: rojo aprobado, implementación completa y verificación autoritativa Docker verde; pendiente revisión final del desarrollador.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T15 — Binding y vigencia de evidencia |
-| Estado / bloqueo concreto | T01–T14 cerradas. T15 rojo aprobado; implementación y verificación autoritativa completas; pendiente revisión final del desarrollador. |
-| Revisión del rojo y autorización vigente | T14 revisión final aprobada con `T14 approved` el 2026-09-28. T15 rojo aprobado explícitamente; implementación y verificación autoritativa completas; revisión final pendiente. |
-| Archivos modificados durante implementación | T15: `src/evidence.ts`, extensión durable de `src/journal.ts`, export público, tests, checklist y evidencia. |
-| Última evidencia válida / revisión de código | T14 cerrada. T15 Docker Node 24 verde: core 146 passing, consumidor 51 passing y typecheck consumidor sin diagnósticos. |
-| Próxima acción | Obtener revisión final explícita del desarrollador para T15; no cerrar ni avanzar a T16 antes de esa aprobación. |
+| Tarea activa | T16 — Bloqueo de activación de aplicación |
+| Estado / bloqueo concreto | T01–T15 cerradas. T16 rojo aprobado, implementación completa y verificación autoritativa Docker verde; pendiente revisión final del desarrollador. |
+| Revisión del rojo y autorización vigente | T16 rojo aprobado explícitamente con `T16 red approved` el 2026-09-29; implementación autorizada y realizada. |
+| Archivos modificados durante implementación | T16: `src/deployment-gate.ts`, extensión de `src/journal.ts`, export público, tests `deployment-gate-*`, checklist y evidencia. Corrección posterior de verificación: aridad de bind en `consumeReady` y guard de aridad SQL en `deployment-gate-test.ts`. |
+| Última evidencia válida / revisión de código | T16 verificada el 2026-09-29 tras corregir un bind extra en `consumeReady`: `npm test` verde con core 146 passing + consumidor 56 passing (202 total); los 5 casos `deployment activation gate and simulated pipeline` pasan; `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` se ejecutó sin diagnósticos en la salida aportada. |
+| Próxima acción | Revisión final del desarrollador de T16. No marcar aprobación ni iniciar T17 como tarea cerrable hasta recibir confirmación expresa (`T16 approved`). |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -257,10 +257,10 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** manifest/hashes T06, journal T10 y resultados T13/T14; un validador puro de cobertura compartido al escribir/leer evidencia.
 - **Entregar:** binding exacto por candidato/instalación/plan/configuración, ordinal de runs y `checkApplyEligibility`.
 - **Aceptar:** evidencia ausente, incompleta, obsoleta, alterada o de otro candidato/instalación bloquea; nuevo run incomplete/fallido invalida passed anterior; status declarado no suplanta cobertura; install from=null distinto de upgrade.
-- **Evidencia:** [Evidencia T15](migraciones-evidencia/T15.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 51 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final pendiente.
+- **Evidencia:** [Evidencia T15](migraciones-evidencia/T15.md). Rojo aprobado; implementación y verificación autoritativa completas: core 146 passing, consumidor 51 passing y `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos. Revisión final aprobada el 2026-09-28.
 - [x] Implementación
 - [x] Verificación
-- [ ] Revisión del desarrollador
+- [x] Revisión del desarrollador
 
 ## T16
 
@@ -270,9 +270,9 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** binding T15, head/intentos T10–T12 y checks existentes; mocks sólo en frontera de activación/mantenimiento, DB real para integración.
 - **Entregar:** `deployment-gate.ts`, `checkDeploymentReady` y pipeline de referencia con integración simulada ejecutable.
 - **Aceptar:** cada negativo tiene cero activaciones; éxito activa hash exacto una vez tras ready; fallo de activación deja mantenimiento y readiness sin consumir; ningún continue-on-error/force/skip evita gate. No afirmar integración productiva que el repo no posee.
-- **Evidencia:** Pendiente.
-- [ ] Implementación
-- [ ] Verificación
+- **Evidencia:** [Evidencia T16](migraciones-evidencia/T16.md). Rojo aprobado; implementación completa; defecto de aridad de bind detectado y corregido antes del cierre; verificación autoritativa Docker verde con core 146 passing + consumidor 56 passing y typecheck consumidor sin diagnósticos en la salida aportada. Revisión final pendiente.
+- [x] Implementación
+- [x] Verificación
 - [ ] Revisión del desarrollador
 
 ## T17
