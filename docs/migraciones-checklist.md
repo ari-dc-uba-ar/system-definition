@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T16 cerradas. T17 activa y verificada globalmente: typecheck limpio, 61 tests del consumidor, documentación reproducible, integración real PostgreSQL 18.6 y recorrido raíz con 207 tests verdes. Falta únicamente la revisión final explícita del desarrollador.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T17 cerradas. T17 recibió revisión final explícita con `T17 approved` el 2026-09-29. T18 queda como tarea activa y debe comenzar por lectura/reutilización y su propio rojo antes de implementar.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T17 — CLI, CI y documentación del motor |
-| Estado / bloqueo concreto | T01–T16 cerradas. T17 implementada y verificada globalmente el 2026-09-29: typecheck consumidor limpio; 61 passing en consumidor; `docs:check` limpio; integración real PostgreSQL 18.6 confirmada con `server_version_num=180006`; `npm test` raíz con 146 core + 61 consumidor = 207 passing. Falta sólo revisión final explícita del desarrollador. |
-| Revisión del rojo y autorización vigente | Primer rojo T17 aprobado con `T17 red approved`; segundo rojo aprobado con `T17 second red approved`, ambos el 2026-09-29. Ambos alcances fueron implementados y verificados. No queda autorización técnica pendiente; T17 no se cierra hasta la revisión final explícita del desarrollador. |
-| Archivos modificados durante implementación | T17: `src/cli.ts`; tests/fixture CLI; `package.json` del consumidor con `test-integration`/`docs:*`; `scripts/test-integration.js`; `scripts/generate-readme.js`; README generado del consumidor; `.github/workflows/postgres-migrations.yml`; `Dockerfile` con cliente PostgreSQL; enlace público en `LEEME.md`; handoff T17. |
-| Última evidencia válida / revisión de código | Verde autoritativo T17 final aportado el 2026-09-29: typecheck consumidor sin diagnósticos; suite consumidor 61 passing; `docs:check` exit 0; integración real PostgreSQL 18.6 verificada (`server_version_num=180006`); suite raíz 146 core + 61 consumidor = 207 passing. La corrección de EOL/Compose queda incluida en este verde. |
-| Próxima acción | Revisión final del desarrollador. Si la entrega es aceptada, registrar literalmente `T17 approved`, cerrar T17 y activar T18 sin adelantar implementación. |
+| Tarea activa | T18 — Inferencia estructural desde historia hacia SSOT |
+| Estado / bloqueo concreto | T01–T17 cerradas. T18 activa. Primera frontera pura `inferStructureChanges` implementada y verificada autoritativamente; replay/historia/drift y el plan residual contra SSOT siguen pendientes de reds propios. |
+| Revisión del rojo y autorización vigente | T18: primer rojo aprobado explícitamente con `T18 first red approved` el 2026-09-29. Esa autorización cubrió sólo `authoring-contract.ts` + `infer.ts`; no autoriza todavía replay/historia/drift ni compilación residual. |
+| Archivos modificados durante implementación | T18 primera frontera: `consumers/postgres-migrations/src/authoring-contract.ts`, `src/infer.ts`, export en `src/index.ts`; rojo: `test/infer-test.ts`; handoff en checklist/evidencia T18. |
+| Última evidencia válida / revisión de código | T18 primera frontera verificada el 2026-09-29: `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos; suite raíz verde con 146 core + 65 consumidor = 211 passing; los cuatro casos `structural inference from history toward SSOT` pasan. |
+| Próxima acción | Preparar y ejecutar el siguiente rojo T18 para reconstrucción/replay real de historia, divergencia del head, drift contra el head propio de una instalación atrasada y rechazo de autoría sin SSOT. No implementar esa frontera antes de aprobación explícita. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -283,10 +283,10 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** funciones de biblioteca T01–T16, scripts de [package.json](../package.json), exports de [index.ts](../src/common/index.ts), Mocha/tsc existentes; LEEME/multilang para documentación raíz.
 - **Entregar:** `cli.ts`, scripts/build del consumidor, CI puro Windows/Linux + integración PostgreSQL 18.6 y documentación obtenida de ejemplos probados.
 - **Aceptar:** CLI no duplica runner; cada fallo devuelve no cero; versión de servidor incorrecta/no disponible falla, no skip exitoso; package consumidor fuera de globs raíz; README generado no editado manualmente. T22/T23 actualizan esta integración con funcionalidades posteriores.
-- **Evidencia:** [Evidencia T17](migraciones-evidencia/T17.md). Primera frontera CLI verificada; segundo rojo aprobado e implementado; una primera verificación expuso y corrigió portabilidad EOL y orquestación Compose. Rerun autoritativo final del 2026-09-29: typecheck consumidor limpio, 61 tests consumidor, `docs:check` limpio, integración real PostgreSQL 18.6 con `server_version_num=180006` y suite raíz 146 + 61 = 207 passing. Falta únicamente revisión final explícita del desarrollador.
+- **Evidencia:** [Evidencia T17](migraciones-evidencia/T17.md). Primera frontera CLI verificada; segundo rojo aprobado e implementado; una primera verificación expuso y corrigió portabilidad EOL y orquestación Compose. Rerun autoritativo final del 2026-09-29: typecheck consumidor limpio, 61 tests consumidor, `docs:check` limpio, integración real PostgreSQL 18.6 con `server_version_num=180006` y suite raíz 146 + 61 = 207 passing. Revisión final aprobada explícitamente con `T17 approved` el 2026-09-29.
 - [x] Implementación
 - [x] Verificación
-- [ ] Revisión del desarrollador
+- [x] Revisión del desarrollador
 
 ## T18
 
@@ -296,7 +296,7 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** snapshots/persistencia T02/T03, artifacts T06, generador/inspector/comparer T07–T09; completeEntity/completeRecord, sin copiar defaults.
 - **Entregar:** `infer.ts`, diff y clasificación de impacto, IDs estables, reconstrucción de historia y plan de operaciones residual contra SSOT.
 - **Aceptar:** ADD nullable inferido; rename no adivinado; NOT NULL pide datos/prueba; cambios desconocidos bloquean; replay real con runner/harness T11/T13 que no produce head esperado falla; instalación atrasada se compara con su propio head; sin SSOT no genera.
-- **Evidencia:** Pendiente.
+- **Evidencia:** [Evidencia T18](migraciones-evidencia/T18.md). Primer rojo puro aprobado explícitamente con `T18 first red approved` el 2026-09-29; primera frontera `inferStructureChanges` implementada y verificada autoritativamente: typecheck consumidor limpio y suite raíz 146 + 65 = 211 passing. Replay/historia/drift y plan residual siguen pendientes dentro de T18.
 - [ ] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador
