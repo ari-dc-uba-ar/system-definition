@@ -71,6 +71,18 @@ the field completer.
 
 [!--lang:es-->
 
+## Migraciones PostgreSQL
+
+El consumidor de migraciones, su CLI, comandos de verificación y ejemplos generados se documentan en [`consumers/postgres-migrations/README.md`](consumers/postgres-migrations/README.md).
+
+<!--lang:en--]
+
+## PostgreSQL migrations
+
+The migrations consumer, its CLI, verification commands, and generated examples are documented in [`consumers/postgres-migrations/README.md`](consumers/postgres-migrations/README.md).
+
+[!--lang:es-->
+
 ## Convención de nombres: Def e Info
 
 Cada concepto descriptivo tiene (al menos) dos versiones, distinguidas por sufijo:

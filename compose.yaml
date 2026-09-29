@@ -20,6 +20,9 @@ services:
     volumes:
       - .:/workspace
       - node_modules:/workspace/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
     command: ["sleep", "infinity"]
 
   postgres:

@@ -3,6 +3,10 @@ FROM ${NODE_IMAGE}
 
 WORKDIR /workspace
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV CI=true
 
 # Install dependencies without running this package's "prepare" script.
