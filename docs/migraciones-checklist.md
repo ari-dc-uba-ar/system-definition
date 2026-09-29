@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T15 cerradas. T16: rojo aprobado, implementación completa y verificación autoritativa Docker verde; pendiente revisión final del desarrollador.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T16 cerradas. T17 activa: primera frontera CLI aprobada, implementada y verificada con 204 tests verdes en el recorrido raíz; el resto de T17 requiere sus propios rojos/revisión.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T16 — Bloqueo de activación de aplicación |
-| Estado / bloqueo concreto | T01–T15 cerradas. T16 rojo aprobado, implementación completa y verificación autoritativa Docker verde; pendiente revisión final del desarrollador. |
-| Revisión del rojo y autorización vigente | T16 rojo aprobado explícitamente con `T16 red approved` el 2026-09-29; implementación autorizada y realizada. |
-| Archivos modificados durante implementación | T16: `src/deployment-gate.ts`, extensión de `src/journal.ts`, export público, tests `deployment-gate-*`, checklist y evidencia. Corrección posterior de verificación: aridad de bind en `consumeReady` y guard de aridad SQL en `deployment-gate-test.ts`. |
-| Última evidencia válida / revisión de código | T16 verificada el 2026-09-29 tras corregir un bind extra en `consumeReady`: `npm test` verde con core 146 passing + consumidor 56 passing (202 total); los 5 casos `deployment activation gate and simulated pipeline` pasan; `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` se ejecutó sin diagnósticos en la salida aportada. |
-| Próxima acción | Revisión final del desarrollador de T16. No marcar aprobación ni iniciar T17 como tarea cerrable hasta recibir confirmación expresa (`T16 approved`). |
+| Tarea activa | T17 — CLI, CI y documentación del motor |
+| Estado / bloqueo concreto | T01–T16 cerradas. T17 activa: primera frontera CLI aprobada, implementada y verificada autoritativamente el 2026-09-29. CI, integración PostgreSQL 18.6 y documentación siguen pendientes de sus propios rojos/revisión. |
+| Revisión del rojo y autorización vigente | T16 cerrada con revisión final explícita `T16 approved` el 2026-09-29. Primer rojo T17 aprobado explícitamente con `T17 red approved` el 2026-09-29 y su frontera CLI ya quedó verde; no hay autorización todavía para implementar CI/integración/docs. |
+| Archivos modificados durante implementación | T17 primera frontera: `consumers/postgres-migrations/src/cli.ts` implementado con tipos/comando, clasificación de exit codes y delegación única; `cli-contract-test.ts`/`cli-test.ts` verdes. Checklist/evidencia registran el verde sin ampliar todavía CI/integración/docs. |
+| Última evidencia válida / revisión de código | T17 primera frontera verificada el 2026-09-29: `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` volvió sin diagnósticos; `npm test` quedó verde con core 146 passing + consumidor 58 passing (204 total), incluidos 2 casos `migration CLI boundary`. T16 permanece cerrada y aprobada. |
+| Próxima acción | Preparar el siguiente rojo T17 para build/CI/PostgreSQL 18.6/documentación; no implementar ese alcance antes de su aprobación. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -270,10 +270,10 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** binding T15, head/intentos T10–T12 y checks existentes; mocks sólo en frontera de activación/mantenimiento, DB real para integración.
 - **Entregar:** `deployment-gate.ts`, `checkDeploymentReady` y pipeline de referencia con integración simulada ejecutable.
 - **Aceptar:** cada negativo tiene cero activaciones; éxito activa hash exacto una vez tras ready; fallo de activación deja mantenimiento y readiness sin consumir; ningún continue-on-error/force/skip evita gate. No afirmar integración productiva que el repo no posee.
-- **Evidencia:** [Evidencia T16](migraciones-evidencia/T16.md). Rojo aprobado; implementación completa; defecto de aridad de bind detectado y corregido antes del cierre; verificación autoritativa Docker verde con core 146 passing + consumidor 56 passing y typecheck consumidor sin diagnósticos en la salida aportada. Revisión final pendiente.
+- **Evidencia:** [Evidencia T16](migraciones-evidencia/T16.md). Rojo aprobado; implementación completa; defecto de aridad de bind detectado y corregido antes del cierre; verificación autoritativa Docker verde con core 146 passing + consumidor 56 passing y typecheck consumidor sin diagnósticos en la salida aportada. Revisión final aprobada explícitamente con `T16 approved` el 2026-09-29.
 - [x] Implementación
 - [x] Verificación
-- [ ] Revisión del desarrollador
+- [x] Revisión del desarrollador
 
 ## T17
 
@@ -283,7 +283,7 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** funciones de biblioteca T01–T16, scripts de [package.json](../package.json), exports de [index.ts](../src/common/index.ts), Mocha/tsc existentes; LEEME/multilang para documentación raíz.
 - **Entregar:** `cli.ts`, scripts/build del consumidor, CI puro Windows/Linux + integración PostgreSQL 18.6 y documentación obtenida de ejemplos probados.
 - **Aceptar:** CLI no duplica runner; cada fallo devuelve no cero; versión de servidor incorrecta/no disponible falla, no skip exitoso; package consumidor fuera de globs raíz; README generado no editado manualmente. T22/T23 actualizan esta integración con funcionalidades posteriores.
-- **Evidencia:** Pendiente.
+- **Evidencia:** [Evidencia T17](migraciones-evidencia/T17.md). Primera frontera CLI ejecutada, aprobada, implementada y verificada autoritativamente: typecheck consumidor limpio y `npm test` con 146 core + 58 consumidor = 204 passing. CI/integración PostgreSQL 18.6/documentación siguen pendientes de sus siguientes rojos.
 - [ ] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador
