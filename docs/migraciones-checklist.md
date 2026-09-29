@@ -26,11 +26,11 @@ Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo
 | Campo | Registro actual |
 | --- | --- |
 | Tarea activa | T18 — Inferencia estructural desde historia hacia SSOT |
-| Estado / bloqueo concreto | T01–T17 cerradas. T18 activa. Primera frontera pura `inferStructureChanges` implementada y verificada autoritativamente; replay/historia/drift y el plan residual contra SSOT siguen pendientes de reds propios. |
-| Revisión del rojo y autorización vigente | T18: primer rojo aprobado explícitamente con `T18 first red approved` el 2026-09-29. Esa autorización cubrió sólo `authoring-contract.ts` + `infer.ts`; no autoriza todavía replay/historia/drift ni compilación residual. |
-| Archivos modificados durante implementación | T18 primera frontera: `consumers/postgres-migrations/src/authoring-contract.ts`, `src/infer.ts`, export en `src/index.ts`; rojo: `test/infer-test.ts`; handoff en checklist/evidencia T18. |
-| Última evidencia válida / revisión de código | T18 primera frontera verificada el 2026-09-29: `tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` sin diagnósticos; suite raíz verde con 146 core + 65 consumidor = 211 passing; los cuatro casos `structural inference from history toward SSOT` pasan. |
-| Próxima acción | Preparar y ejecutar el siguiente rojo T18 para reconstrucción/replay real de historia, divergencia del head, drift contra el head propio de una instalación atrasada y rechazo de autoría sin SSOT. No implementar esa frontera antes de aprobación explícita. |
+| Estado / bloqueo concreto | T01–T17 cerradas. T18 activa. Primera frontera pura y segunda frontera replay/historia/drift/SSOT verificadas autoritativamente. El plan residual contra SSOT y `compileDraft` siguen pendientes de un tercer rojo separado. |
+| Revisión del rojo y autorización vigente | T18: primer rojo aprobado y primera frontera verificada. Segundo rojo aprobado explícitamente con `T18 second red approved` el 2026-09-29 y segunda frontera verificada. No existe todavía autorización para el plan residual/`compileDraft`; requiere un tercer rojo y revisión explícita. |
+| Archivos modificados durante implementación | T18 primera frontera: `src/authoring-contract.ts`, `src/infer.ts`; segunda frontera: `src/authoring-history.ts`; export público en `src/index.ts`; reds: `test/infer-test.ts` y `test/authoring-history-test.ts`; handoff en checklist/evidencia T18. |
+| Última evidencia válida / revisión de código | T18 segunda frontera verificada el 2026-09-29: typecheck consumidor sin diagnósticos; los cuatro casos `T18 history reconstruction and drift boundary` pasan; suite raíz verde con 146 core + 69 consumidor = 215 passing. La primera frontera sigue cubierta por esos mismos regresivos. |
+| Próxima acción | Preparar un tercer rojo T18 separado para el plan residual contra SSOT y `compileDraft`; no implementar esa frontera sin nueva aprobación explícita. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -296,7 +296,7 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** snapshots/persistencia T02/T03, artifacts T06, generador/inspector/comparer T07–T09; completeEntity/completeRecord, sin copiar defaults.
 - **Entregar:** `infer.ts`, diff y clasificación de impacto, IDs estables, reconstrucción de historia y plan de operaciones residual contra SSOT.
 - **Aceptar:** ADD nullable inferido; rename no adivinado; NOT NULL pide datos/prueba; cambios desconocidos bloquean; replay real con runner/harness T11/T13 que no produce head esperado falla; instalación atrasada se compara con su propio head; sin SSOT no genera.
-- **Evidencia:** [Evidencia T18](migraciones-evidencia/T18.md). Primer rojo puro aprobado explícitamente con `T18 first red approved` el 2026-09-29; primera frontera `inferStructureChanges` implementada y verificada autoritativamente: typecheck consumidor limpio y suite raíz 146 + 65 = 211 passing. Replay/historia/drift y plan residual siguen pendientes dentro de T18.
+- **Evidencia:** [Evidencia T18](migraciones-evidencia/T18.md). Primera frontera `inferStructureChanges` verificada (146 + 65 = 211 passing). Segunda frontera replay/historia/drift/SSOT aprobada con `T18 second red approved`, implementada y verificada autoritativamente el 2026-09-29: typecheck consumidor limpio y suite raíz 146 + 69 = 215 passing. El plan residual/`compileDraft` sigue pendiente dentro de T18.
 - [ ] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador
