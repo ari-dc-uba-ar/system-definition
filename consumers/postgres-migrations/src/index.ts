@@ -17,6 +17,7 @@ export * from "./rehearsal";
 export * from "./evidence";
 export * from "./deployment-gate";
 
-export * from "./authoring-contract";
 export * from "./authoring-history";
 export * from "./infer";
+
+export * from "./authoring";

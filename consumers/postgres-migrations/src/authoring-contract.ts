@@ -1,10 +1,24 @@
 import type {
+    FileInfo,
     JsonValue,
+    MigrationInfo,
     ReleaseRefInfo,
+    ValidationResult,
 } from "system-definition";
-import type {PgObjectIdentity} from "./pg-schema";
+import type {PgObjectIdentity, PgSchemaInfo} from "./pg-schema";
 
 export type SnapshotSide = "from" | "to";
+
+export type QueryResourceInfo = {
+    kind: "query";
+    file: FileInfo;
+};
+
+export type QueryRefInfo = {
+    name: string;
+    kind: "query";
+    contentHash: string;
+};
 
 export type FieldRefInfo = {
     side: SnapshotSide;
@@ -48,4 +62,61 @@ export type EntityRefInfo = {
 export type RenameInfo = {
     before: FieldRefInfo | EntityRefInfo;
     after: FieldRefInfo | EntityRefInfo;
+};
+
+
+export type PendingQuestionInfo = {
+    id: string;
+    kind: "rename" | "dataRequired" | "destructive" | "rowMapping" | "unsupported";
+    subjects: readonly string[];
+    messageKey: string;
+};
+
+/**
+ * T18 owns only structural authoring. Data migrations, destructive decisions
+ * and manual SQL are refined by T19-T21; these slots remain representable but
+ * opaque until those contracts are implemented.
+ */
+export type MigrationDraftInfo = {
+    formatVersion: 1;
+    id: string;
+    base: AuthoringBaseInfo;
+    revisionHash: string;
+    renames: readonly RenameInfo[];
+    changes: readonly StructureChangeInfo[];
+    data: readonly unknown[];
+    decisions: readonly unknown[];
+    manual: readonly unknown[];
+    pending: readonly PendingQuestionInfo[];
+};
+
+export type AuthoringReleaseBundle = {
+    ref: ReleaseRefInfo;
+    expectedSchema: PgSchemaInfo;
+};
+
+export interface AuthoringRuntime {
+    loadRelease(ref: ReleaseRefInfo): Promise<ValidationResult<AuthoringReleaseBundle>>;
+    reconstructHistory(head: ReleaseRefInfo): Promise<ValidationResult<PgSchemaInfo>>;
+    readQuery(ref: QueryRefInfo): Promise<ValidationResult<string>>;
+    inspectDraft(draft: MigrationDraftInfo): Promise<ValidationResult<PgSchemaInfo>>;
+}
+
+export type CompiledAuthoringOperationInfo = {
+    id: string;
+    stepIds: readonly string[];
+    changeIds: readonly string[];
+    dataMigrationIds: readonly string[];
+};
+
+export type CompiledAuthoringInfo = {
+    formatVersion: 1;
+    draftHash: string;
+    base: AuthoringBaseInfo;
+    migration: MigrationInfo;
+    operations: readonly CompiledAuthoringOperationInfo[];
+    decisions: readonly unknown[];
+    checkpoints: readonly unknown[];
+    queryResources: Readonly<Record<string, QueryResourceInfo>>;
+    validationArtifacts: readonly unknown[];
 };

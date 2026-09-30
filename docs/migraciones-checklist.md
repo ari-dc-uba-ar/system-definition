@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T17 cerradas. T17 recibió revisión final explícita con `T17 approved` el 2026-09-29. T18 queda como tarea activa y debe comenzar por lectura/reutilización y su propio rojo antes de implementar.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T18 cerradas. T18 recibió revisión final explícita con `T18 approved` el 2026-09-29. T19 queda como tarea activa y debe comenzar por lectura/reutilización y su propio rojo antes de implementar.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T18 — Inferencia estructural desde historia hacia SSOT |
-| Estado / bloqueo concreto | T01–T17 cerradas. T18 activa. Primera frontera pura y segunda frontera replay/historia/drift/SSOT verificadas autoritativamente. El plan residual contra SSOT y `compileDraft` siguen pendientes de un tercer rojo separado. |
-| Revisión del rojo y autorización vigente | T18: primer rojo aprobado y primera frontera verificada. Segundo rojo aprobado explícitamente con `T18 second red approved` el 2026-09-29 y segunda frontera verificada. No existe todavía autorización para el plan residual/`compileDraft`; requiere un tercer rojo y revisión explícita. |
-| Archivos modificados durante implementación | T18 primera frontera: `src/authoring-contract.ts`, `src/infer.ts`; segunda frontera: `src/authoring-history.ts`; export público en `src/index.ts`; reds: `test/infer-test.ts` y `test/authoring-history-test.ts`; handoff en checklist/evidencia T18. |
-| Última evidencia válida / revisión de código | T18 segunda frontera verificada el 2026-09-29: typecheck consumidor sin diagnósticos; los cuatro casos `T18 history reconstruction and drift boundary` pasan; suite raíz verde con 146 core + 69 consumidor = 215 passing. La primera frontera sigue cubierta por esos mismos regresivos. |
-| Próxima acción | Preparar un tercer rojo T18 separado para el plan residual contra SSOT y `compileDraft`; no implementar esa frontera sin nueva aprobación explícita. |
+| Tarea activa | T19 — Autoría tipada de migraciones de datos |
+| Estado / bloqueo concreto | T01–T18 cerradas. T19 activa. T19 no tiene rojo aprobado ni autorización de implementación; debe comenzar por lectura/reutilización y un red propio antes de tocar producción. |
+| Revisión del rojo y autorización vigente | T18: primer, segundo y tercer reds aprobados, implementados, verificados y con revisión final explícita `T18 approved`. T19: sin red aprobado y sin autorización de implementación. |
+| Archivos modificados durante implementación | T18 cerrada: primera frontera `src/authoring-contract.ts`, `src/infer.ts`; segunda `src/authoring-history.ts`; tercera `src/authoring.ts` y ampliación de contratos T18 en `src/authoring-contract.ts`; export público en `src/index.ts`; reds `test/infer-test.ts`, `test/authoring-history-test.ts`, `test/authoring-compile-test.ts`; handoff en checklist/evidencia T18. T19 aún sin cambios. |
+| Última evidencia válida / revisión de código | T18 verificación global autoritativa del 2026-09-29: `tsc --noEmit` del consumidor sin diagnósticos; suite raíz verde con 146 core + 73 consumidor = 219 passing; los cuatro casos `T18 residual structure planning and compileDraft boundary` pasan y las dos fronteras T18 anteriores permanecen verdes. |
+| Próxima acción | Leer contratos/implementación indicados por T19, identificar reutilización obligatoria y preparar el primer red T19. No implementar T19 hasta que ese red reciba aprobación explícita. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -296,10 +296,10 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** snapshots/persistencia T02/T03, artifacts T06, generador/inspector/comparer T07–T09; completeEntity/completeRecord, sin copiar defaults.
 - **Entregar:** `infer.ts`, diff y clasificación de impacto, IDs estables, reconstrucción de historia y plan de operaciones residual contra SSOT.
 - **Aceptar:** ADD nullable inferido; rename no adivinado; NOT NULL pide datos/prueba; cambios desconocidos bloquean; replay real con runner/harness T11/T13 que no produce head esperado falla; instalación atrasada se compara con su propio head; sin SSOT no genera.
-- **Evidencia:** [Evidencia T18](migraciones-evidencia/T18.md). Primera frontera `inferStructureChanges` verificada (146 + 65 = 211 passing). Segunda frontera replay/historia/drift/SSOT aprobada con `T18 second red approved`, implementada y verificada autoritativamente el 2026-09-29: typecheck consumidor limpio y suite raíz 146 + 69 = 215 passing. El plan residual/`compileDraft` sigue pendiente dentro de T18.
-- [ ] Implementación
-- [ ] Verificación
-- [ ] Revisión del desarrollador
+- **Evidencia:** [Evidencia T18](migraciones-evidencia/T18.md). Las tres fronteras T18 están implementadas y verificadas. Verificación global autoritativa del 2026-09-29: typecheck consumidor limpio y suite raíz 146 core + 73 consumidor = 219 passing; `inferStructureChanges`, replay/historia/drift/SSOT y residual/`compileDraft` permanecen verdes. Revisión final del desarrollador pendiente.
+- [x] Implementación
+- [x] Verificación
+- [x] Revisión del desarrollador
 
 ## T19
 
