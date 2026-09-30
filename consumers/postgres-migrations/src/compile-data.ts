@@ -1,12 +1,12 @@
 import {createHash} from "node:crypto";
-import {problem, type PersistenceInfo, type ValidationResult} from "system-definition";
+import {problem, type PersistenceInfo, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
 import type {
     DataMigrationInfo,
     QueryRefInfo,
     TransformationInfo,
     WriteInfo,
 } from "./migration-authoring";
-import type {MachineCodecInfo, PgTypeRepresentation, StorageContext} from "./pg-schema";
+import type {MachineCodecInfo, PgSchemaInfo, PgTypeRepresentation, StorageContext} from "./pg-schema";
 
 export type RelationRewriteRequest = {
     sql: string;
@@ -35,6 +35,8 @@ export type CompileDataContext = {
     relationRewriter: RelationRewriter;
     storage?: StorageContext;
     persistence?: PersistenceInfo;
+    targetSnapshot?: SystemSnapshotInfo;
+    targetSchema?: PgSchemaInfo;
 };
 
 export type CompiledDataStatement = {
@@ -146,12 +148,186 @@ function validateBoundary(
         if (port === undefined) return failure("source identity names an unknown port", {port: name});
         if (port.domain.nullable) return failure("source identity port must be non-null", {port: name});
     }
-    for (const write of migration.writes) {
-        if (write.kind !== "update" || write.whenMissing !== "error") {
-            return failure("this compiler slice accepts update writes with whenMissing=error only", {entity: write.entity});
+    const writes = validateWrites(migration, context);
+    if (!writes.ok) return writes;
+    return {ok: true, value: true};
+}
+
+
+type TargetColumn = Extract<PgSchemaInfo["objects"][number], {kind: "column"}>;
+
+type DestinationContract = {
+    entity: SystemSnapshotInfo["entities"][string];
+    columns: Readonly<Record<string, TargetColumn>>;
+};
+
+function destinationContract(
+    context: CompileDataContext,
+    entityName: string,
+): ValidationResult<DestinationContract> {
+    const entity = context.targetSnapshot?.entities[entityName];
+    if (entity === undefined || context.targetSchema === undefined) {
+        return failure("destination writes require target snapshot and schema metadata", {entity: entityName});
+    }
+    const columns: Record<string, TargetColumn> = {};
+    for (const object of context.targetSchema.objects) {
+        if (object.kind !== "column"
+            || object.identity.schema !== context.schema
+            || object.identity.parentName !== entityName) continue;
+        columns[object.identity.name] = object;
+    }
+    for (const fieldName of Object.keys(entity.fields)) {
+        if (columns[fieldName] === undefined) {
+            return failure("destination schema is missing a snapshot field", {entity: entityName, field: fieldName});
         }
-        if (write.match.length === 0) return failure("update write must have a match", {entity: write.entity});
+    }
+    return {ok: true, value: {entity, columns}};
+}
+
+function sameFieldSet(left: readonly string[], right: readonly string[]): boolean {
+    if (left.length !== right.length) return false;
+    const rightSet = new Set(right);
+    return left.every(name => rightSet.has(name));
+}
+
+function isCompleteDestinationKey(
+    entity: DestinationContract["entity"],
+    fields: readonly string[],
+): boolean {
+    if (sameFieldSet(fields, entity.pk)) return true;
+    return Object.values(entity.uks).some(key => sameFieldSet(fields, key));
+}
+
+function isGeneratedColumn(column: TargetColumn): boolean {
+    return column.generatedDefinition !== null || column.identityDefinition !== null;
+}
+
+function validateWriteBindings(
+    write: WriteInfo,
+    contract: DestinationContract,
+): ValidationResult<true> {
+    if (write.values.length === 0) return failure("destination write must have values", {entity: write.entity});
+    const seen = new Set<string>();
+    for (const binding of write.values) {
+        const field = binding.target.field;
+        if (binding.target.side !== "to" || binding.target.entity !== write.entity || contract.entity.fields[field] === undefined) {
+            return failure("destination write references an unknown target field", {entity: write.entity, field});
+        }
+        if (seen.has(field)) {
+            return failure("destination write repeats a target field", {entity: write.entity, field});
+        }
+        seen.add(field);
+        if (isGeneratedColumn(contract.columns[field]!)) {
+            return failure("generated destination fields cannot be written explicitly", {entity: write.entity, field});
+        }
+    }
+    return {ok: true, value: true};
+}
+
+function requiredInsertFields(contract: DestinationContract): readonly string[] {
+    return Object.keys(contract.entity.fields).filter(field => {
+        const snapshotField = contract.entity.fields[field]!;
+        const column = contract.columns[field]!;
+        return !snapshotField.nullable
+            && column.defaultExpression === null
+            && !isGeneratedColumn(column);
+    });
+}
+
+function validateInsertCompleteness(
+    entityName: string,
+    contract: DestinationContract,
+    supplied: ReadonlySet<string>,
+): ValidationResult<true> {
+    const missing = requiredInsertFields(contract).find(field => !supplied.has(field));
+    if (missing !== undefined) {
+        return failure("insert is missing a required destination field", {entity: entityName, field: missing});
+    }
+    return {ok: true, value: true};
+}
+
+function validateInsertWrite(
+    write: Extract<WriteInfo, {kind: "insert"}>,
+    context: CompileDataContext,
+): ValidationResult<true> {
+    const contractResult = destinationContract(context, write.entity);
+    if (!contractResult.ok) return contractResult;
+    const contract = contractResult.value;
+    const bindings = validateWriteBindings(write, contract);
+    if (!bindings.ok) return bindings;
+    if (write.key.length === 0 || !isCompleteDestinationKey(contract.entity, write.key)) {
+        return failure("insert key must cover one complete destination PK or UK", {entity: write.entity});
+    }
+    const supplied = new Set(write.values.map(binding => binding.target.field));
+    const missingKey = write.key.find(field => !supplied.has(field));
+    if (missingKey !== undefined) {
+        return failure("insert key field must be supplied by an output", {entity: write.entity, field: missingKey});
+    }
+    return validateInsertCompleteness(write.entity, contract, supplied);
+}
+
+function validateUpdateWrite(
+    write: Extract<WriteInfo, {kind: "update"}>,
+    context: CompileDataContext,
+): ValidationResult<true> {
+    if (write.match.length === 0) return failure("update write must have a match", {entity: write.entity});
+
+    if (context.targetSnapshot === undefined) {
+        if (write.whenMissing !== "error") {
+            return failure("destination writes require target snapshot and schema metadata", {entity: write.entity});
+        }
         if (write.values.length === 0) return failure("update write must have values", {entity: write.entity});
+        return {ok: true, value: true};
+    }
+
+    const contractResult = destinationContract(context, write.entity);
+    if (!contractResult.ok) return contractResult;
+    const contract = contractResult.value;
+    const bindings = validateWriteBindings(write, contract);
+    if (!bindings.ok) return bindings;
+
+    const matchFields: string[] = [];
+    const seenMatch = new Set<string>();
+    for (const pair of write.match) {
+        if (contract.entity.fields[pair.targetField] === undefined) {
+            return failure("update match references an unknown destination field", {entity: write.entity, field: pair.targetField});
+        }
+        if (seenMatch.has(pair.targetField)) {
+            return failure("update match repeats a destination field", {entity: write.entity, field: pair.targetField});
+        }
+        seenMatch.add(pair.targetField);
+        matchFields.push(pair.targetField);
+    }
+    if (!isCompleteDestinationKey(contract.entity, matchFields)) {
+        return failure("update match must cover one complete destination PK or UK", {entity: write.entity});
+    }
+
+    const changedMatched = write.values.find(binding => seenMatch.has(binding.target.field));
+    if (changedMatched !== undefined) {
+        return failure("update cannot modify a field used by its own match", {
+            entity: write.entity,
+            field: changedMatched.target.field,
+        });
+    }
+
+    if (write.whenMissing === "insert") {
+        const supplied = new Set<string>(matchFields);
+        for (const binding of write.values) supplied.add(binding.target.field);
+        const completeness = validateInsertCompleteness(write.entity, contract, supplied);
+        if (!completeness.ok) return completeness;
+    }
+    return {ok: true, value: true};
+}
+
+function validateWrites(
+    migration: DataMigrationInfo,
+    context: CompileDataContext,
+): ValidationResult<true> {
+    for (const write of migration.writes) {
+        const result = write.kind === "insert"
+            ? validateInsertWrite(write, context)
+            : validateUpdateWrite(write, context);
+        if (!result.ok) return result;
     }
     return {ok: true, value: true};
 }
@@ -399,14 +575,31 @@ function prewriteSql(
     output: string,
     identityColumn: "__source_id" | "__output_id",
 ): string {
-    return [
-        "SELECT 1 / CASE WHEN EXISTS (",
+    const cardinality = write.whenMissing === "insert" ? "> 1" : "<> 1";
+    const clauses = [
+        "EXISTS (",
         `    SELECT "output".${quoteIdentifier(identityColumn)}`,
         `    FROM ${quoteIdentifier(output)} AS "output"`,
         `    LEFT JOIN ${qualified(schema, write.entity)} AS "target"`,
         `      ON ${matchPredicate(write)}`,
         `    GROUP BY "output".${quoteIdentifier(identityColumn)}`,
-        `    HAVING count("target".ctid) <> 1`,
+        `    HAVING count("target".ctid) ${cardinality}`,
+        ")",
+    ];
+    if (write.whenMissing === "insert") {
+        const matchOutputs = write.match.map(pair => `"output".${quoteIdentifier(pair.output)}`).join(", ");
+        clauses.push(
+            "OR EXISTS (",
+            `    SELECT ${matchOutputs}`,
+            `    FROM ${quoteIdentifier(output)} AS "output"`,
+            `    GROUP BY ${matchOutputs}`,
+            "    HAVING count(*) > 1",
+            ")",
+        );
+    }
+    return [
+        "SELECT 1 / CASE WHEN (",
+        ...clauses.map(line => `    ${line}`),
         ` ) THEN 0 ELSE 1 END AS "update_match_ok";`,
     ].join("\n");
 }
@@ -425,6 +618,89 @@ function updateSql(
         `FROM ${quoteIdentifier(output)} AS "output"`,
         `WHERE ${matchPredicate(write)};`,
     ].join("\n");
+}
+
+
+type DestinationOutput = {targetField: string; output: string};
+
+function insertValueBindings(write: Extract<WriteInfo, {kind: "insert"}>): readonly DestinationOutput[] {
+    return write.values.map(binding => ({targetField: binding.target.field, output: binding.output}));
+}
+
+function missingUpdateInsertBindings(write: Extract<WriteInfo, {kind: "update"}>): readonly DestinationOutput[] {
+    const byField = new Map<string, DestinationOutput>();
+    for (const pair of write.match) {
+        byField.set(pair.targetField, {targetField: pair.targetField, output: pair.output});
+    }
+    for (const binding of write.values) {
+        byField.set(binding.target.field, {targetField: binding.target.field, output: binding.output});
+    }
+    return [...byField.values()];
+}
+
+function destinationOutputForField(bindings: readonly DestinationOutput[], field: string): string {
+    const binding = bindings.find(item => item.targetField === field);
+    if (binding === undefined) throw new Error(`validated destination binding is missing for ${field}`);
+    return binding.output;
+}
+
+function keyMatchPredicate(
+    fields: readonly string[],
+    bindings: readonly DestinationOutput[],
+): string {
+    return fields.map(field => (
+        `"target".${quoteIdentifier(field)} IS NOT DISTINCT FROM "output".${quoteIdentifier(destinationOutputForField(bindings, field))}`
+    )).join("\n    AND ");
+}
+
+function insertConflictSql(
+    write: Extract<WriteInfo, {kind: "insert"}>,
+    schema: string,
+    output: string,
+): string {
+    const bindings = insertValueBindings(write);
+    const grouped = write.key.map(field => `"output".${quoteIdentifier(destinationOutputForField(bindings, field))}`).join(", ");
+    return [
+        "SELECT 1 / CASE WHEN (",
+        "    EXISTS (",
+        `        SELECT ${grouped}`,
+        `        FROM ${quoteIdentifier(output)} AS "output"`,
+        `        GROUP BY ${grouped}`,
+        "        HAVING count(*) > 1",
+        "    )",
+        "    OR EXISTS (",
+        `        SELECT 1 FROM ${quoteIdentifier(output)} AS "output"`,
+        `        JOIN ${qualified(schema, write.entity)} AS "target"`,
+        `          ON ${keyMatchPredicate(write.key, bindings)}`,
+        "    )",
+        ` ) THEN 0 ELSE 1 END AS "insert_conflict_ok";`,
+    ].join("\n");
+}
+
+function insertSql(
+    entity: string,
+    schema: string,
+    output: string,
+    bindings: readonly DestinationOutput[],
+    missingPredicate: string | null = null,
+): string {
+    const targets = bindings.map(binding => quoteIdentifier(binding.targetField)).join(", ");
+    const values = bindings.map(binding => `"output".${quoteIdentifier(binding.output)}`).join(", ");
+    const lines = [
+        `INSERT INTO ${qualified(schema, entity)} (${targets})`,
+        `SELECT ${values}`,
+        `FROM ${quoteIdentifier(output)} AS "output"`,
+    ];
+    if (missingPredicate !== null) {
+        lines.push(
+            "WHERE NOT EXISTS (",
+            `    SELECT 1 FROM ${qualified(schema, entity)} AS "target"`,
+            `    WHERE ${missingPredicate.replaceAll("\n", "\n    ")}`,
+            ")",
+        );
+    }
+    lines[lines.length - 1] = lines[lines.length - 1] + ";";
+    return lines.join("\n");
 }
 
 export function compileDataMigration(
@@ -482,9 +758,21 @@ export function compileDataMigration(
         statements.push({phase: "protocol", text: rowProtocolSql(temporary.input, temporary.output), values: []});
     }
 
-    for (const rawWrite of migration.writes) {
-        // validateBoundary rejects every other variant for this approved slice.
-        const write = rawWrite as Extract<WriteInfo, {kind: "update"}>;
+    for (const write of migration.writes) {
+        if (write.kind === "insert") {
+            statements.push({
+                phase: "prewrite",
+                text: insertConflictSql(write, context.schema, temporary.output),
+                values: [],
+            });
+            statements.push({
+                phase: "write",
+                text: insertSql(write.entity, context.schema, temporary.output, insertValueBindings(write)),
+                values: [],
+            });
+            continue;
+        }
+
         statements.push({
             phase: "prewrite",
             text: prewriteSql(
@@ -500,6 +788,20 @@ export function compileDataMigration(
             text: updateSql(write, context.schema, temporary.output),
             values: [],
         });
+        if (write.whenMissing === "insert") {
+            const bindings = missingUpdateInsertBindings(write);
+            statements.push({
+                phase: "write",
+                text: insertSql(
+                    write.entity,
+                    context.schema,
+                    temporary.output,
+                    bindings,
+                    keyMatchPredicate(write.match.map(pair => pair.targetField), bindings),
+                ),
+                values: [],
+            });
+        }
     }
 
     return {ok: true, value: {temporary, statements}};

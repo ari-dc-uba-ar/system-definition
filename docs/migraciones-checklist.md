@@ -322,11 +322,11 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** behaviourOf/TypeBehaviour, instanceProblems/validateInstance y withValidators existentes; [aida-behaviour.ts](../examples/common/aida-behaviour.ts), [aida-validators.ts](../examples/common/aida-validators.ts) y sus tests; motor T11/T13.
 - **Entregar:** `compile-data.ts`, `data-validation.ts`, `validation-artifact.ts`; staging, escritura SQL, checkpoints y módulos históricos por hash.
 - **Aceptar:** __source_id/lineage/cobertura válidos; duplicados o match ambiguo fallan antes de UPDATE; null/''/'null' distintos; validar fila completa y PK efectiva; tipo correcto/regla inválida revierte; Problem regular también bloquea; cambio de módulo invalida evidencia; originales preservados en transferencias cíclicas.
-- **Evidencia:** [Evidencia T20](migraciones-evidencia/T20.md). Seis slices verificados. Verificación autoritativa del sexto slice el 2026-09-30: typecheck consumidor limpio, `T20 historical machine read projection` 4/4 passing, core 146 passing y consumer 109 passing = 255 total. Los slices de parámetros/codecs, row/set, validación histórica de filas y artifacts históricos permanecen verdes. Writes completos, conservación/preservación y checkpoints + runner siguen para reds posteriores; T20 global permanece abierta.
+- **Evidencia:** [Evidencia T20](migraciones-evidencia/T20.md). Siete slices verificados. Verificación autoritativa del séptimo slice el 2026-09-30: typecheck consumidor limpio, `T20 complete destination writes` 4/4 passing, core 146 passing y consumer 113 passing = 259 total. Red #8 de conservación/preservación preparada; sin aprobación ni implementación. Checkpoints + runner quedan para red #9; T20 global permanece abierta.
 - [ ] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador
-- **Estado de sesión T20 (2026-09-30):** sexto slice de proyección histórica de lectura mediante `readExpression` verificado con Docker: typecheck limpio y 146 core + 109 consumer = 255 passing. Séptimo red preparado para writes destino completos (`insert`, `whenMissing=insert`, completitud/defaults/generated y seguridad PK/UK); producción bloqueada hasta aprobación explícita. Después quedarían previsiblemente conservación/preservación y checkpoints + runner.
+- **Estado de sesión T20 (2026-09-30):** séptimo slice verificado en Docker. Red #8 preparada sólo con test/handoff para conservación/preservación: capturas before previas a writes, comparación null-sensitive de campos escritos, preservación de filas/columnas fuera de alcance y transporte exacto de `conservationChecks` hacia la futura capa de checkpoints. Producción no autorizada hasta aprobación explícita; checkpoints + runner quedan para red #9.
 
 ## T21
 
