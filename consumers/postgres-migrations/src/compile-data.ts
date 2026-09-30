@@ -40,7 +40,7 @@ export type CompileDataContext = {
 };
 
 export type CompiledDataStatement = {
-    phase: "capture" | "parameters" | "transform" | "lineage" | "protocol" | "prewrite" | "write";
+    phase: "capture" | "parameters" | "transform" | "lineage" | "protocol" | "preserve" | "prewrite" | "write" | "verify";
     text: string;
     values: readonly unknown[];
 };
@@ -53,6 +53,7 @@ export type CompiledDataMigration = {
         lineage: string | null;
     };
     statements: readonly CompiledDataStatement[];
+    conservationChecks: DataMigrationInfo["conservationChecks"];
 };
 
 function failure<T>(reason: string, details: Readonly<Record<string, string>> = {}): ValidationResult<T> {
@@ -703,6 +704,223 @@ function insertSql(
     return lines.join("\n");
 }
 
+
+type PreservedEntity = {
+    entity: string;
+    table: string;
+    contract: DestinationContract;
+    writes: readonly WriteInfo[];
+    identityFields: readonly string[];
+};
+
+function preservationTableName(stem: string, entity: string): string {
+    const suffix = createHash("sha256").update(entity, "utf8").digest("hex").slice(0, 10);
+    return `${stem}_before_${suffix}`;
+}
+
+function preservationContracts(
+    migration: DataMigrationInfo,
+    context: CompileDataContext,
+    stem: string,
+): ValidationResult<readonly PreservedEntity[]> {
+    if (context.targetSnapshot === undefined || context.targetSchema === undefined) {
+        return {ok: true, value: []};
+    }
+    const order: string[] = [];
+    const byEntity = new Map<string, WriteInfo[]>();
+    for (const write of migration.writes) {
+        let writes = byEntity.get(write.entity);
+        if (writes === undefined) {
+            writes = [];
+            byEntity.set(write.entity, writes);
+            order.push(write.entity);
+        }
+        writes.push(write);
+    }
+    const result: PreservedEntity[] = [];
+    for (const entity of order) {
+        const contract = destinationContract(context, entity);
+        if (!contract.ok) return contract;
+        const writes = byEntity.get(entity)!;
+        const changedFields = new Set(
+            writes.flatMap(write => write.kind === "update"
+                ? write.values.map(binding => binding.target.field)
+                : []),
+        );
+        const candidateKeys = [contract.value.entity.pk, ...Object.values(contract.value.entity.uks)];
+        const identityFields = candidateKeys.find(key => key.length > 0 && key.every(field => !changedFields.has(field)));
+        if (identityFields === undefined) {
+            return failure("conservation requires a destination key that remains unchanged across writes", {entity});
+        }
+        result.push({
+            entity,
+            table: preservationTableName(stem, entity),
+            contract: contract.value,
+            writes,
+            identityFields,
+        });
+    }
+    return {ok: true, value: result};
+}
+
+function preserveDestinationSql(
+    preserved: PreservedEntity,
+    schema: string,
+): string {
+    const fields = Object.keys(preserved.contract.entity.fields).sort(utf16Compare);
+    const projection = fields.map(field => quoteIdentifier(field)).join(", ");
+    return [
+        `CREATE TEMP TABLE ${quoteIdentifier(preserved.table)} ON COMMIT DROP AS`,
+        `SELECT TRUE AS "__before_present", ${projection}`,
+        `FROM ${qualified(schema, preserved.entity)};`,
+    ].join("\n");
+}
+
+function targetOutputPredicate(
+    pairs: readonly {targetField: string; output: string}[],
+    targetAlias: string,
+    outputAlias: string,
+): string {
+    return pairs.map(pair => (
+        `${quoteIdentifier(targetAlias)}.${quoteIdentifier(pair.targetField)} IS NOT DISTINCT FROM `
+        + `${quoteIdentifier(outputAlias)}.${quoteIdentifier(pair.output)}`
+    )).join("\n    AND ");
+}
+
+function writeBindings(write: WriteInfo): readonly DestinationOutput[] {
+    return write.kind === "insert" ? insertValueBindings(write) : write.values.map(binding => ({
+        targetField: binding.target.field,
+        output: binding.output,
+    }));
+}
+
+function writeScopeBindings(write: WriteInfo): readonly DestinationOutput[] {
+    if (write.kind === "insert") {
+        const all = insertValueBindings(write);
+        return write.key.map(field => ({
+            targetField: field,
+            output: destinationOutputForField(all, field),
+        }));
+    }
+    return write.match.map(pair => ({targetField: pair.targetField, output: pair.output}));
+}
+
+function writtenValuesVerificationSql(
+    write: WriteInfo,
+    schema: string,
+    output: string,
+): string {
+    const scope = writeScopeBindings(write);
+    const bindings = writeBindings(write);
+    const mismatch = bindings.map(binding => (
+        `"target".${quoteIdentifier(binding.targetField)} IS DISTINCT FROM "output".${quoteIdentifier(binding.output)}`
+    )).join("\n            OR ");
+    return [
+        "SELECT 1 / CASE WHEN EXISTS (",
+        `    SELECT 1 FROM ${quoteIdentifier(output)} AS "output"`,
+        `    LEFT JOIN ${qualified(schema, write.entity)} AS "target"`,
+        `      ON ${targetOutputPredicate(scope, "target", "output")}`,
+        "    WHERE \"target\".ctid IS NULL",
+        mismatch.length === 0 ? "" : `       OR (${mismatch})`,
+        `) THEN 0 ELSE 1 END AS "${write.kind}_written_values_ok";`,
+    ].filter(Boolean).join("\n");
+}
+
+function pgRowIdentityPredicate(
+    fields: readonly string[],
+    leftAlias: string,
+    rightAlias: string,
+): string {
+    return fields.map(field => (
+        `${quoteIdentifier(leftAlias)}.${quoteIdentifier(field)} IS NOT DISTINCT FROM `
+        + `${quoteIdentifier(rightAlias)}.${quoteIdentifier(field)}`
+    )).join("\n            AND ");
+}
+
+function outputScopeForBeforeRow(write: Extract<WriteInfo, {kind: "update"}>): string {
+    const pairs = write.match.map(pair => ({targetField: pair.targetField, output: pair.output}));
+    return [
+        "EXISTS (",
+        '                SELECT 1 FROM __OUTPUT__ AS "output"',
+        `                WHERE ${targetOutputPredicate(pairs, "before", "output").replaceAll("\n", "\n                ")}`,
+        "            )",
+    ].join("\n");
+}
+
+function allowedChangedFieldExpression(
+    field: string,
+    writes: readonly WriteInfo[],
+    output: string,
+): string | null {
+    const scopes: string[] = [];
+    for (const write of writes) {
+        if (write.kind !== "update") continue;
+        if (!write.values.some(binding => binding.target.field === field)) continue;
+        scopes.push(outputScopeForBeforeRow(write).replaceAll("__OUTPUT__", quoteIdentifier(output)));
+    }
+    if (scopes.length === 0) return null;
+    return scopes.length === 1 ? scopes[0]! : `(${scopes.join("\n            OR ")})`;
+}
+
+function newRowAllowedExpression(write: WriteInfo, output: string): string | null {
+    if (write.kind === "update" && write.whenMissing !== "insert") return null;
+    const scope = writeScopeBindings(write);
+    return [
+        "EXISTS (",
+        `                SELECT 1 FROM ${quoteIdentifier(output)} AS "output"`,
+        `                WHERE ${targetOutputPredicate(scope, "after", "output").replaceAll("\n", "\n                ")}`,
+        "            )",
+    ].join("\n");
+}
+
+function preservationVerificationSql(
+    preserved: PreservedEntity,
+    schema: string,
+    output: string,
+): string {
+    const fields = Object.keys(preserved.contract.entity.fields).sort(utf16Compare);
+    const identityFields = preserved.identityFields;
+    const changedChecks = fields.map(field => {
+        const allowance = allowedChangedFieldExpression(field, preserved.writes, output);
+        if (allowance === null) {
+            return `"before".${quoteIdentifier(field)} IS DISTINCT FROM "after".${quoteIdentifier(field)}`;
+        }
+        return [
+            "(",
+            `    "before".${quoteIdentifier(field)} IS DISTINCT FROM "after".${quoteIdentifier(field)}`,
+            `    AND NOT (${allowance.replaceAll("\n", "\n    ")})`,
+            ")",
+        ].join("\n");
+    });
+    const newRowAllowances = preserved.writes
+        .map(write => newRowAllowedExpression(write, output))
+        .filter((value): value is string => value !== null);
+    const newRowUnexpected = newRowAllowances.length === 0
+        ? '"before"."__before_present" IS NULL'
+        : [
+            '"before"."__before_present" IS NULL',
+            `AND NOT (${newRowAllowances.join("\n            OR ")})`,
+        ].join("\n            ");
+
+    return [
+        "SELECT 1 / CASE WHEN EXISTS (",
+        `    SELECT 1 FROM ${quoteIdentifier(preserved.table)} AS "before"`,
+        `    FULL JOIN ${qualified(schema, preserved.entity)} AS "after"`,
+        `      ON ${pgRowIdentityPredicate(identityFields, "before", "after")}`,
+        "    WHERE (",
+        '        "before"."__before_present" IS NOT NULL AND "after".ctid IS NULL',
+        "    ) OR (",
+        `        ${newRowUnexpected.replaceAll("\n", "\n        ")}`,
+        "    ) OR (",
+        '        "before"."__before_present" IS NOT NULL AND "after".ctid IS NOT NULL',
+        "        AND (",
+        `            ${changedChecks.join("\n            OR ").replaceAll("\n", "\n            ")}`,
+        "        )",
+        "    )",
+        `) THEN 0 ELSE 1 END AS "${preserved.entity}_before_preservation_ok";`,
+    ].join("\n");
+}
+
 export function compileDataMigration(
     migration: DataMigrationInfo,
     context: CompileDataContext,
@@ -758,6 +976,16 @@ export function compileDataMigration(
         statements.push({phase: "protocol", text: rowProtocolSql(temporary.input, temporary.output), values: []});
     }
 
+    const preserved = preservationContracts(migration, context, stem);
+    if (!preserved.ok) return preserved;
+    for (const entity of preserved.value) {
+        statements.push({
+            phase: "preserve",
+            text: preserveDestinationSql(entity, context.schema),
+            values: [],
+        });
+    }
+
     for (const write of migration.writes) {
         if (write.kind === "insert") {
             statements.push({
@@ -804,5 +1032,23 @@ export function compileDataMigration(
         }
     }
 
-    return {ok: true, value: {temporary, statements}};
+    for (const write of migration.writes) {
+        statements.push({
+            phase: "verify",
+            text: writtenValuesVerificationSql(write, context.schema, temporary.output),
+            values: [],
+        });
+    }
+    for (const entity of preserved.value) {
+        statements.push({
+            phase: "verify",
+            text: preservationVerificationSql(entity, context.schema, temporary.output),
+            values: [],
+        });
+    }
+
+    return {
+        ok: true,
+        value: {temporary, statements, conservationChecks: migration.conservationChecks},
+    };
 }

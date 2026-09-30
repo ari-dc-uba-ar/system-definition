@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T19 cerradas. T20 activa; primer y segundo slices verificados. Tercer rojo `mode=set`/lineage aprobado e implementado; verificación Docker del slice pendiente. No ampliar producción sin un nuevo rojo aprobado.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T19 cerradas. T20 tiene sus nueve slices implementados y la verificación Docker final completa; revisión final del desarrollador pendiente. No abrir T21 como producción hasta cerrar esa revisión.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T20 — SQL de datos, conservación y validación histórica |
-| Estado / bloqueo concreto | T01–T19 cerradas. T20 activa; dos slices verificados. Tercer slice `mode=set`/lineage aprobado e implementado en `compile-data.ts`; verificación Docker pendiente. Parámetros/codecs, `data-validation.ts`, ejecución de conservation checks y checkpoints quedan posteriores. |
-| Revisión del rojo y autorización vigente | 2026-09-30: el desarrollador aprobó explícitamente `T20 third red approved`. La autorización se consumió implementando sólo `mode=set`/lineage; cualquier siguiente alcance requiere otro rojo y aprobación explícita. |
-| Archivos modificados durante implementación | `consumers/postgres-migrations/src/compile-data.ts` y handoffs T20. El test `compile-data-set-test.ts` ya provenía del rojo aprobado. No se implementaron parámetros/codecs, `data-validation.ts`, conservation checks ni checkpoints. |
-| Última evidencia válida / revisión de código | Segundo slice: desarrollador reportó `All tests green` sin conteos adjuntos. Tercer slice: validación local enfocada limpia, 4/4 row regression + 4/4 set/lineage green; verificación Docker completa aún pendiente. |
-| Próxima acción | Aplicar el implementation patch y ejecutar typecheck consumidor, suite consumidor y suite raíz. No preparar/implementar el siguiente slice hasta registrar esta verificación. |
+| Tarea activa | T20 — SQL de datos, conservación y validación histórica; revisión final pendiente |
+| Estado / bloqueo concreto | T01–T19 cerradas. T20: nueve slices implementados y verificados. Verificación Docker final del 2026-09-30: typecheck consumidor limpio, core 146 passing y consumer 122 passing = 268 total. Sólo falta la revisión/aprobación final del desarrollador. |
+| Revisión del rojo y autorización vigente | Los nueve rojos de T20 fueron aprobados e implementados dentro de su alcance; la autorización del noveno se consumió al integrar checkpoints en el runner. No hay alcance de producción T21 autorizado todavía. |
+| Archivos modificados durante implementación | T20 quedó implementada en sus archivos de compilación/validación y en el runner transaccional existente; esta reanudación sólo registra la verificación final en documentación/evidencia. |
+| Última evidencia válida / revisión de código | Docker 2026-09-30: typecheck consumidor limpio; `T20 authoring checkpoints in the transactional runner` 5/5; core 146 passing; consumer 122 passing; total 268 passing, sin fallos reportados. |
+| Próxima acción | Revisión final del desarrollador de T20. Si responde `T20 approved`, registrar la revisión y preparar el primer rojo de T21 antes de cualquier implementación T21. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -322,11 +322,11 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** behaviourOf/TypeBehaviour, instanceProblems/validateInstance y withValidators existentes; [aida-behaviour.ts](../examples/common/aida-behaviour.ts), [aida-validators.ts](../examples/common/aida-validators.ts) y sus tests; motor T11/T13.
 - **Entregar:** `compile-data.ts`, `data-validation.ts`, `validation-artifact.ts`; staging, escritura SQL, checkpoints y módulos históricos por hash.
 - **Aceptar:** __source_id/lineage/cobertura válidos; duplicados o match ambiguo fallan antes de UPDATE; null/''/'null' distintos; validar fila completa y PK efectiva; tipo correcto/regla inválida revierte; Problem regular también bloquea; cambio de módulo invalida evidencia; originales preservados en transferencias cíclicas.
-- **Evidencia:** [Evidencia T20](migraciones-evidencia/T20.md). Siete slices verificados. Verificación autoritativa del séptimo slice el 2026-09-30: typecheck consumidor limpio, `T20 complete destination writes` 4/4 passing, core 146 passing y consumer 113 passing = 259 total. Red #8 de conservación/preservación preparada; sin aprobación ni implementación. Checkpoints + runner quedan para red #9; T20 global permanece abierta.
-- [ ] Implementación
-- [ ] Verificación
+- **Evidencia:** [Evidencia T20](migraciones-evidencia/T20.md). Los nueve slices están implementados y verificados. Verificación Docker final del 2026-09-30: typecheck consumidor limpio, `T20 authoring checkpoints in the transactional runner` 5/5 passing, core 146 passing y consumer 122 passing = 268 total. T20 permanece abierta sólo por la revisión final del desarrollador.
+- [x] Implementación
+- [x] Verificación
 - [ ] Revisión del desarrollador
-- **Estado de sesión T20 (2026-09-30):** séptimo slice verificado en Docker. Red #8 preparada sólo con test/handoff para conservación/preservación: capturas before previas a writes, comparación null-sensitive de campos escritos, preservación de filas/columnas fuera de alcance y transporte exacto de `conservationChecks` hacia la futura capa de checkpoints. Producción no autorizada hasta aprobación explícita; checkpoints + runner quedan para red #9.
+- **Estado de sesión T20 (2026-09-30):** noveno slice verificado en Docker junto con la regresión completa: checkpoints integrados en la misma transacción, rollback/fail-closed y validación histórica permanecen verdes; core 146 + consumer 122 = 268 passing. No iniciar producción T21 hasta registrar la revisión final de T20.
 
 ## T21
 

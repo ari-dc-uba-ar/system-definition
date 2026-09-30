@@ -192,8 +192,11 @@ function ok(result: ValidationResult<CompiledDataMigration>): ConservationShape 
     return result.value as unknown as ConservationShape;
 }
 
-function phaseStatements(compiled: ConservationShape, phase: string): readonly StatementShape[] {
-    return compiled.statements.filter(statement => statement.phase === phase);
+function phaseSql(compiled: ConservationShape, phase: string): string {
+    return compiled.statements
+        .filter(statement => statement.phase === phase)
+        .map(statement => statement.text)
+        .join("\n");
 }
 
 describe("T20 data conservation and preservation compilation", () => {
@@ -215,7 +218,7 @@ describe("T20 data conservation and preservation compilation", () => {
 
     it("verifies each written field against the materialized output with null-sensitive equality", () => {
         const compiled = ok(compileDataMigration(migration, context()));
-        const verification = phaseStatements(compiled, "verify").join("\n");
+        const verification = phaseSql(compiled, "verify");
 
         assert.match(verification, /IS DISTINCT FROM/);
         assert.match(verification, /"left_value"/);
@@ -226,7 +229,7 @@ describe("T20 data conservation and preservation compilation", () => {
 
     it("proves untouched columns and rows outside the write scope are unchanged from the before capture", () => {
         const compiled = ok(compileDataMigration(migration, context()));
-        const verification = phaseStatements(compiled, "verify").join("\n");
+        const verification = phaseSql(compiled, "verify");
 
         assert.match(verification, /"note"/);
         assert.match(verification, /IS DISTINCT FROM/);
