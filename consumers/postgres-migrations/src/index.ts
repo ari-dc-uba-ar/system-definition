@@ -28,3 +28,5 @@ export * from "./source-selection";
 export * from "./authoring-cli";
 
 export * from "./validation-artifact";
+
+export * from "./compile-data";

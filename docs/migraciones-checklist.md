@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T19 cerradas. T20 activa; primer rojo aprobado e implementado, verificación Docker del slice pendiente.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T19 cerradas. T20 activa; primer y segundo slices verificados. Tercer rojo `mode=set`/lineage aprobado e implementado; verificación Docker del slice pendiente. No ampliar producción sin un nuevo rojo aprobado.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
 | Tarea activa | T20 — SQL de datos, conservación y validación histórica |
-| Estado / bloqueo concreto | T01–T19 cerradas. T20 activa; primer slice `validation-artifact.ts` aprobado e implementado. Verificación Docker del slice pendiente; `compile-data.ts`, `data-validation.ts`, staging/checkpoints siguen para reds posteriores. |
-| Revisión del rojo y autorización vigente | 2026-09-29: desarrollador aprobó explícitamente el primer rojo T20 con `T20 first red approved`; autorización limitada a `validation-artifact.ts`. |
-| Archivos modificados durante implementación | T20 primer slice: `consumers/postgres-migrations/src/validation-artifact.ts`, export público en `src/index.ts`, test y handoff T20. No se implementó staging, `compile-data.ts`, `data-validation.ts` ni checkpoints. |
-| Última evidencia válida / revisión de código | 2026-09-29: primer slice T20 compila en check estricto focal y smoke runtime local verde; suite Docker del repo pendiente. Última regresión autoritativa sigue siendo T19: 146 core + 85 consumer = 231 passing. |
-| Próxima acción | Aplicar implementación del primer slice y ejecutar typecheck/suite Docker. Si queda verde, registrar verificación antes de preparar el siguiente red T20. |
+| Estado / bloqueo concreto | T01–T19 cerradas. T20 activa; dos slices verificados. Tercer slice `mode=set`/lineage aprobado e implementado en `compile-data.ts`; verificación Docker pendiente. Parámetros/codecs, `data-validation.ts`, ejecución de conservation checks y checkpoints quedan posteriores. |
+| Revisión del rojo y autorización vigente | 2026-09-30: el desarrollador aprobó explícitamente `T20 third red approved`. La autorización se consumió implementando sólo `mode=set`/lineage; cualquier siguiente alcance requiere otro rojo y aprobación explícita. |
+| Archivos modificados durante implementación | `consumers/postgres-migrations/src/compile-data.ts` y handoffs T20. El test `compile-data-set-test.ts` ya provenía del rojo aprobado. No se implementaron parámetros/codecs, `data-validation.ts`, conservation checks ni checkpoints. |
+| Última evidencia válida / revisión de código | Segundo slice: desarrollador reportó `All tests green` sin conteos adjuntos. Tercer slice: validación local enfocada limpia, 4/4 row regression + 4/4 set/lineage green; verificación Docker completa aún pendiente. |
+| Próxima acción | Aplicar el implementation patch y ejecutar typecheck consumidor, suite consumidor y suite raíz. No preparar/implementar el siguiente slice hasta registrar esta verificación. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -322,10 +322,11 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** behaviourOf/TypeBehaviour, instanceProblems/validateInstance y withValidators existentes; [aida-behaviour.ts](../examples/common/aida-behaviour.ts), [aida-validators.ts](../examples/common/aida-validators.ts) y sus tests; motor T11/T13.
 - **Entregar:** `compile-data.ts`, `data-validation.ts`, `validation-artifact.ts`; staging, escritura SQL, checkpoints y módulos históricos por hash.
 - **Aceptar:** __source_id/lineage/cobertura válidos; duplicados o match ambiguo fallan antes de UPDATE; null/''/'null' distintos; validar fila completa y PK efectiva; tipo correcto/regla inválida revierte; Problem regular también bloquea; cambio de módulo invalida evidencia; originales preservados en transferencias cíclicas.
-- **Evidencia:** [Evidencia T20](migraciones-evidencia/T20.md). Primer slice histórico verificado el 2026-09-29: 146 core + 89 consumer = 235 passing. Segundo rojo propuesto para `compile-data.ts` row-mode/staging, pendiente de aprobación; `mode=set`/lineage, `data-validation.ts` y checkpoints siguen posteriores. T20 global permanece abierta.
+- **Evidencia:** [Evidencia T20](migraciones-evidencia/T20.md). Tres slices verificados; cuarto rojo de `data-validation.ts` preparado y pendiente de aprobación; T20 global permanece abierta.
 - [ ] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador
+- **Estado de sesión T20 (2026-09-30):** tercer slice verificado con typecheck limpio, 4/4 set-mode, 4/4 row-mode y 146 core + 97 consumer = 243 passing. Cuarto rojo `data-validation.ts` preparado; producción de ese alcance no está autorizada hasta aprobación explÃ­cita.
 
 ## T21
 
