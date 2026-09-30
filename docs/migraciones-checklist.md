@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T18 cerradas. T18 recibió revisión final explícita con `T18 approved` el 2026-09-29. T19 queda como tarea activa y debe comenzar por lectura/reutilización y su propio rojo antes de implementar.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T18 cerradas. T19 está implementada y verificada globalmente; queda únicamente la revisión final explícita del desarrollador antes de cerrar T19 y activar T20.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
 | Tarea activa | T19 — Autoría tipada de migraciones de datos |
-| Estado / bloqueo concreto | T01–T18 cerradas. T19 activa. Primer y segundo slice verificados (223 passing). Tercer red propuesto para `source-selection.ts`; producción de esa frontera aún no autorizada. `authoring-cli.ts` permanece fuera de alcance. |
-| Revisión del rojo y autorización vigente | T18 cerrada con `T18 approved`. T19 primer y segundo slice aprobados/verificados. Tercer red de `source-selection.ts` propuesto pero no aprobado; no crear ese módulo hasta autorización explícita. |
-| Archivos modificados durante implementación | Primer y segundo slice T19 verificados. Tercer red añade únicamente `test/source-selection-test.ts` y handoff; primera ejecución observó el `TS2307` intencional más nueve `TS18046` derivados del helper genérico del test. Se limpió sólo el test/handoff; `src/source-selection.ts` y `authoring-cli.ts` aún no existen. |
-| Última evidencia válida / revisión de código | 2026-09-29: segundo slice T19 verificado por el desarrollador. `npx tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` salió limpio y `docker compose exec node npm test` terminó con 146 core + 77 consumer = 223 passing. El bloque runtime T19 sigue 4/4 verde y los nueve errores estáticos esperados ya son rechazados por TypeScript. |
-| Próxima acción | Reejecutar el tercer red tras la limpieza del helper. El fallo esperado es sólo `TS2307` para `../src/source-selection`; revisar/aprobar antes de implementar selección/query. `authoring-cli.ts` queda después. |
+| Estado / bloqueo concreto | T01–T18 cerradas. T19 implementada y verificada globalmente. Suite autoritativa final: 146 core + 85 consumer = 231 passing; queda únicamente la revisión final explícita del desarrollador. |
+| Revisión del rojo y autorización vigente | T18 cerrada con `T18 approved`. Los cuatro slices T19 tuvieron rojo aprobado; el final fue aprobado explícitamente con `T19 final red approved` y ya está implementado/verificado. T20 no está autorizado hasta `T19 approved`. |
+| Archivos modificados durante implementación | T19 final: `src/authoring-cli.ts`, export público en `src/index.ts` y handoff. El test rojo `test/authoring-cli-test.ts` ya estaba aprobado. No se añadió ejecución SQL, publish, apply, verify ni acceso a DB. |
+| Última evidencia válida / revisión de código | 2026-09-29: typecheck consumidor `tsc --noEmit` limpio; bloque `T19 reproducible add-data authoring CLI` 4/4 passing; suite raíz 146 core + 85 consumer = 231 passing. Los contratos T19 runtime, estáticos y `source-selection` permanecen verdes. |
+| Próxima acción | Revisión final del desarrollador. Si confirma `T19 approved`, cerrar T19 en el handoff y activar T20 sin iniciar todavía su rojo/implementación. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -309,9 +309,9 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** patrones ExactFieldsOf/ValidatorNamesFor/Def-Info; EntityInstanceType/EntityInfoOf desde contexto real. Nombres/recursos T04 y artifacts T06.
 - **Entregar:** `migration-authoring.ts`, `authoring-contract.ts`, `source-selection.ts`, `authoring-cli.ts`; add-data, fuentes/outputs múltiples, parámetros, mappings y decisiones explícitas de filas.
 - **Aceptar:** data-only, sin fuente de negocio, combinación/separación de columnas; typo/source de lado incorrecto/nullability/tipo incompatible rechazados; joins y políticas no se inventan; row/set y lineage tipados; SQL custom con contrato permitido; ninguna transformación TypeScript.
-- **Evidencia:** [Evidencia T19](migraciones-evidencia/T19.md). Primer slice runtime/serializable y segundo slice de exactitud/compatibilidad estática aprobados, implementados y verificados el 2026-09-29. Typecheck consumidor limpio y suite raíz 146 core + 77 consumer = 223 passing. `source-selection` y `authoring-cli` siguen para reds posteriores; T19 global permanece abierto.
-- [ ] Implementación
-- [ ] Verificación
+- **Evidencia:** [Evidencia T19](migraciones-evidencia/T19.md). Los cuatro slices T19 están implementados y verificados. Verificación global autoritativa del 2026-09-29: typecheck consumidor limpio, bloque final `T19 reproducible add-data authoring CLI` 4/4 passing y suite raíz 146 core + 85 consumer = 231 passing; runtime/serialización, contrato estático y `source-selection` permanecen verdes. Revisión final del desarrollador pendiente.
+- [x] Implementación
+- [x] Verificación
 - [ ] Revisión del desarrollador
 
 ## T20

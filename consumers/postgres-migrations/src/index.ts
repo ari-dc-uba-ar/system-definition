@@ -22,3 +22,7 @@ export * from "./infer";
 
 export * from "./authoring";
 export * from "./migration-authoring";
+
+export * from "./source-selection";
+
+export * from "./authoring-cli";
