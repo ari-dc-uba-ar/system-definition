@@ -21,3 +21,4 @@ export * from "./authoring-history";
 export * from "./infer";
 
 export * from "./authoring";
+export * from "./migration-authoring";

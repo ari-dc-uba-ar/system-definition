@@ -26,11 +26,11 @@ Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo
 | Campo | Registro actual |
 | --- | --- |
 | Tarea activa | T19 — Autoría tipada de migraciones de datos |
-| Estado / bloqueo concreto | T01–T18 cerradas. T19 activa. T19 no tiene rojo aprobado ni autorización de implementación; debe comenzar por lectura/reutilización y un red propio antes de tocar producción. |
-| Revisión del rojo y autorización vigente | T18: primer, segundo y tercer reds aprobados, implementados, verificados y con revisión final explícita `T18 approved`. T19: sin red aprobado y sin autorización de implementación. |
-| Archivos modificados durante implementación | T18 cerrada: primera frontera `src/authoring-contract.ts`, `src/infer.ts`; segunda `src/authoring-history.ts`; tercera `src/authoring.ts` y ampliación de contratos T18 en `src/authoring-contract.ts`; export público en `src/index.ts`; reds `test/infer-test.ts`, `test/authoring-history-test.ts`, `test/authoring-compile-test.ts`; handoff en checklist/evidencia T18. T19 aún sin cambios. |
-| Última evidencia válida / revisión de código | T18 verificación global autoritativa del 2026-09-29: `tsc --noEmit` del consumidor sin diagnósticos; suite raíz verde con 146 core + 73 consumidor = 219 passing; los cuatro casos `T18 residual structure planning and compileDraft boundary` pasan y las dos fronteras T18 anteriores permanecen verdes. |
-| Próxima acción | Leer contratos/implementación indicados por T19, identificar reutilización obligatoria y preparar el primer red T19. No implementar T19 hasta que ese red reciba aprobación explícita. |
+| Estado / bloqueo concreto | T01–T18 cerradas. T19 activa. Primer y segundo slice verificados (223 passing). Tercer red propuesto para `source-selection.ts`; producción de esa frontera aún no autorizada. `authoring-cli.ts` permanece fuera de alcance. |
+| Revisión del rojo y autorización vigente | T18 cerrada con `T18 approved`. T19 primer y segundo slice aprobados/verificados. Tercer red de `source-selection.ts` propuesto pero no aprobado; no crear ese módulo hasta autorización explícita. |
+| Archivos modificados durante implementación | Primer y segundo slice T19 verificados. Tercer red añade únicamente `test/source-selection-test.ts` y handoff; primera ejecución observó el `TS2307` intencional más nueve `TS18046` derivados del helper genérico del test. Se limpió sólo el test/handoff; `src/source-selection.ts` y `authoring-cli.ts` aún no existen. |
+| Última evidencia válida / revisión de código | 2026-09-29: segundo slice T19 verificado por el desarrollador. `npx tsc -p consumers/postgres-migrations/tsconfig.json --noEmit` salió limpio y `docker compose exec node npm test` terminó con 146 core + 77 consumer = 223 passing. El bloque runtime T19 sigue 4/4 verde y los nueve errores estáticos esperados ya son rechazados por TypeScript. |
+| Próxima acción | Reejecutar el tercer red tras la limpieza del helper. El fallo esperado es sólo `TS2307` para `../src/source-selection`; revisar/aprobar antes de implementar selección/query. `authoring-cli.ts` queda después. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -309,7 +309,7 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** patrones ExactFieldsOf/ValidatorNamesFor/Def-Info; EntityInstanceType/EntityInfoOf desde contexto real. Nombres/recursos T04 y artifacts T06.
 - **Entregar:** `migration-authoring.ts`, `authoring-contract.ts`, `source-selection.ts`, `authoring-cli.ts`; add-data, fuentes/outputs múltiples, parámetros, mappings y decisiones explícitas de filas.
 - **Aceptar:** data-only, sin fuente de negocio, combinación/separación de columnas; typo/source de lado incorrecto/nullability/tipo incompatible rechazados; joins y políticas no se inventan; row/set y lineage tipados; SQL custom con contrato permitido; ninguna transformación TypeScript.
-- **Evidencia:** Pendiente.
+- **Evidencia:** [Evidencia T19](migraciones-evidencia/T19.md). Primer slice runtime/serializable y segundo slice de exactitud/compatibilidad estática aprobados, implementados y verificados el 2026-09-29. Typecheck consumidor limpio y suite raíz 146 core + 77 consumer = 223 passing. `source-selection` y `authoring-cli` siguen para reds posteriores; T19 global permanece abierto.
 - [ ] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador

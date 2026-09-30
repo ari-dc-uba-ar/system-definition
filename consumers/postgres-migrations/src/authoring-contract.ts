@@ -6,24 +6,13 @@ import type {
     ValidationResult,
 } from "system-definition";
 import type {PgObjectIdentity, PgSchemaInfo} from "./pg-schema";
+import type {DataMigrationInfo, FieldRefInfo, QueryRefInfo} from "./migration-authoring";
 
-export type SnapshotSide = "from" | "to";
+export type {FieldRefInfo, QueryRefInfo, SnapshotSide} from "./migration-authoring";
 
 export type QueryResourceInfo = {
     kind: "query";
     file: FileInfo;
-};
-
-export type QueryRefInfo = {
-    name: string;
-    kind: "query";
-    contentHash: string;
-};
-
-export type FieldRefInfo = {
-    side: SnapshotSide;
-    entity: string;
-    field: string;
 };
 
 export type AuthoringBaseInfo = {
@@ -84,7 +73,7 @@ export type MigrationDraftInfo = {
     revisionHash: string;
     renames: readonly RenameInfo[];
     changes: readonly StructureChangeInfo[];
-    data: readonly unknown[];
+    data: readonly DataMigrationInfo[];
     decisions: readonly unknown[];
     manual: readonly unknown[];
     pending: readonly PendingQuestionInfo[];
