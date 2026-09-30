@@ -1,10 +1,12 @@
 import {
     problem,
+    type PersistenceInfo,
     type Problem,
     type SystemSnapshotInfo,
     type ValidationResult,
 } from "system-definition";
 import type {PortInfo} from "./migration-authoring";
+import type {StorageContext} from "./pg-schema";
 import type {ValidationModule} from "./validation-artifact";
 
 export type MachineValue = string | null;
@@ -159,4 +161,112 @@ export function validateMachineEntityRows(
         row => runtime.validateEntityRow(entity, row),
         `entity:${entity}`,
     );
+}
+
+export type MachineReadProjectionField = {
+    field: string;
+    sourceColumn: string;
+    readExpression: string;
+};
+
+export type MachineReadProjectionRequest = {
+    sql: string;
+    entity: string;
+    fields: readonly MachineReadProjectionField[];
+};
+
+export type MachineReadProjector = {
+    project(request: MachineReadProjectionRequest): ValidationResult<string>;
+};
+
+function utf16Compare(left: string, right: string): number {
+    return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function compileMachineEntityReadQuery(
+    snapshot: SystemSnapshotInfo,
+    entity: string,
+    persistence: PersistenceInfo,
+    storage: StorageContext,
+    sourceSql: string,
+    projector: MachineReadProjector,
+): ValidationResult<string> {
+    const entityInfo = snapshot.entities[entity];
+    if (entityInfo === undefined) return invalid("unknown historical entity", {entity});
+
+    const representation = persistence.representations[storage.representation];
+    if (representation === undefined) {
+        return invalid("physical type representation is missing", {representation: storage.representation});
+    }
+
+    const fields: MachineReadProjectionField[] = [];
+    for (const fieldName of Object.keys(entityInfo.fields).sort(utf16Compare)) {
+        const field = entityInfo.fields[fieldName]!;
+        const physicalName = representation[field.type];
+        if (physicalName === undefined || physicalName.length === 0) {
+            return invalid("physical type mapping is missing", {
+                entity,
+                field: fieldName,
+                logicalType: field.type,
+                representation: storage.representation,
+            });
+        }
+        if (storage.physicalTypes[physicalName] === undefined) {
+            return invalid("physical type is missing from storage context", {
+                entity,
+                field: fieldName,
+                physicalType: physicalName,
+            });
+        }
+
+        const codec = storage.machineCodecs?.[physicalName];
+        if (codec === undefined) {
+            return invalid("machine codec is missing", {
+                entity,
+                field: fieldName,
+                physicalType: physicalName,
+            });
+        }
+        if (codec.readExpression.length === 0) {
+            return invalid("machine codec read expression is missing", {
+                entity,
+                field: fieldName,
+                physicalType: physicalName,
+            });
+        }
+        if (codec.transportType.length === 0 || storage.physicalTypes[codec.transportType] === undefined) {
+            return invalid("codec transport type is missing", {
+                entity,
+                field: fieldName,
+                physicalType: physicalName,
+                transportType: codec.transportType,
+            });
+        }
+
+        fields.push({
+            field: fieldName,
+            sourceColumn: fieldName,
+            readExpression: codec.readExpression,
+        });
+    }
+
+    let projected: ValidationResult<string>;
+    try {
+        projected = projector.project({
+            sql: sourceSql,
+            entity,
+            fields,
+        });
+    } catch (error) {
+        return invalid("machine read projector threw", {
+            entity,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
+
+    if (!projected.ok) return projected;
+    if (typeof projected.value !== "string" || projected.value.length === 0) {
+        return invalid("machine read projector returned invalid SQL", {entity});
+    }
+    return projected;
 }
