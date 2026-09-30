@@ -322,11 +322,11 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** behaviourOf/TypeBehaviour, instanceProblems/validateInstance y withValidators existentes; [aida-behaviour.ts](../examples/common/aida-behaviour.ts), [aida-validators.ts](../examples/common/aida-validators.ts) y sus tests; motor T11/T13.
 - **Entregar:** `compile-data.ts`, `data-validation.ts`, `validation-artifact.ts`; staging, escritura SQL, checkpoints y módulos históricos por hash.
 - **Aceptar:** __source_id/lineage/cobertura válidos; duplicados o match ambiguo fallan antes de UPDATE; null/''/'null' distintos; validar fila completa y PK efectiva; tipo correcto/regla inválida revierte; Problem regular también bloquea; cambio de módulo invalida evidencia; originales preservados en transferencias cíclicas.
-- **Evidencia:** [Evidencia T20](migraciones-evidencia/T20.md). Tres slices verificados; cuarto rojo de `data-validation.ts` preparado y pendiente de aprobación; T20 global permanece abierta.
+- **Evidencia:** [Evidencia T20](migraciones-evidencia/T20.md). Cinco slices verificados. Verificación autoritativa del quinto slice el 2026-09-30: typecheck consumidor limpio, `T20 typed migration parameters and codec transport` 4/4 passing, core 146 passing y consumer 105 passing = 251 total. Los suites row/set, `data-validation.ts` y artifacts históricos permanecen verdes. Conservation checks, inserts/`whenMissing=insert`, proyección histórica de lectura y checkpoints siguen para reds posteriores; T20 global permanece abierta.
 - [ ] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador
-- **Estado de sesión T20 (2026-09-30):** tercer slice verificado con typecheck limpio, 4/4 set-mode, 4/4 row-mode y 146 core + 97 consumer = 243 passing. Cuarto rojo `data-validation.ts` preparado; producción de ese alcance no está autorizada hasta aprobación explÃ­cita.
+- **Estado de sesión T20 (2026-09-30):** quinto slice de parámetros tipados + transporte de codecs verificado con Docker: typecheck limpio y 146 core + 105 consumer = 251 passing. Próximo red pendiente: proyección histórica de lectura mediante `readExpression`; conservation checks, inserts/`whenMissing=insert` y checkpoints siguen después.
 
 ## T21
 

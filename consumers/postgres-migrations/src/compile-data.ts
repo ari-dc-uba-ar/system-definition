@@ -1,11 +1,12 @@
 import {createHash} from "node:crypto";
-import {problem, type ValidationResult} from "system-definition";
+import {problem, type PersistenceInfo, type ValidationResult} from "system-definition";
 import type {
     DataMigrationInfo,
     QueryRefInfo,
     TransformationInfo,
     WriteInfo,
 } from "./migration-authoring";
+import type {MachineCodecInfo, PgTypeRepresentation, StorageContext} from "./pg-schema";
 
 export type RelationRewriteRequest = {
     sql: string;
@@ -32,6 +33,8 @@ export type CompileDataContext = {
     transformationQuery: ResolvedQuery;
     lineageQuery: ResolvedQuery | null;
     relationRewriter: RelationRewriter;
+    storage?: StorageContext;
+    persistence?: PersistenceInfo;
 };
 
 export type CompiledDataStatement = {
@@ -120,9 +123,6 @@ function validateBoundary(
             return failure("resolved lineage query reference does not match the transformation contract");
         }
     }
-    if (Object.keys(context.transformation.parameters).length !== 0 || Object.keys(migration.arguments).length !== 0) {
-        return failure("typed transformation parameters are not part of this compiler slice");
-    }
     if (!sameQueryRef(migration.source.query, context.sourceQuery.ref)) {
         return failure("resolved source query reference does not match the migration contract");
     }
@@ -171,13 +171,135 @@ function captureSql(
     ].join("\n");
 }
 
-function parametersSql(parameters: string): string {
-    // Row-mode without declared parameters still gets a one-row logical relation so the
-    // parser/AST rewriter always has the same two relation names available.
-    return [
-        `CREATE TEMP TABLE ${quoteIdentifier(parameters)} ON COMMIT DROP AS`,
-        `SELECT 1::integer AS "__present";`,
-    ].join("\n");
+type CompiledParameters = {
+    text: string;
+    values: readonly (string | null)[];
+};
+
+function utf16Compare(left: string, right: string): number {
+    return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function sameDomain(
+    left: {side: string; type: string; nullable: boolean},
+    right: {side: string; type: string; nullable: boolean},
+): boolean {
+    return left.side === right.side && left.type === right.type && left.nullable === right.nullable;
+}
+
+function pgTypeSql(type: PgTypeRepresentation): ValidationResult<string> {
+    if (type.schema.length === 0 || type.name.length === 0 || type.schema.includes("\0") || type.name.includes("\0")) {
+        return failure("physical type has an invalid PostgreSQL identity");
+    }
+    if (type.modifiers.some(modifier => !/^[0-9]+$/.test(modifier))) {
+        return failure("physical type has an unsupported PostgreSQL modifier");
+    }
+    const modifiers = type.modifiers.length === 0 ? "" : `(${type.modifiers.join(", ")})`;
+    return {ok: true, value: `${quoteIdentifier(type.schema)}.${quoteIdentifier(type.name)}${modifiers}`};
+}
+
+function requireCodec(
+    storage: StorageContext,
+    physicalName: string,
+): ValidationResult<{codec: MachineCodecInfo; physical: PgTypeRepresentation; transport: PgTypeRepresentation}> {
+    const physical = storage.physicalTypes[physicalName];
+    if (physical === undefined) {
+        return failure("physical type mapping is missing", {physicalType: physicalName});
+    }
+    const codec = storage.machineCodecs?.[physicalName];
+    if (codec === undefined || codec.readExpression.length === 0 || codec.transportType.length === 0) {
+        return failure("machine codec contract is missing", {physicalType: physicalName});
+    }
+    const transport = storage.physicalTypes[codec.transportType];
+    if (transport === undefined) {
+        return failure("codec transport type is missing", {
+            physicalType: physicalName,
+            transportType: codec.transportType,
+        });
+    }
+    return {ok: true, value: {codec, physical, transport}};
+}
+
+function compileParameters(
+    migration: DataMigrationInfo,
+    context: CompileDataContext,
+    parameters: string,
+): ValidationResult<CompiledParameters> {
+    const parameterNames = Object.keys(context.transformation.parameters).sort(utf16Compare);
+    const argumentNames = Object.keys(migration.arguments).sort(utf16Compare);
+
+    if (parameterNames.length === 0 && argumentNames.length === 0) {
+        // Parameter-free transformations still receive a one-row logical relation so every
+        // query is rewritten against the same two private relation names.
+        return {
+            ok: true,
+            value: {
+                text: [
+                    `CREATE TEMP TABLE ${quoteIdentifier(parameters)} ON COMMIT DROP AS`,
+                    `SELECT 1::integer AS "__present";`,
+                ].join("\n"),
+                values: [],
+            },
+        };
+    }
+
+    if (parameterNames.length !== argumentNames.length
+        || parameterNames.some((name, index) => name !== argumentNames[index])) {
+        return failure("migration arguments must match transformation parameters exactly");
+    }
+    if (context.storage === undefined || context.persistence === undefined) {
+        return failure("typed parameters require persistence and storage context");
+    }
+
+    const representation = context.persistence.representations[context.storage.representation];
+    if (representation === undefined) {
+        return failure("physical type representation is missing", {representation: context.storage.representation});
+    }
+
+    const expressions: string[] = [];
+    const values: (string | null)[] = [];
+    for (let index = 0; index < parameterNames.length; index++) {
+        const name = parameterNames[index]!;
+        const domain = context.transformation.parameters[name]!;
+        const argument = migration.arguments[name]!;
+        if (!sameDomain(domain, argument.domain)) {
+            return failure("migration argument domain does not match transformation parameter", {parameter: name});
+        }
+        if (argument.value === null && !domain.nullable) {
+            return failure("non-null transformation parameter received null", {parameter: name});
+        }
+
+        const physicalName = representation[domain.type];
+        if (typeof physicalName !== "string" || physicalName.length === 0) {
+            return failure("physical type mapping is missing", {parameter: name, logicalType: domain.type});
+        }
+        const resolved = requireCodec(context.storage, physicalName);
+        if (!resolved.ok) return resolved;
+        const transportSql = pgTypeSql(resolved.value.transport);
+        if (!transportSql.ok) return transportSql;
+        const physicalSql = pgTypeSql(resolved.value.physical);
+        if (!physicalSql.ok) return physicalSql;
+
+        const placeholder = `$${index + 1}`;
+        const transportCast = `${placeholder}::${transportSql.value}`;
+        const expression = resolved.value.codec.transportType === physicalName
+            ? transportCast
+            : `${transportCast}::${physicalSql.value}`;
+        expressions.push(`    ${expression} AS ${quoteIdentifier(name)}`);
+        values.push(argument.value);
+    }
+
+    return {
+        ok: true,
+        value: {
+            text: [
+                `CREATE TEMP TABLE ${quoteIdentifier(parameters)} ON COMMIT DROP AS`,
+                "SELECT",
+                expressions.join(",\n") + ";",
+            ].join("\n"),
+            values,
+        },
+    };
 }
 
 function transformSql(output: string, rewritten: string): string {
@@ -320,6 +442,9 @@ export function compileDataMigration(
         output: `${stem}_output`,
         lineage: context.transformation.mode === "set" ? `${stem}_lineage` : null,
     } as const;
+    const parameterStatement = compileParameters(migration, context, temporary.parameters);
+    if (!parameterStatement.ok) return parameterStatement;
+
     const relations = {
         migration_input: temporary.input,
         migration_parameters: temporary.parameters,
@@ -343,7 +468,7 @@ export function compileDataMigration(
 
     const statements: CompiledDataStatement[] = [
         {phase: "capture", text: captureSql(migration, context.sourceQuery.text, temporary.input), values: []},
-        {phase: "parameters", text: parametersSql(temporary.parameters), values: []},
+        {phase: "parameters", text: parameterStatement.value.text, values: parameterStatement.value.values},
         {phase: "transform", text: transformSql(temporary.output, rewritten.value), values: []},
     ];
     if (temporary.lineage !== null && rewrittenLineage !== null) {

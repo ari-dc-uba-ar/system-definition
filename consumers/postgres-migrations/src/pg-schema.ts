@@ -14,6 +14,11 @@ export type PgTypeRepresentation = {
     modifiers: readonly string[];
 };
 
+export type MachineCodecInfo = {
+    readExpression: string;
+    transportType: string;
+};
+
 export type PgObjectIdentity = {
     schema: string;
     kind: string;
@@ -133,6 +138,7 @@ export type ResolvedSqlResource = {
 export type StorageContext = {
     representation: string;
     physicalTypes: Readonly<Record<string, PgTypeRepresentation>>;
+    machineCodecs?: Readonly<Record<string, MachineCodecInfo>>;
     schema: string;
     environment: EnvironmentInfo;
     resources: Readonly<Record<string, ResolvedSqlResource>>;

@@ -30,3 +30,5 @@ export * from "./authoring-cli";
 export * from "./validation-artifact";
 
 export * from "./compile-data";
+
+export * from "./data-validation";
