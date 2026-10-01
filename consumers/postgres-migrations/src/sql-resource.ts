@@ -261,6 +261,32 @@ export function prepareSqlResource(
     };
 }
 
+/**
+ * Authoring-time validation for handwritten migration SQL.  It reuses the
+ * transaction-safe resource parser and additionally forbids CASCADE so a
+ * manual destructive step cannot hide dependency work from the authored
+ * operation graph.
+ */
+export function prepareManualSqlResource(
+    resource: ResolvedSqlResource,
+): ValidationResult<PreparedSqlResource> {
+    const prepared = prepare(resource, "sql");
+    if (!prepared.ok) return prepared;
+    if (prepared.value.statements.some(statement => statement.words.includes("cascade"))) {
+        return fail("migration.unsupportedSql", {
+            name: resource.ref.name,
+            reason: "CASCADE is not allowed in handwritten migration SQL; dependencies must be explicit",
+        });
+    }
+    return {
+        ok: true,
+        value: {
+            ref: prepared.value.ref,
+            statements: prepared.value.statements.map(one => ({text: one.text})),
+        },
+    };
+}
+
 export async function executePreparedSqlResource(
     session: PgSession,
     resource: PreparedSqlResource,

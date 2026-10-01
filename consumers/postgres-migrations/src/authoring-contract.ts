@@ -71,6 +71,19 @@ export type PendingQuestionInfo = {
     messageKey: string;
 };
 
+export type ManualStepInfo = {
+    id: string;
+    run: ResourceRefInfo;
+    dependsOn: readonly string[];
+    implementsChanges: readonly string[];
+    reads: readonly PgObjectIdentity[];
+    writes: readonly PgObjectIdentity[];
+    destroys: readonly PgObjectIdentity[];
+    before: readonly ResourceRefInfo[];
+    after: readonly ResourceRefInfo[];
+    rowChecks: readonly unknown[];
+};
+
 /**
  * T18 owns the structural authoring base. Data migrations and manual SQL are
  * refined by later tasks; T21 makes destructive decisions explicit here while
@@ -85,7 +98,7 @@ export type MigrationDraftInfo = {
     changes: readonly StructureChangeInfo[];
     data: readonly DataMigrationInfo[];
     decisions: readonly DestructiveDecisionInfo[];
-    manual: readonly unknown[];
+    manual: readonly ManualStepInfo[];
     pending: readonly PendingQuestionInfo[];
 };
 
@@ -98,6 +111,7 @@ export interface AuthoringRuntime {
     loadRelease(ref: ReleaseRefInfo): Promise<ValidationResult<AuthoringReleaseBundle>>;
     reconstructHistory(head: ReleaseRefInfo): Promise<ValidationResult<PgSchemaInfo>>;
     readQuery(ref: QueryRefInfo): Promise<ValidationResult<string>>;
+    readSql?(ref: ResourceRefInfo): Promise<ValidationResult<string>>;
     inspectDraft(draft: MigrationDraftInfo): Promise<ValidationResult<PgSchemaInfo>>;
 }
 
