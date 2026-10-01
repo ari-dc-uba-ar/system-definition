@@ -6,7 +6,7 @@ import {
     type Problem,
     type ValidationResult,
 } from "system-definition";
-import type {MigrationDraftInfo, PendingQuestionInfo} from "./authoring-contract";
+import type {ManualStepInfo, MigrationDraftInfo, PendingQuestionInfo} from "./authoring-contract";
 import {
     decodeDataMigration,
     type AuthoringContext,
@@ -248,3 +248,111 @@ export async function runAddDataSession(options: AddDataSessionOptions): Promise
         [{path: options.draftPath, contentHash: next.value.revisionHash}],
     );
 }
+
+export type AddSqlContractInfo = Omit<ManualStepInfo, "run"> & {
+    resourceName: string;
+};
+
+export type AddSqlSessionOptions = {
+    draftPath: string;
+    store: AuthoringDraftStore;
+    file: {path: string; text: string};
+    contract: AddSqlContractInfo;
+};
+
+export type AddSqlSessionReport = {
+    ok: boolean;
+    command: "add-sql";
+    draftPath: string;
+    revisionHash: string;
+    problems: readonly Problem[];
+    files: readonly {path: string; contentHash: string}[];
+};
+
+function addSqlReport(
+    options: Pick<AddSqlSessionOptions, "draftPath">,
+    revisionHash: string,
+    problems: readonly Problem[],
+    files: readonly {path: string; contentHash: string}[] = [],
+): AddSqlSessionReport {
+    return {
+        ok: problems.length === 0,
+        command: "add-sql",
+        draftPath: options.draftPath,
+        revisionHash,
+        problems,
+        files,
+    };
+}
+
+function draftWithManualStep(
+    draft: MigrationDraftInfo,
+    step: ManualStepInfo,
+): ValidationResult<MigrationDraftInfo> {
+    if (step.id.length === 0 || draft.manual.some(existing => existing.id === step.id)) {
+        return {
+            ok: false,
+            problems: oneProblem("migration.authoringInvalid", {
+                reason: "manual step id must be non-empty and unique",
+                stepId: step.id,
+            }),
+        };
+    }
+    if (draft.manual.some(existing => existing.run.name === step.run.name)) {
+        return {
+            ok: false,
+            problems: oneProblem("migration.authoringInvalid", {
+                reason: "manual SQL resource name must be unique in the draft",
+                resourceName: step.run.name,
+            }),
+        };
+    }
+
+    const withoutRevision: MigrationDraftInfo = {
+        ...draft,
+        manual: [...draft.manual, step],
+    };
+    const revision = computeDraftRevisionHash(withoutRevision);
+    if (!revision.ok) return revision;
+    return {ok: true, value: {...withoutRevision, revisionHash: revision.value}};
+}
+
+/**
+ * Library boundary for `migration add-sql`.  The SQL resource hash covers the
+ * exact UTF-8 bytes supplied by the caller, while the draft replacement is a
+ * single atomic store operation.  File persistence is deliberately left to the
+ * caller/CLI adapter; the returned file record binds the bytes to the resource.
+ */
+export async function runAddSqlSession(options: AddSqlSessionOptions): Promise<AddSqlSessionReport> {
+    const loaded = await options.store.readDraft(options.draftPath);
+    if (!loaded.ok) return addSqlReport(options, "", loaded.problems);
+    const draft = loaded.value;
+
+    if (options.file.path.length === 0 || options.contract.resourceName.length === 0) {
+        return addSqlReport(
+            options,
+            draft.revisionHash,
+            oneProblem("migration.authoringInvalid", {reason: "manual SQL path and resource name must be non-empty"}),
+        );
+    }
+
+    const contentHash = createHash("sha256").update(options.file.text, "utf8").digest("hex");
+    const {resourceName, ...contract} = options.contract;
+    const step: ManualStepInfo = {
+        ...contract,
+        run: {name: resourceName, kind: "sql", contentHash},
+    };
+    const next = draftWithManualStep(draft, step);
+    if (!next.ok) return addSqlReport(options, draft.revisionHash, next.problems);
+
+    const replaced = await options.store.replaceDraftAtomic(options.draftPath, next.value);
+    if (!replaced.ok) return addSqlReport(options, draft.revisionHash, replaced.problems);
+
+    return addSqlReport(
+        options,
+        next.value.revisionHash,
+        [],
+        [{path: options.file.path, contentHash}],
+    );
+}
+

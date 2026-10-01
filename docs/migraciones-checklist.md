@@ -19,19 +19,19 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T20 cerradas. T21 activa: slices #1–#3 implementados y verificados; rojo #4 final preparado para grafo/checkpoints del manifest y sesión add-sql. No ampliar producción T21 hasta aprobación explícita del cuarto rojo.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T20 cerradas. T21 tiene sus cuatro slices implementados y verificados; sólo falta la revisión final del desarrollador. No abrir producción T22 hasta cerrar esa revisión.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T21 — decisiones destructivas y SQL manual; rojo #4 final pendiente de revisión |
-| Estado / bloqueo concreto | T01–T20 cerradas. T21 slices #1–#3 implementados y verificados: discard, migrate/particiones/orden, SQL manual/replay-residual y rechazo de CASCADE. Rojo #4 propuesto: grafo local completo de pasos manuales, checks del manifest y sesión `add-sql`; persistencia/hashes/gates quedan para T22. |
-| Revisión del rojo y autorización vigente | 2026-10-01: `T21 third red approved` autorizó y se consumió sólo en slice #3. Docker posterior verde. Rojo #4 preparado; no hay autorización de producción para slice #4 hasta aprobación explícita. |
-| Archivos modificados durante implementación | Slice #3: `authoring-contract.ts`, `authoring.ts` y `sql-resource.ts`; test `manual-sql-residual-test.ts`. Este handoff añade sólo el rojo #4 `authoring-final-integration-test.ts` y documentación/evidencia. |
-| Última evidencia válida / revisión de código | Docker 2026-10-01: typecheck consumidor limpio; bloques T21 #1/#2/#3 5/5; core 146 passing; consumer 137 passing; total 283 passing. Rojo #4 local enfocado: TypeScript limpio y 0/6 runtime en la frontera final de grafo/checkpoints/add-sql. |
-| Próxima acción | Aplicar/ejecutar el rojo #4. Si el desarrollador confirma `T21 fourth red approved`, implementar únicamente grafo/checkpoints/add-sql requeridos por ese rojo; no abrir persistencia/hashes/gates T22. |
-| Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
+| Tarea activa | T21 — decisiones destructivas y SQL manual; revisión final pendiente |
+| Estado / bloqueo concreto | T01–T20 cerradas. T21: cuatro slices implementados y verificados — discard; migrate/particiones/preservación; SQL manual/replay-residual/CASCADE; grafo/checkpoints/add-sql. Docker final: typecheck consumidor limpio, core 146 + consumer 143 = 289 passing. Sólo falta la revisión final del desarrollador. |
+| Revisión del rojo y autorización vigente | 2026-10-01: `T21 fourth red approved` autorizó y se consumió únicamente en el slice #4. Los cuatro rojos T21 quedaron implementados dentro de su alcance. No hay autorización de producción T22 todavía. |
+| Archivos modificados durante implementación | Slice #4: `authoring.ts` y `authoring-cli.ts`; test `authoring-final-integration-test.ts`. Este handoff sólo registra la verificación final y prepara la revisión global de T21. |
+| Última evidencia válida / revisión de código | Docker 2026-10-01: typecheck consumidor limpio; T21 #1 5/5, #2 5/5, #3 5/5, #4 6/6; core 146 passing; consumer 143 passing; total 289 passing. `git apply` emitió sólo un warning de whitespace por una línea en blanco al EOF; no hubo diagnóstico TypeScript ni fallo runtime. |
+| Próxima acción | Revisión final del desarrollador de T21. Si responde `T21 approved`, registrar la revisión y preparar el primer rojo T22 antes de cualquier implementación T22. |
+| Decisión pendiente del desarrollador | Revisión final de T21; ninguna decisión de producto adicional identificada (U01–U11 siguen acordadas) |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
 
@@ -336,11 +336,11 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** authoring-contract/datos/staging T18–T20, JSON/hashes, parser de T11, runner y checks. La interacción es explícita en resolver/autoría, nunca en apply.
 - **Entregar:** `authoring.ts`, decisiones exhaustivas discard/migrate, particiones, grafo local, manifest y add-sql con efectos/checks.
 - **Aceptar:** DROP tabla enumera todas las columnas; decisión faltante/obsoleta bloquea; transferencia verificada antes de DROP; CASCADE no es bypass; manual implementa parte del diff y generador completa residual; manual que contradice SSOT falla; API directa exige el mismo manifest que CLI.
-- **Evidencia:** [Evidencia T21](migraciones-evidencia/T21.md). Slices #1–#3 implementados y verificados en Docker; rojo #4 final preparado para grafo/checkpoints del manifest y sesión `add-sql`. Producción del slice #4 aún no autorizada.
-- [ ] Implementación
-- [ ] Verificación
+- **Evidencia:** [Evidencia T21](migraciones-evidencia/T21.md). Los cuatro slices están implementados y verificados. Docker final del 2026-10-01: typecheck consumidor limpio; bloques T21 5/5 + 5/5 + 5/5 + 6/6; core 146 + consumer 143 = 289 passing. T21 permanece abierta sólo por la revisión final del desarrollador.
+- [x] Implementación
+- [x] Verificación
 - [ ] Revisión del desarrollador
-- **Estado de sesión T21 (2026-10-01):** slices #1–#3 verdes: typecheck limpio; los tres bloques T21 5/5; core 146, consumer 137, total 283. Red #4 añade sólo `authoring-final-integration-test.ts`: orden topológico/dependsOn, conflicto de escritores, checks before/after en el manifest compilado, determinismo léxico y sesión atómica `add-sql`. Persistencia del manifest, hashes transitivos, loader/buildMigrationPlan y gates quedan para T22.
+- **Estado de sesión T21 (2026-10-01):** implementación y verificación completas. Slice #4 cerró grafo/dependsOn, conflictos de escritores, checks before/after, determinismo léxico y sesión atómica `add-sql`. Persistencia `authoring: FileInfo`, hashes transitivos, loader/buildMigrationPlan, gates y matriz PostgreSQL real siguen siendo T22 y no se abren antes de la aprobación final de T21.
 
 ## T22
 

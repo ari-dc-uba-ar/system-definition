@@ -2,6 +2,7 @@ import {
     problem,
     type MigrationInfo,
     type ReleaseRefInfo,
+    type ResourceRefInfo,
     type ValidationResult,
 } from "system-definition";
 import type {
@@ -115,6 +116,8 @@ function hasIdentity(schema: PgSchemaInfo, identity: PgObjectIdentity): boolean 
 type ValidatedManualInfo = {
     steps: readonly ManualStepInfo[];
     claimedChangeIds: ReadonlySet<string>;
+    before: readonly ResourceRefInfo[];
+    checkpoints: readonly {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]}[];
 };
 
 function manualEffectCoversChange(step: ManualStepInfo, change: StructureChangeInfo): boolean {
@@ -125,6 +128,143 @@ function manualEffectCoversChange(step: ManualStepInfo, change: StructureChangeI
         return step.destroys.some(identity => sameIdentity(identity, change.before as PgObjectIdentity));
     }
     return true;
+}
+
+function identityKey(identity: PgObjectIdentity): string {
+    return [
+        identity.schema,
+        identity.kind,
+        identity.parentName ?? "",
+        identity.name,
+        ...identity.signature,
+    ].join("\0");
+}
+
+function orderedManualSteps(manual: readonly ManualStepInfo[]): ValidationResult<readonly ManualStepInfo[]> {
+    const byId = new Map(manual.map(step => [step.id, step] as const));
+    const indegree = new Map<string, number>();
+    const dependents = new Map<string, string[]>();
+
+    for (const step of manual) {
+        const seen = new Set<string>();
+        for (const dependency of step.dependsOn) {
+            if (!byId.has(dependency)) {
+                return fail("migration.invalidReference", {
+                    stepId: step.id,
+                    dependsOn: dependency,
+                    reason: "manual dependency references an unknown step",
+                });
+            }
+            if (seen.has(dependency)) {
+                return fail("migration.authoringInvalid", {
+                    stepId: step.id,
+                    dependsOn: dependency,
+                    reason: "manual dependency is declared more than once",
+                });
+            }
+            seen.add(dependency);
+            const targets = dependents.get(dependency) ?? [];
+            targets.push(step.id);
+            dependents.set(dependency, targets);
+        }
+        indegree.set(step.id, seen.size);
+    }
+
+    const ready = [...manual]
+        .filter(step => (indegree.get(step.id) ?? 0) === 0)
+        .map(step => step.id)
+        .sort();
+    const ordered: ManualStepInfo[] = [];
+
+    while (ready.length > 0) {
+        const id = ready.shift() as string;
+        const step = byId.get(id);
+        if (step === undefined) continue;
+        ordered.push(step);
+        for (const dependent of [...(dependents.get(id) ?? [])].sort()) {
+            const next = (indegree.get(dependent) ?? 0) - 1;
+            indegree.set(dependent, next);
+            if (next === 0) {
+                ready.push(dependent);
+                ready.sort();
+            }
+        }
+    }
+
+    if (ordered.length !== manual.length) {
+        return fail("migration.authoringInvalid", {
+            reason: "manual dependency graph contains a cycle",
+        });
+    }
+    return {ok: true, value: ordered};
+}
+
+function transitivelyDependsOn(
+    stepId: string,
+    dependencyId: string,
+    byId: ReadonlyMap<string, ManualStepInfo>,
+    memo: Map<string, ReadonlySet<string>>,
+): boolean {
+    const cached = memo.get(stepId);
+    if (cached !== undefined) return cached.has(dependencyId);
+
+    const found = new Set<string>();
+    const stack = [...(byId.get(stepId)?.dependsOn ?? [])];
+    while (stack.length > 0) {
+        const current = stack.pop() as string;
+        if (found.has(current)) continue;
+        found.add(current);
+        stack.push(...(byId.get(current)?.dependsOn ?? []));
+    }
+    memo.set(stepId, found);
+    return found.has(dependencyId);
+}
+
+function validateManualWriterOrder(steps: readonly ManualStepInfo[]): ValidationResult<true> {
+    const byId = new Map(steps.map(step => [step.id, step] as const));
+    const memo = new Map<string, ReadonlySet<string>>();
+    for (let leftIndex = 0; leftIndex < steps.length; leftIndex++) {
+        const left = steps[leftIndex] as ManualStepInfo;
+        const leftMutations = new Set([...left.writes, ...left.destroys].map(identityKey));
+        if (leftMutations.size === 0) continue;
+        for (let rightIndex = leftIndex + 1; rightIndex < steps.length; rightIndex++) {
+            const right = steps[rightIndex] as ManualStepInfo;
+            const overlaps = [...right.writes, ...right.destroys].some(identity => leftMutations.has(identityKey(identity)));
+            if (!overlaps) continue;
+            const ordered = transitivelyDependsOn(left.id, right.id, byId, memo)
+                || transitivelyDependsOn(right.id, left.id, byId, memo);
+            if (!ordered) {
+                return fail("migration.authoringInvalid", {
+                    firstStepId: left.id,
+                    secondStepId: right.id,
+                    reason: "manual writers overlap without an explicit dependency order",
+                });
+            }
+        }
+    }
+    return {ok: true, value: true};
+}
+
+function manualCheckpoints(steps: readonly ManualStepInfo[]): {
+    before: readonly ResourceRefInfo[];
+    checkpoints: readonly {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]}[];
+} {
+    if (steps.length === 0) return {before: [], checkpoints: []};
+
+    const before = [...(steps[0]?.before ?? [])];
+    const checkpoints: {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]}[] = [];
+    for (let index = 0; index < steps.length; index++) {
+        const current = steps[index] as ManualStepInfo;
+        const next = steps[index + 1];
+        const checks = [
+            ...current.after,
+            ...(next?.before ?? []),
+        ];
+        if (checks.length > 0) {
+            checkpoints.push({afterStep: current.id, checks, rows: []});
+        }
+    }
+    return {before, checkpoints};
 }
 
 async function validateManualSteps(
@@ -145,8 +285,13 @@ async function validateManualSteps(
         stepIds.add(step.id);
     }
 
+    const ordered = orderedManualSteps(manual);
+    if (!ordered.ok) return ordered;
+    const writerOrder = validateManualWriterOrder(ordered.value);
+    if (!writerOrder.ok) return writerOrder;
+
     const claimedChangeIds = new Set<string>();
-    for (const step of manual) {
+    for (const step of ordered.value) {
         if (step.run.kind !== "sql") {
             return fail("migration.invalidResourceKind", {
                 stepId: step.id,
@@ -160,10 +305,10 @@ async function validateManualSteps(
                 reason: "manual before/after resources must be checks",
             });
         }
-        if (step.before.length > 0 || step.after.length > 0 || step.rowChecks.length > 0 || step.dependsOn.length > 0) {
+        if (step.rowChecks.length > 0) {
             return fail("migration.authoringPending", {
                 stepId: step.id,
-                reason: "manual checkpoints and dependency ordering require the remaining authoring integration slice",
+                reason: "manual row checks require query/artifact integration in T22",
             });
         }
 
@@ -209,10 +354,9 @@ async function validateManualSteps(
             }
             claimedChangeIds.add(changeId);
         }
-
     }
 
-    for (const step of manual) {
+    for (const step of ordered.value) {
         if (runtime.readSql === undefined) {
             return fail("migration.invalidReference", {
                 stepId: step.id,
@@ -225,7 +369,16 @@ async function validateManualSteps(
         if (!prepared.ok) return prepared;
     }
 
-    return {ok: true, value: {steps: manual, claimedChangeIds}};
+    const checkpoints = manualCheckpoints(ordered.value);
+    return {
+        ok: true,
+        value: {
+            steps: ordered.value,
+            claimedChangeIds,
+            before: checkpoints.before,
+            checkpoints: checkpoints.checkpoints,
+        },
+    };
 }
 
 /**
@@ -411,14 +564,17 @@ function operationFor(change: StructureChangeInfo): CompiledAuthoringOperationIn
     };
 }
 
-function migrationForDraft(draft: MigrationDraftInfo): MigrationInfo {
+function migrationForDraft(
+    draft: MigrationDraftInfo,
+    manual: ValidatedManualInfo,
+): MigrationInfo {
     return {
         id: draft.id,
         from: draft.base.from,
         to: draft.base.to,
         description: "",
-        before: [],
-        steps: draft.manual.map(step => ({id: step.id, run: step.run})),
+        before: manual.before,
+        steps: manual.steps.map(step => ({id: step.id, run: step.run})),
         after: [],
     };
 }
@@ -547,10 +703,10 @@ export async function compileDraft(
             formatVersion: 1,
             draftHash: draft.revisionHash,
             base: draft.base,
-            migration: migrationForDraft(draft),
+            migration: migrationForDraft(draft, manual.value),
             operations,
             decisions: destructiveDecisions.value,
-            checkpoints: [],
+            checkpoints: manual.value.checkpoints,
             queryResources: Object.freeze(Object.create(null) as Record<string, never>),
             validationArtifacts: [],
         },
