@@ -11,11 +11,14 @@ import {
 import {isAbsolute, join, relative, resolve, sep} from "node:path";
 import {
     canonicalJson,
+    decodeMigration,
     decodePersistence,
     decodeSystemSnapshot,
     toJsonValue,
     type FileInfo,
     type JsonValue,
+    type MigrationContext,
+    type MigrationInfo,
     type PersistenceInfo,
     type Problem,
     type ReleaseRefInfo,
@@ -38,6 +41,13 @@ export type ManagedDataInfo = {
     key: readonly string[];
     columns: readonly string[];
     rows: readonly Readonly<Record<string, string | null>>[];
+};
+
+export type MigrationManifestInfo = {
+    formatVersion: 1;
+    migration: MigrationInfo;
+    authoring: FileInfo;
+    migrationHash: string;
 };
 
 export type ReleaseManifestInfo = {
@@ -194,6 +204,22 @@ function hashableReleaseManifest(manifest: ReleaseManifestInfo): JsonValue {
 
 export function computeReleaseHash(manifest: ReleaseManifestInfo): string {
     return sha256Hex(encoder.encode(canonicalJson(hashableReleaseManifest(manifest))));
+}
+
+function hashableMigrationManifest(manifest: MigrationManifestInfo): JsonValue {
+    const converted = toJsonValue(manifest);
+    if (!converted.ok || !isObject(converted.value)) {
+        throw new TypeError("migration manifest is not strict JSON");
+    }
+    const result = Object.create(null) as Record<string, JsonValue>;
+    for (const [key, value] of Object.entries(converted.value)) {
+        if (key !== "migrationHash") result[key] = value;
+    }
+    return result;
+}
+
+export function computeMigrationHash(manifest: MigrationManifestInfo): string {
+    return sha256Hex(encoder.encode(canonicalJson(hashableMigrationManifest(manifest))));
 }
 
 function isSafeOpaqueId(value: string): boolean {
@@ -529,6 +555,107 @@ function decodeFileInfo(value: JsonValue, path: string): ArtifactResult<FileInfo
         return failure("migration.unsupportedFormat", {path, reason: "invalid byte length"});
     }
     return {ok: true, value: {path: value.path, contentHash: value.contentHash, byteLength: value.byteLength}};
+}
+
+function migrationContextFromSerialized(value: JsonValue): ArtifactResult<MigrationContext> {
+    if (!isObject(value)) return failure("migration.unsupportedFormat", {reason: "invalid migration"});
+    const expected = ["id", "from", "to", "description", "before", "steps", "after"].sort();
+    if (Object.keys(value).sort().join(",") !== expected.join(",")) {
+        return failure("migration.unsupportedFormat", {reason: "invalid migration shape"});
+    }
+
+    function release(raw: JsonValue, label: string): ArtifactResult<{systemId: string; releaseId: string; releaseHash: string}> {
+        if (!isObject(raw) || Object.keys(raw).sort().join(",") !== "releaseHash,releaseId,systemId"
+            || typeof raw.systemId !== "string" || !isSafeOpaqueId(raw.systemId)
+            || typeof raw.releaseId !== "string" || !isSafeOpaqueId(raw.releaseId)
+            || typeof raw.releaseHash !== "string" || !HASH_RE.test(raw.releaseHash)) {
+            return failure("migration.unsupportedFormat", {reason: "invalid migration " + label + " release reference"});
+        }
+        return {ok: true, value: {systemId: raw.systemId, releaseId: raw.releaseId, releaseHash: raw.releaseHash}};
+    }
+
+    const from = release(value.from, "from");
+    if (!from.ok) return from;
+    const to = release(value.to, "to");
+    if (!to.ok) return to;
+
+    const resources: Record<string, {kind: "sql" | "check"; file: FileInfo}> = Object.create(null);
+    function addResource(raw: JsonValue, expectedKind: "sql" | "check"): ArtifactResult<true> {
+        if (!isObject(raw) || Object.keys(raw).sort().join(",") !== "contentHash,kind,name"
+            || typeof raw.name !== "string" || !isSafeOpaqueId(raw.name)
+            || raw.kind !== expectedKind
+            || typeof raw.contentHash !== "string" || !HASH_RE.test(raw.contentHash)) {
+            return failure("migration.unsupportedFormat", {reason: "invalid migration resource reference"});
+        }
+        const existing = resources[raw.name];
+        if (existing !== undefined
+            && (existing.kind !== expectedKind || existing.file.contentHash !== raw.contentHash)) {
+            return failure("migration.invalidReference", {name: raw.name, reason: "inconsistent migration resource reference"});
+        }
+        resources[raw.name] = {
+            kind: expectedKind,
+            file: {path: "resources/" + raw.name, contentHash: raw.contentHash, byteLength: 0},
+        };
+        return {ok: true, value: true};
+    }
+
+    if (!Array.isArray(value.before) || !Array.isArray(value.after) || !Array.isArray(value.steps)) {
+        return failure("migration.unsupportedFormat", {reason: "invalid migration resource lists"});
+    }
+    for (const raw of value.before) {
+        const added = addResource(raw, "check");
+        if (!added.ok) return added;
+    }
+    for (const raw of value.after) {
+        const added = addResource(raw, "check");
+        if (!added.ok) return added;
+    }
+    for (const raw of value.steps) {
+        if (!isObject(raw) || Object.keys(raw).sort().join(",") !== "id,run" || typeof raw.id !== "string") {
+            return failure("migration.unsupportedFormat", {reason: "invalid migration step"});
+        }
+        const added = addResource(raw.run, "sql");
+        if (!added.ok) return added;
+    }
+
+    return {
+        ok: true,
+        value: {
+            releases: {from: from.value, to: to.value},
+            resources,
+        },
+    };
+}
+
+export function decodeMigrationManifest(value: JsonValue): ArtifactResult<MigrationManifestInfo> {
+    if (!isObject(value)) return failure("migration.unsupportedFormat", {reason: "migration manifest must be an object"});
+    const expected = ["formatVersion", "migration", "authoring", "migrationHash"].sort();
+    if (Object.keys(value).sort().join(",") !== expected.join(",")) {
+        return failure("migration.unsupportedFormat", {reason: "invalid migration manifest shape"});
+    }
+    if (value.formatVersion !== 1) return failure("migration.unsupportedFormat", {reason: "unsupported migration manifest format"});
+
+    const authoring = decodeFileInfo(value.authoring, "manifest.authoring");
+    if (!authoring.ok) return authoring;
+    if (typeof value.migrationHash !== "string" || !HASH_RE.test(value.migrationHash)) {
+        return failure("migration.unsupportedFormat", {reason: "invalid migration hash"});
+    }
+
+    const context = migrationContextFromSerialized(value.migration);
+    if (!context.ok) return context;
+    const migration = decodeMigration(value.migration, context.value);
+    if (!migration.ok) return coreFailure(migration.problems);
+
+    const manifest: MigrationManifestInfo = {
+        formatVersion: 1,
+        migration: migration.value,
+        authoring: authoring.value,
+        migrationHash: value.migrationHash,
+    };
+    if (computeMigrationHash(manifest) !== manifest.migrationHash) {
+        return failure("migration.checksumMismatch", {reason: "migration hash mismatch"});
+    }
+    return {ok: true, value: manifest};
 }
 
 function decodeEnvironment(value: JsonValue): ArtifactResult<EnvironmentInfo> {

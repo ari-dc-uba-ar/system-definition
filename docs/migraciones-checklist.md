@@ -19,19 +19,19 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T20 cerradas. T21 tiene sus cuatro slices implementados y verificados; sólo falta la revisión final del desarrollador. No abrir producción T22 hasta cerrar esa revisión.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T21 cerradas. T22 activa; slice #1 implementado y verificado en Docker. Rojo #2 preparado para `buildMigrationPlan`, carga exacta de `authoring.json` y `planHash`. No implementar producción del slice #2 hasta aprobación explícita del rojo.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T21 — decisiones destructivas y SQL manual; revisión final pendiente |
-| Estado / bloqueo concreto | T01–T20 cerradas. T21: cuatro slices implementados y verificados — discard; migrate/particiones/preservación; SQL manual/replay-residual/CASCADE; grafo/checkpoints/add-sql. Docker final: typecheck consumidor limpio, core 146 + consumer 143 = 289 passing. Sólo falta la revisión final del desarrollador. |
-| Revisión del rojo y autorización vigente | 2026-10-01: `T21 fourth red approved` autorizó y se consumió únicamente en el slice #4. Los cuatro rojos T21 quedaron implementados dentro de su alcance. No hay autorización de producción T22 todavía. |
-| Archivos modificados durante implementación | Slice #4: `authoring.ts` y `authoring-cli.ts`; test `authoring-final-integration-test.ts`. Este handoff sólo registra la verificación final y prepara la revisión global de T21. |
-| Última evidencia válida / revisión de código | Docker 2026-10-01: typecheck consumidor limpio; T21 #1 5/5, #2 5/5, #3 5/5, #4 6/6; core 146 passing; consumer 143 passing; total 289 passing. `git apply` emitió sólo un warning de whitespace por una línea en blanco al EOF; no hubo diagnóstico TypeScript ni fallo runtime. |
-| Próxima acción | Revisión final del desarrollador de T21. Si responde `T21 approved`, registrar la revisión y preparar el primer rojo T22 antes de cualquier implementación T22. |
-| Decisión pendiente del desarrollador | Revisión final de T21; ninguna decisión de producto adicional identificada (U01–U11 siguen acordadas) |
+| Tarea activa | T22 — integración completa de autoría y deployment; rojo #2 pendiente de revisión |
+| Estado / bloqueo concreto | T01–T21 cerradas. T22 slice #1 implementado/verificado: `authoring: FileInfo` obligatorio y `migrationHash` transitivo. Rojo #2 añade sólo loader de manifest/authoring + `buildMigrationPlan`/`planHash`; gates/evidence, CLI/CI y PostgreSQL real siguen posteriores. |
+| Revisión del rojo y autorización vigente | 2026-10-01: `T22 first red approved` consumido implementando sólo artifact/hash. Slice #1 verificado en Docker. Rojo #2 preparado pero aún no aprobado; no hay autorización para su producción. |
+| Archivos modificados durante implementación | Slice #1: `artifact.ts` + `authoring-artifact-test.ts`. Este patch de rojo #2 no modifica producción: añade `migration-plan-artifact-test.ts` y actualiza handoff/evidencia. |
+| Última evidencia válida / revisión de código | Docker 2026-10-01: typecheck consumidor limpio; T22 artifact/hash 5/5; core 146 passing; consumer 148 passing; total 294. Rojo #2 debe detenerse en TypeScript porque todavía no existe `src/migration-plan.ts`. |
+| Próxima acción | Aplicar y ejecutar T22 rojo #2. Si el desarrollador confirma `T22 second red approved`, implementar únicamente loader/buildMigrationPlan/planHash; no integrar aún gates/evidence, CLI/CI ni PostgreSQL real. |
+| Decisión pendiente del desarrollador | Revisión del rojo T22 #2; ninguna decisión de producto adicional identificada (U01–U11 siguen acordadas) |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
 
@@ -336,11 +336,11 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** authoring-contract/datos/staging T18–T20, JSON/hashes, parser de T11, runner y checks. La interacción es explícita en resolver/autoría, nunca en apply.
 - **Entregar:** `authoring.ts`, decisiones exhaustivas discard/migrate, particiones, grafo local, manifest y add-sql con efectos/checks.
 - **Aceptar:** DROP tabla enumera todas las columnas; decisión faltante/obsoleta bloquea; transferencia verificada antes de DROP; CASCADE no es bypass; manual implementa parte del diff y generador completa residual; manual que contradice SSOT falla; API directa exige el mismo manifest que CLI.
-- **Evidencia:** [Evidencia T21](migraciones-evidencia/T21.md). Los cuatro slices están implementados y verificados. Docker final del 2026-10-01: typecheck consumidor limpio; bloques T21 5/5 + 5/5 + 5/5 + 6/6; core 146 + consumer 143 = 289 passing. T21 permanece abierta sólo por la revisión final del desarrollador.
+- **Evidencia:** [Evidencia T21](migraciones-evidencia/T21.md). Los cuatro slices están implementados y verificados. Docker final del 2026-10-01: typecheck consumidor limpio; bloques T21 5/5 + 5/5 + 5/5 + 6/6; core 146 + consumer 143 = 289 passing. T21 cerrada con revisión final explícita `T21 approved` el 2026-10-01.
 - [x] Implementación
 - [x] Verificación
-- [ ] Revisión del desarrollador
-- **Estado de sesión T21 (2026-10-01):** implementación y verificación completas. Slice #4 cerró grafo/dependsOn, conflictos de escritores, checks before/after, determinismo léxico y sesión atómica `add-sql`. Persistencia `authoring: FileInfo`, hashes transitivos, loader/buildMigrationPlan, gates y matriz PostgreSQL real siguen siendo T22 y no se abren antes de la aprobación final de T21.
+- [x] Revisión del desarrollador
+- **Estado de sesión T21 (2026-10-01):** implementación, verificación y revisión final completas; `T21 approved` recibido explícitamente. Slice #4 cerró grafo/dependsOn, conflictos de escritores, checks before/after, determinismo léxico y sesión atómica `add-sql`. Persistencia `authoring: FileInfo`, hashes transitivos, loader/buildMigrationPlan, gates y matriz PostgreSQL real siguen siendo T22 y no se abren antes de la aprobación final de T21.
 
 ## T22
 
@@ -350,10 +350,11 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** artifact loader T06, runner T11, verificador T13, evidencia/gates T15/T16 y CLI/CI T17; ningún runner especial para SQL generado.
 - **Entregar:** unión de authoring manifest, queries, validadores y checkpoints a hashes/plan/gates; fixture email transferido + nota descartada; CLI/CI/docs ampliados.
 - **Aceptar:** flujo generado, manual y mixto produce SSOT destino; manifest/checkpoint/recurso faltante bloquea; evidencia cambia con validator/SQL/decisión; respuestas interactivas y archivo equivalentes; tests negativos conservan cero activaciones; matrices T18–T21 pasan con PostgreSQL real.
-- **Evidencia:** Pendiente.
+- **Evidencia:** [Evidencia T22](migraciones-evidencia/T22.md). Slice #1 implementado y verificado en Docker (294 total). Rojo #2 preparado para loader/buildMigrationPlan/planHash; producción del slice #2 todavía no autorizada.
 - [ ] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador
+- **Estado de sesión T22 (2026-10-01):** slice #1 cerrado técnicamente: manifest inmutable con `authoring: FileInfo` y `migrationHash`, Docker 146+148=294. Rojo #2 acotado a cargar/verificar manifest + `authoring.json`, construir el `MigrationPlanInfo` y calcular `planHash`. Gates/evidence, CLI/CI y PostgreSQL real permanecen fuera.
 
 ## T23
 
