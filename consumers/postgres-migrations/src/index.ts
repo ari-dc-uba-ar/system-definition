@@ -34,3 +34,5 @@ export * from "./compile-data";
 export * from "./data-validation";
 
 export * from "./migration-plan";
+
+export * from "./migration-plan-runtime";

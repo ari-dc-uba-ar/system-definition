@@ -14,6 +14,7 @@ import {
     sha256Hex,
     type ArtifactProblem,
     type ArtifactResult,
+    type MigrationManifestInfo,
 } from "./artifact";
 import type {CompiledAuthoringInfo} from "./authoring";
 
@@ -221,6 +222,56 @@ function validatePathEndpoints(path: MigrationPathInfo): ArtifactResult<true> {
     return {ok: true, value: true};
 }
 
+export type VerifiedMigrationAuthoring = {
+    manifest: MigrationManifestInfo;
+    authoring: CompiledAuthoringInfo;
+};
+
+/**
+ * Re-resolve one published migration through immutable storage. Both planning
+ * and runtime hydration use this function so neither can trust caller-supplied
+ * migration or authoring bytes.
+ */
+export async function loadVerifiedMigrationAuthoring(
+    published: PublishedMigrationInfo,
+    context: MigrationPlanArtifactContext,
+): Promise<ArtifactResult<VerifiedMigrationAuthoring>> {
+    const loaded = await context.loadMigrationManifest(published);
+    if (!loaded.ok) return loaded;
+    const decoded = decodeMigrationManifest(loaded.value);
+    if (!decoded.ok) return decoded;
+
+    if (decoded.value.migrationHash !== published.migrationHash
+        || !sameJson(decoded.value.migration, published.migration)) {
+        return failure("migration.checksumMismatch", {
+            migrationId: published.migration.id,
+            reason: "published migration does not match immutable manifest",
+        });
+    }
+
+    const bytes = await context.readMigrationFile(published, decoded.value.authoring);
+    if (!bytes.ok) return bytes;
+    const parsed = parseCanonicalJson(bytes.value, decoded.value.authoring);
+    if (!parsed.ok) return parsed;
+    const authoring = decodeAuthoring(parsed.value);
+    if (!authoring.ok) return authoring;
+
+    if (!sameRelease(authoring.value.base.from, decoded.value.migration.from)
+        || !sameRelease(authoring.value.base.to, decoded.value.migration.to)) {
+        return failure("migration.invalidReference", {
+            migrationId: published.migration.id,
+            reason: "authoring base does not match migration endpoints",
+        });
+    }
+    if (!sameJson(authoring.value.migration, decoded.value.migration)) {
+        return failure("migration.invalidReference", {
+            migrationId: published.migration.id,
+            reason: "authoring migration does not match immutable manifest",
+        });
+    }
+    return {ok: true, value: {manifest: decoded.value, authoring: authoring.value}};
+}
+
 /**
  * Resolve the pure core migration path into an artifact-backed, hashed plan.
  * Every non-empty transition is reloaded from immutable storage and its exact
@@ -235,39 +286,8 @@ export async function buildMigrationPlan(
 
     const migrations: PublishedMigrationInfo[] = [];
     for (const published of path.migrations) {
-        const loaded = await context.loadMigrationManifest(published);
-        if (!loaded.ok) return loaded;
-        const decoded = decodeMigrationManifest(loaded.value);
-        if (!decoded.ok) return decoded;
-
-        if (decoded.value.migrationHash !== published.migrationHash
-            || !sameJson(decoded.value.migration, published.migration)) {
-            return failure("migration.checksumMismatch", {
-                migrationId: published.migration.id,
-                reason: "published migration does not match immutable manifest",
-            });
-        }
-
-        const bytes = await context.readMigrationFile(published, decoded.value.authoring);
-        if (!bytes.ok) return bytes;
-        const parsed = parseCanonicalJson(bytes.value, decoded.value.authoring);
-        if (!parsed.ok) return parsed;
-        const authoring = decodeAuthoring(parsed.value);
-        if (!authoring.ok) return authoring;
-
-        if (!sameRelease(authoring.value.base.from, decoded.value.migration.from)
-            || !sameRelease(authoring.value.base.to, decoded.value.migration.to)) {
-            return failure("migration.invalidReference", {
-                migrationId: published.migration.id,
-                reason: "authoring base does not match migration endpoints",
-            });
-        }
-        if (!sameJson(authoring.value.migration, decoded.value.migration)) {
-            return failure("migration.invalidReference", {
-                migrationId: published.migration.id,
-                reason: "authoring migration does not match immutable manifest",
-            });
-        }
+        const verified = await loadVerifiedMigrationAuthoring(published, context);
+        if (!verified.ok) return verified;
         migrations.push(published);
     }
 
