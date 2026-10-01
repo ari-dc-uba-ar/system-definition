@@ -8,6 +8,7 @@ import type {
     AuthoringRuntime,
     CompiledAuthoringInfo,
     CompiledAuthoringOperationInfo,
+    DestructiveDecisionInfo,
     FieldRefInfo,
     MigrationDraftInfo,
     RenameInfo,
@@ -83,6 +84,96 @@ function pendingFor(change: StructureChangeInfo): ValidationResult<never> {
     });
 }
 
+function sameField(left: FieldRefInfo, right: FieldRefInfo): boolean {
+    return left.side === right.side
+        && left.entity === right.entity
+        && left.field === right.field;
+}
+
+function decisionKey(changeId: string, source: FieldRefInfo | null): string {
+    return source === null
+        ? `${changeId}\0<object>`
+        : `${changeId}\0${source.side}\0${source.entity}\0${source.field}`;
+}
+
+/**
+ * T21 slice 1 authorizes only whole-field discard decisions.  The decision is
+ * checked against the reconstructed historical diff, never against the stale
+ * draft.changes array or an inspected schema where the DROP may already have
+ * happened.  Migrate and partition decisions remain representable in the
+ * contract but deliberately block until their later T21 slices compile them.
+ */
+function validateDestructiveDecisions(
+    changes: readonly StructureChangeInfo[],
+    decisions: readonly DestructiveDecisionInfo[],
+): ValidationResult<readonly DestructiveDecisionInfo[]> {
+    const destructive = changes.filter(change => change.impact === "destructive");
+    const byId = new Map(destructive.map(change => [change.id, change] as const));
+    const seen = new Set<string>();
+
+    for (const decision of decisions) {
+        const change = byId.get(decision.changeId);
+        if (change === undefined) {
+            return fail("migration.invalidReference", {
+                changeId: decision.changeId,
+                reason: "destructive decision does not belong to the reconstructed diff",
+            });
+        }
+
+        if (decision.source === null) {
+            if (change.affectedFields.length !== 0) {
+                return fail("migration.invalidReference", {
+                    changeId: decision.changeId,
+                    reason: "object-level destructive decision cannot cover persisted fields",
+                });
+            }
+        } else if (!change.affectedFields.some(field => sameField(field, decision.source as FieldRefInfo))) {
+            return fail("migration.invalidReference", {
+                changeId: decision.changeId,
+                source: `${decision.source.side}:${decision.source.entity}.${decision.source.field}`,
+                reason: "destructive decision source is not affected by the referenced change",
+            });
+        }
+
+        const key = decisionKey(decision.changeId, decision.source);
+        if (seen.has(key)) {
+            return fail("migration.authoringInvalid", {
+                changeId: decision.changeId,
+                reason: "duplicate destructive decision for the same source",
+            });
+        }
+        seen.add(key);
+
+        if (decision.resolution.kind === "discard" && decision.resolution.reason.trim().length === 0) {
+            return fail("migration.authoringInvalid", {
+                changeId: decision.changeId,
+                reason: "discard requires a non-empty reason",
+            });
+        }
+    }
+
+    for (const change of destructive) {
+        if (change.affectedFields.length === 0) {
+            if (!seen.has(decisionKey(change.id, null))) return pendingFor(change);
+            continue;
+        }
+        for (const field of change.affectedFields) {
+            if (!seen.has(decisionKey(change.id, field))) return pendingFor(change);
+        }
+    }
+
+    const deferred = decisions.find(decision => decision.partitionCheck !== null
+        || decision.resolution.kind === "migrate");
+    if (deferred !== undefined) {
+        return fail("migration.authoringPending", {
+            changeId: deferred.changeId,
+            reason: "partitioned and migrate destructive decisions require a later T21 slice",
+        });
+    }
+
+    return {ok: true, value: decisions};
+}
+
 function unsupported(change: StructureChangeInfo): ValidationResult<never> {
     return fail("migration.unsupportedSchemaFeature", {
         changeId: change.id,
@@ -129,9 +220,9 @@ export async function compileDraft(
     if (draft.pending.length > 0) {
         return fail("migration.authoringPending", {reason: "draft has unresolved authoring questions"});
     }
-    if (draft.data.length > 0 || draft.decisions.length > 0 || draft.manual.length > 0) {
+    if (draft.data.length > 0 || draft.manual.length > 0) {
         return fail("migration.authoringPending", {
-            reason: "data, destructive decisions and manual SQL require T19-T21 compilation",
+            reason: "data and manual SQL require their authoring compilation path",
         });
     }
 
@@ -157,6 +248,9 @@ export async function compileDraft(
         draft.renames,
     );
     if (!historical.ok) return historical;
+
+    const destructiveDecisions = validateDestructiveDecisions(historical.value, draft.decisions);
+    if (!destructiveDecisions.ok) return destructiveDecisions;
 
     const inspected = await runtime.inspectDraft(draft);
     if (!inspected.ok) return inspected;
@@ -185,7 +279,7 @@ export async function compileDraft(
             base: draft.base,
             migration: emptyMigration(draft),
             operations,
-            decisions: [],
+            decisions: destructiveDecisions.value,
             checkpoints: [],
             queryResources: Object.freeze(Object.create(null) as Record<string, never>),
             validationArtifacts: [],

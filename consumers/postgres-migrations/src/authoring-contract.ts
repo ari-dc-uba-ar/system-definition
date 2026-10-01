@@ -3,6 +3,7 @@ import type {
     JsonValue,
     MigrationInfo,
     ReleaseRefInfo,
+    ResourceRefInfo,
     ValidationResult,
 } from "system-definition";
 import type {PgObjectIdentity, PgSchemaInfo} from "./pg-schema";
@@ -53,6 +54,15 @@ export type RenameInfo = {
     after: FieldRefInfo | EntityRefInfo;
 };
 
+export type DestructiveDecisionInfo = {
+    changeId: string;
+    source: FieldRefInfo | null;
+    partitionCheck: ResourceRefInfo | null;
+    resolution:
+        | {kind: "discard"; reason: string}
+        | {kind: "migrate"; dataMigrationId: string; outputs: readonly string[]};
+};
+
 
 export type PendingQuestionInfo = {
     id: string;
@@ -62,9 +72,9 @@ export type PendingQuestionInfo = {
 };
 
 /**
- * T18 owns only structural authoring. Data migrations, destructive decisions
- * and manual SQL are refined by T19-T21; these slots remain representable but
- * opaque until those contracts are implemented.
+ * T18 owns the structural authoring base. Data migrations and manual SQL are
+ * refined by later tasks; T21 makes destructive decisions explicit here while
+ * keeping the not-yet-compiled authoring slots representable.
  */
 export type MigrationDraftInfo = {
     formatVersion: 1;
@@ -74,7 +84,7 @@ export type MigrationDraftInfo = {
     renames: readonly RenameInfo[];
     changes: readonly StructureChangeInfo[];
     data: readonly DataMigrationInfo[];
-    decisions: readonly unknown[];
+    decisions: readonly DestructiveDecisionInfo[];
     manual: readonly unknown[];
     pending: readonly PendingQuestionInfo[];
 };
@@ -104,7 +114,7 @@ export type CompiledAuthoringInfo = {
     base: AuthoringBaseInfo;
     migration: MigrationInfo;
     operations: readonly CompiledAuthoringOperationInfo[];
-    decisions: readonly unknown[];
+    decisions: readonly DestructiveDecisionInfo[];
     checkpoints: readonly unknown[];
     queryResources: Readonly<Record<string, QueryResourceInfo>>;
     validationArtifacts: readonly unknown[];

@@ -19,18 +19,18 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T19 cerradas. T20 tiene sus nueve slices implementados y la verificación Docker final completa; revisión final del desarrollador pendiente. No abrir T21 como producción hasta cerrar esa revisión.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T20 cerradas. T21 activa: slice #1 de cobertura discard implementado y verificado; rojo #2 migrate/particiones/orden de preservación preparado. No ampliar producción T21 hasta aprobación explícita del segundo rojo.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T20 — SQL de datos, conservación y validación histórica; revisión final pendiente |
-| Estado / bloqueo concreto | T01–T19 cerradas. T20: nueve slices implementados y verificados. Verificación Docker final del 2026-09-30: typecheck consumidor limpio, core 146 passing y consumer 122 passing = 268 total. Sólo falta la revisión/aprobación final del desarrollador. |
-| Revisión del rojo y autorización vigente | Los nueve rojos de T20 fueron aprobados e implementados dentro de su alcance; la autorización del noveno se consumió al integrar checkpoints en el runner. No hay alcance de producción T21 autorizado todavía. |
-| Archivos modificados durante implementación | T20 quedó implementada en sus archivos de compilación/validación y en el runner transaccional existente; esta reanudación sólo registra la verificación final en documentación/evidencia. |
-| Última evidencia válida / revisión de código | Docker 2026-09-30: typecheck consumidor limpio; `T20 authoring checkpoints in the transactional runner` 5/5; core 146 passing; consumer 122 passing; total 268 passing, sin fallos reportados. |
-| Próxima acción | Revisión final del desarrollador de T20. Si responde `T20 approved`, registrar la revisión y preparar el primer rojo de T21 antes de cualquier implementación T21. |
+| Tarea activa | T21 — decisiones destructivas y SQL manual; rojo #2 pendiente de revisión |
+| Estado / bloqueo concreto | T01–T20 cerradas. T21 slice #1 implementado y verificado: cobertura discard de campo completo. Slice #2 propuesto: migrate, particiones explícitas y orden preservación→DROP; SQL manual/CASCADE/manifest completo quedan fuera. |
+| Revisión del rojo y autorización vigente | 2026-10-01: `T21 first red approved` autorizó y se consumió sólo en slice #1. Docker posterior verde. Rojo #2 preparado; no hay autorización de producción para slice #2 hasta aprobación explícita. |
+| Archivos modificados durante implementación | Slice #1: `authoring-contract.ts` + `authoring.ts`; test rojo existente `destructive-decision-test.ts`. Este handoff añade sólo el test rojo #2 `destructive-migrate-partition-test.ts` y documentación/evidencia. |
+| Última evidencia válida / revisión de código | Docker 2026-10-01: typecheck consumidor limpio; T21 destructive decision coverage 5/5; core 146 passing; consumer 127 passing; total 273 passing. Rojo #2 local enfocado: TypeScript limpio y 0/5 runtime, todos en la frontera migrate/particiones aún diferida. |
+| Próxima acción | Aplicar/ejecutar el rojo #2. Si el desarrollador confirma `T21 second red approved`, implementar únicamente validación migrate/particiones y el orden del grafo preservación→DROP necesario para esos tests; no abrir SQL manual/CASCADE/manifest completo. |
 | Decisión pendiente del desarrollador | Ninguna de producto identificada; U01–U11 están acordadas |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
@@ -322,11 +322,11 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** behaviourOf/TypeBehaviour, instanceProblems/validateInstance y withValidators existentes; [aida-behaviour.ts](../examples/common/aida-behaviour.ts), [aida-validators.ts](../examples/common/aida-validators.ts) y sus tests; motor T11/T13.
 - **Entregar:** `compile-data.ts`, `data-validation.ts`, `validation-artifact.ts`; staging, escritura SQL, checkpoints y módulos históricos por hash.
 - **Aceptar:** __source_id/lineage/cobertura válidos; duplicados o match ambiguo fallan antes de UPDATE; null/''/'null' distintos; validar fila completa y PK efectiva; tipo correcto/regla inválida revierte; Problem regular también bloquea; cambio de módulo invalida evidencia; originales preservados en transferencias cíclicas.
-- **Evidencia:** [Evidencia T20](migraciones-evidencia/T20.md). Los nueve slices están implementados y verificados. Verificación Docker final del 2026-09-30: typecheck consumidor limpio, `T20 authoring checkpoints in the transactional runner` 5/5 passing, core 146 passing y consumer 122 passing = 268 total. T20 permanece abierta sólo por la revisión final del desarrollador.
+- **Evidencia:** [Evidencia T20](migraciones-evidencia/T20.md). Nueve slices implementados y verificados; Docker final: typecheck consumidor limpio, core 146 + consumer 122 = 268 passing. Revisión final aprobada explícitamente el 2026-09-30 con `T20 approved`.
 - [x] Implementación
 - [x] Verificación
-- [ ] Revisión del desarrollador
-- **Estado de sesión T20 (2026-09-30):** noveno slice verificado en Docker junto con la regresión completa: checkpoints integrados en la misma transacción, rollback/fail-closed y validación histórica permanecen verdes; core 146 + consumer 122 = 268 passing. No iniciar producción T21 hasta registrar la revisión final de T20.
+- [x] Revisión del desarrollador
+- **Estado final T20 (2026-09-30):** cerrada. La aprobación final no autoriza por sí sola producción T21; T21 vuelve al flujo rojo → revisión → implementación.
 
 ## T21
 
@@ -336,10 +336,11 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** authoring-contract/datos/staging T18–T20, JSON/hashes, parser de T11, runner y checks. La interacción es explícita en resolver/autoría, nunca en apply.
 - **Entregar:** `authoring.ts`, decisiones exhaustivas discard/migrate, particiones, grafo local, manifest y add-sql con efectos/checks.
 - **Aceptar:** DROP tabla enumera todas las columnas; decisión faltante/obsoleta bloquea; transferencia verificada antes de DROP; CASCADE no es bypass; manual implementa parte del diff y generador completa residual; manual que contradice SSOT falla; API directa exige el mismo manifest que CLI.
-- **Evidencia:** Pendiente.
+- **Evidencia:** [Evidencia T21](migraciones-evidencia/T21.md). Slice #1 discard implementado y verificado en Docker; rojo #2 preparado para migrate, particiones explícitas y preservación antes de DROP. Producción del slice #2 aún no autorizada.
 - [ ] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador
+- **Estado de sesión T21 (2026-10-01):** slice #1 verde: typecheck limpio, bloque T21 5/5, core 146, consumer 127, total 273. Red #2 añade sólo `destructive-migrate-partition-test.ts`: liga migrate a una data migration que consume la fuente y escribe outputs nombrados, admite decisiones particionadas sólo con checks explícitos sin ampliar cobertura y exige que la operación de preservación preceda al DROP. SQL manual, CASCADE y manifest/gates quedan para rojos posteriores.
 
 ## T22
 
