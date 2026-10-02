@@ -28,6 +28,9 @@ These examples are generated from the same fixture exercised by the CLI contract
 | environment mismatch blocks verification | `postgres-migrations verify --release B` | 2 | `migration.environmentMismatch` |
 | deployment gate blocks activation | `postgres-migrations deployment-gate --deployment deploy-B` | 3 | `deployment.blocked` |
 | unknown commit outcome is operational failure | `postgres-migrations apply --to B` | 4 | `migration.unknownCommitOutcome` |
+| resolve an explicit conflict report | `postgres-migrations resolve reports/failure.json --out resolutions/fix-source` | 0 | `success` |
+| verify a preparation on an identified copy | `postgres-migrations verify-resolution resolutions/fix-source --copy copy-1` | 0 | `success` |
+| apply a verified preparation non-interactively | `postgres-migrations apply-resolution resolutions/fix-source --installation school-prod` | 0 | `success` |
 
 ## Checkout/bootstrap behavior
 

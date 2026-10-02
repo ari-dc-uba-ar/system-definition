@@ -9,7 +9,10 @@ export type CliCommand =
     | "status"
     | "install"
     | "apply"
-    | "deployment-gate";
+    | "deployment-gate"
+    | "resolve"
+    | "verify-resolution"
+    | "apply-resolution";
 
 export type CliExitCode = 0 | 2 | 3 | 4;
 

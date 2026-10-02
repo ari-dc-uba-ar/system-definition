@@ -59,6 +59,47 @@ export type AttemptFinishInput = {
     problems: readonly Problem[];
 };
 
+export type PreparationAttemptState = "running" | "failed" | "unknown" | "succeeded";
+
+export type PreparationAttemptInfo = {
+    attemptId: string;
+    installationId: string;
+    preparationId: string;
+    artifactHash: string;
+    state: PreparationAttemptState;
+    beforeFingerprint: string;
+    afterFingerprint: string | null;
+    reportHash: string;
+    problems: readonly Problem[];
+};
+
+export type PreparationHistoryInfo = {
+    installationId: string;
+    ordinal: number;
+    preparationId: string;
+    artifactHash: string;
+    head: ReleaseRefInfo;
+    beforeFingerprint: string;
+    afterFingerprint: string;
+    reportHash: string;
+    committedAt: string;
+};
+
+export type PreparationAttemptStartInput = {
+    attemptId: string;
+    installationId: string;
+    preparationId: string;
+    artifactHash: string;
+    beforeFingerprint: string;
+    reportHash: string;
+};
+
+export type PreparationAttemptFinishInput = {
+    state: Exclude<PreparationAttemptState, "running">;
+    afterFingerprint: string | null;
+    problems: readonly Problem[];
+};
+
 export interface PgSessionFactory {
     openTarget(): Promise<PgSession>;
 }
@@ -483,6 +524,35 @@ export async function bootstrapJournal(
             started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
             finished_at timestamptz NULL
         )`,
+        `CREATE TABLE IF NOT EXISTS ${schema}.preparation_attempts (
+            attempt_id text PRIMARY KEY,
+            installation_id text NOT NULL REFERENCES ${schema}.installation(installation_id),
+            preparation_id text NOT NULL,
+            artifact_hash text NOT NULL,
+            state text NOT NULL CHECK (state IN ('running','failed','unknown','succeeded')),
+            before_fingerprint text NOT NULL,
+            after_fingerprint text NULL,
+            report_hash text NOT NULL,
+            problems jsonb NOT NULL DEFAULT '[]'::jsonb,
+            started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+            finished_at timestamptz NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS ${schema}.preparations (
+            installation_id text NOT NULL REFERENCES ${schema}.installation(installation_id),
+            ordinal integer NOT NULL CHECK (ordinal > 0),
+            preparation_id text NOT NULL,
+            artifact_hash text NOT NULL,
+            head_system_id text NOT NULL,
+            head_release_id text NOT NULL,
+            head_release_hash text NOT NULL,
+            before_fingerprint text NOT NULL,
+            after_fingerprint text NOT NULL,
+            report_hash text NOT NULL,
+            committed_at text NOT NULL,
+            PRIMARY KEY (installation_id, ordinal),
+            UNIQUE (installation_id, preparation_id),
+            UNIQUE (installation_id, artifact_hash)
+        )`,
         `CREATE TABLE IF NOT EXISTS ${schema}.verification_run (
             verification_id text PRIMARY KEY,
             deployment_id text NOT NULL,
@@ -837,6 +907,256 @@ function booleanField(row: unknown, key: string): boolean | null {
 
 function wait(milliseconds: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+
+function validPreparationHash(value: unknown): value is string {
+    return typeof value === "string" && HASH_RE.test(value);
+}
+
+function preparationAttemptSelect(alias: string): string {
+    return `${alias}.attempt_id, ${alias}.installation_id, ${alias}.preparation_id, ${alias}.artifact_hash,
+        ${alias}.state, ${alias}.before_fingerprint, ${alias}.after_fingerprint, ${alias}.report_hash, ${alias}.problems`;
+}
+
+function decodePreparationAttemptRow(value: unknown): ValidationResult<PreparationAttemptInfo> {
+    if (!isPlainObject(value)
+        || !nonEmptyString(value.attempt_id)
+        || !nonEmptyString(value.installation_id)
+        || !nonEmptyString(value.preparation_id)
+        || !validPreparationHash(value.artifact_hash)
+        || !(value.state === "running" || value.state === "failed" || value.state === "unknown" || value.state === "succeeded")
+        || !validPreparationHash(value.before_fingerprint)
+        || !(value.after_fingerprint === null || validPreparationHash(value.after_fingerprint))
+        || !validPreparationHash(value.report_hash)) {
+        return failure("migration.invalidJournal", {reason: "invalid preparation attempt row"});
+    }
+    const problems = decodeProblems(value.problems);
+    if (!problems.ok) return problems;
+    return {
+        ok: true,
+        value: {
+            attemptId: value.attempt_id,
+            installationId: value.installation_id,
+            preparationId: value.preparation_id,
+            artifactHash: value.artifact_hash,
+            state: value.state,
+            beforeFingerprint: value.before_fingerprint,
+            afterFingerprint: value.after_fingerprint,
+            reportHash: value.report_hash,
+            problems: problems.value,
+        },
+    };
+}
+
+function preparationSelect(alias: string): string {
+    return `${alias}.installation_id, ${alias}.ordinal, ${alias}.preparation_id, ${alias}.artifact_hash,
+        ${alias}.head_system_id, ${alias}.head_release_id, ${alias}.head_release_hash,
+        ${alias}.before_fingerprint, ${alias}.after_fingerprint, ${alias}.report_hash, ${alias}.committed_at`;
+}
+
+function decodePreparationRow(value: unknown): ValidationResult<PreparationHistoryInfo> {
+    if (!isPlainObject(value)
+        || !nonEmptyString(value.installation_id)
+        || !positiveInteger(value.ordinal)
+        || !nonEmptyString(value.preparation_id)
+        || !validPreparationHash(value.artifact_hash)
+        || !nonEmptyString(value.head_system_id)
+        || !nonEmptyString(value.head_release_id)
+        || !validPreparationHash(value.head_release_hash)
+        || !validPreparationHash(value.before_fingerprint)
+        || !validPreparationHash(value.after_fingerprint)
+        || !validPreparationHash(value.report_hash)
+        || typeof value.committed_at !== "string" || !UTC_RE.test(value.committed_at)) {
+        return failure("migration.invalidJournal", {reason: "invalid confirmed preparation row"});
+    }
+    return {
+        ok: true,
+        value: {
+            installationId: value.installation_id,
+            ordinal: value.ordinal,
+            preparationId: value.preparation_id,
+            artifactHash: value.artifact_hash,
+            head: {
+                systemId: value.head_system_id,
+                releaseId: value.head_release_id,
+                releaseHash: value.head_release_hash,
+            },
+            beforeFingerprint: value.before_fingerprint,
+            afterFingerprint: value.after_fingerprint,
+            reportHash: value.report_hash,
+            committedAt: value.committed_at,
+        },
+    };
+}
+
+export async function startPreparationAttempt(
+    session: PgSession,
+    config: JournalConfig,
+    input: PreparationAttemptStartInput,
+): Promise<ValidationResult<PreparationAttemptInfo>> {
+    const checked = validateConfig(config);
+    if (!checked.ok) return checked;
+    if (!isPlainObject(input)
+        || !nonEmptyString(input.attemptId)
+        || !nonEmptyString(input.installationId)
+        || !nonEmptyString(input.preparationId)
+        || !validPreparationHash(input.artifactHash)
+        || !validPreparationHash(input.beforeFingerprint)
+        || !validPreparationHash(input.reportHash)) {
+        return failure("migration.invalidJournal", {reason: "invalid preparation attempt input"});
+    }
+    const table = `${quotePgIdentifier(checked.value.schema)}.preparation_attempts`;
+    const result = await safeQuery(session, `INSERT INTO ${table} (
+        attempt_id, installation_id, preparation_id, artifact_hash, state,
+        before_fingerprint, after_fingerprint, report_hash, problems
+    ) VALUES ($1,$2,$3,$4,'running',$5,NULL,$6,'[]'::jsonb)
+    RETURNING ${preparationAttemptSelect("preparation_attempts")}`, [
+        input.attemptId,
+        input.installationId,
+        input.preparationId,
+        input.artifactHash,
+        input.beforeFingerprint,
+        input.reportHash,
+    ]);
+    if (!result.ok) return result;
+    if (result.value.rows.length !== 1) return failure("migration.invalidJournal", {reason: "preparation attempt insert failed"});
+    return decodePreparationAttemptRow(result.value.rows[0]);
+}
+
+export async function finishPreparationAttempt(
+    session: PgSession,
+    config: JournalConfig,
+    attemptId: string,
+    input: PreparationAttemptFinishInput,
+): Promise<ValidationResult<PreparationAttemptInfo>> {
+    const checked = validateConfig(config);
+    if (!checked.ok) return checked;
+    if (!nonEmptyString(attemptId)
+        || !isPlainObject(input)
+        || !(input.state === "failed" || input.state === "unknown" || input.state === "succeeded")
+        || !(input.afterFingerprint === null || validPreparationHash(input.afterFingerprint))
+        || !Array.isArray(input.problems)) {
+        return failure("migration.invalidJournal", {reason: "invalid preparation attempt finish input"});
+    }
+    const table = `${quotePgIdentifier(checked.value.schema)}.preparation_attempts`;
+    const result = await safeQuery(session, `UPDATE ${table}
+        SET state=$2, after_fingerprint=$3, problems=$4::jsonb, finished_at=clock_timestamp()
+        WHERE attempt_id=$1 AND state IN ('running','unknown')
+        RETURNING ${preparationAttemptSelect("preparation_attempts")}`, [
+        attemptId,
+        input.state,
+        input.afterFingerprint,
+        JSON.stringify(input.problems),
+    ]);
+    if (!result.ok) return result;
+    if (result.value.rows.length !== 1) return failure("migration.invalidJournal", {reason: "preparation attempt missing or already finished"});
+    return decodePreparationAttemptRow(result.value.rows[0]);
+}
+
+export async function readConfirmedPreparation(
+    session: PgSession,
+    config: JournalConfig,
+    installationId: string,
+    preparationId: string,
+): Promise<ValidationResult<PreparationHistoryInfo | null>> {
+    const checked = validateConfig(config);
+    if (!checked.ok) return checked;
+    if (!nonEmptyString(installationId) || !nonEmptyString(preparationId)) {
+        return failure("migration.invalidJournal", {reason: "invalid preparation lookup"});
+    }
+    const table = `${quotePgIdentifier(checked.value.schema)}.preparations`;
+    const result = await safeQuery(session, `SELECT ${preparationSelect("preparations")}
+        FROM ${table} preparations
+        WHERE installation_id=$1 AND preparation_id=$2`, [installationId, preparationId]);
+    if (!result.ok) return result;
+    if (result.value.rows.length === 0) return {ok: true, value: null};
+    if (result.value.rows.length !== 1) return failure("migration.invalidJournal", {reason: "preparation lookup is not unique"});
+    return decodePreparationRow(result.value.rows[0]);
+}
+
+export async function recordConfirmedPreparation(
+    session: PgSession,
+    config: JournalConfig,
+    input: Omit<PreparationHistoryInfo, "ordinal">,
+): Promise<ValidationResult<PreparationHistoryInfo>> {
+    const checked = validateConfig(config);
+    if (!checked.ok) return checked;
+    if (!isPlainObject(input)
+        || !nonEmptyString(input.installationId)
+        || !nonEmptyString(input.preparationId)
+        || !validPreparationHash(input.artifactHash)
+        || !validPreparationHash(input.beforeFingerprint)
+        || !validPreparationHash(input.afterFingerprint)
+        || !validPreparationHash(input.reportHash)
+        || typeof input.committedAt !== "string" || !UTC_RE.test(input.committedAt)) {
+        return failure("migration.invalidJournal", {reason: "invalid confirmed preparation input"});
+    }
+    const head = validateRelease(input.head);
+    if (!head.ok) return head;
+    const existing = await readConfirmedPreparation(session, checked.value, input.installationId, input.preparationId);
+    if (!existing.ok) return existing;
+    if (existing.value !== null) {
+        const one = existing.value;
+        if (one.artifactHash !== input.artifactHash
+            || one.head.releaseHash !== input.head.releaseHash
+            || one.beforeFingerprint !== input.beforeFingerprint
+            || one.afterFingerprint !== input.afterFingerprint
+            || one.reportHash !== input.reportHash) {
+            return failure("migration.invalidJournal", {reason: "preparation id already confirmed with different identity"});
+        }
+        return {ok: true, value: one};
+    }
+    const table = `${quotePgIdentifier(checked.value.schema)}.preparations`;
+    const result = await safeQuery(session, `INSERT INTO ${table} (
+        installation_id, ordinal, preparation_id, artifact_hash,
+        head_system_id, head_release_id, head_release_hash,
+        before_fingerprint, after_fingerprint, report_hash, committed_at
+    ) VALUES (
+        $1,
+        COALESCE((SELECT MAX(p.ordinal)+1 FROM ${table} p WHERE p.installation_id=$1),1),
+        $2,$3,$4,$5,$6,$7,$8,$9,$10
+    ) RETURNING ${preparationSelect("preparations")}`, [
+        input.installationId,
+        input.preparationId,
+        input.artifactHash,
+        input.head.systemId,
+        input.head.releaseId,
+        input.head.releaseHash,
+        input.beforeFingerprint,
+        input.afterFingerprint,
+        input.reportHash,
+        input.committedAt,
+    ]);
+    if (!result.ok) return result;
+    if (result.value.rows.length !== 1) return failure("migration.invalidJournal", {reason: "confirmed preparation insert failed"});
+    return decodePreparationRow(result.value.rows[0]);
+}
+
+export async function readPreparationHistory(
+    session: PgSession,
+    config: JournalConfig,
+    installationId: string,
+): Promise<ValidationResult<readonly PreparationHistoryInfo[]>> {
+    const checked = validateConfig(config);
+    if (!checked.ok) return checked;
+    if (!nonEmptyString(installationId)) return failure("migration.invalidJournal", {reason: "invalid installation id"});
+    const table = `${quotePgIdentifier(checked.value.schema)}.preparations`;
+    const result = await safeQuery(session, `SELECT ${preparationSelect("preparations")}
+        FROM ${table} preparations WHERE installation_id=$1 ORDER BY ordinal`, [installationId]);
+    if (!result.ok) return result;
+    const history: PreparationHistoryInfo[] = [];
+    for (const row of result.value.rows) {
+        const decoded = decodePreparationRow(row);
+        if (!decoded.ok) return decoded;
+        history.push(decoded.value);
+    }
+    for (let index = 0; index < history.length; index++) {
+        if (history[index]!.ordinal !== index + 1) {
+            return failure("migration.invalidJournal", {reason: "preparation history ordinals are not contiguous"});
+        }
+    }
+    return {ok: true, value: history};
 }
 
 export async function withMigrationLock<T>(

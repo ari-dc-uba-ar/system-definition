@@ -19,19 +19,19 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T22 cerradas. T23 activa; slices #1–#2 implementados/verificados y rojo #3 de preparación inmutable/preflight preparado.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T22 cerradas. T23 activa; slices #1–#3 implementados/verificados y rojo #4 final de ejecución/journal/deployment/integración preparado.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T23 — reportes y resolver separado de deployment; slices #1–#2 verdes, rojo #3 preparado |
-| Estado / bloqueo concreto | Slices #1–#2 T23 implementados/verificados: reporte inmutable + resolver read-only con respuestas versionadas/frescura. `preparation.ts`, verify/apply-resolution, journal y CLI siguen fuera; rojo #3 fija artifact de preparación + fingerprint/preflight de copia. |
-| Revisión del rojo y autorización vigente | 2026-10-01: `T23 second red approved` recibido y consumido. Rojo #3 preparado; `preparation.ts` no se implementa antes de `T23 third red approved`. |
-| Archivos modificados durante implementación | Slice #1: `src/conflict-report.ts`; slice #2: `src/resolve-conflict.ts`; exports públicos correspondientes. Rojo #3 añade sólo `test/preparation-test.ts` + evidencia/checklist. |
-| Última evidencia válida / revisión de código | Docker T23 slice #2: typecheck consumidor clean; `T23 conflict resolver freshness and answer application` 5/5; 146 core + 173 consumer = 319. |
-| Próxima acción | Aplicar rojo #3 y comprobar el fallo TypeScript esperado por `../src/preparation`; esperar `T23 third red approved` antes de implementar. |
-| Decisión pendiente del desarrollador | Aprobar o pedir cambios al tercer rojo T23. |
+| Tarea activa | T23 — reportes y resolver separado de deployment; slices #1–#3 verdes, rojo #4 final preparado |
+| Estado / bloqueo concreto | Slices #1–#3 T23 implementados/verificados: reporte inmutable, resolver read-only y artifact/preflight de preparación. Ejecución/receipt, journal, `preparationHistoryHash`, CLI y PostgreSQL final siguen fuera; rojo #4 fija ese límite restante. |
+| Revisión del rojo y autorización vigente | 2026-10-01: `T23 third red approved` recibido y consumido. Rojo #4 preparado; ejecución/receipt/journal/deployment/CLI/integración T23 no se implementan antes de `T23 fourth red approved`. |
+| Archivos modificados durante implementación | Slice #1: `src/conflict-report.ts`; slice #2: `src/resolve-conflict.ts`; slice #3: `src/preparation.ts`; exports públicos correspondientes. Rojo #4 añade sólo `test/preparation-final-integration-test.ts` + evidencia/checklist. |
+| Última evidencia válida / revisión de código | Docker T23 slice #3: typecheck consumidor clean; `T23 immutable preparation artifact and copy preflight` 5/5; 146 core + 178 consumer = 324. |
+| Próxima acción | Aplicar rojo #4 y comprobar el bloque final 0/6 esperado; esperar `T23 fourth red approved` antes de implementar ejecución/receipt/journal/deployment/CLI/integración. |
+| Decisión pendiente del desarrollador | Aprobar o pedir cambios al cuarto rojo T23. |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
 
@@ -364,7 +364,7 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** reconciliación T12, transformaciones/decisiones T20/T21, artifacts/gates T22, mismo motor transaccional y lock. Resolver no recibe capacidad de escritura en target.
 - **Entregar:** `conflict-report.ts`, `resolve-conflict.ts`, `preparation.ts`, comandos resolve/verify-resolution/apply-resolution y auditoría de preparaciones sin avanzar head.
 - **Aceptar:** infer/install/apply/verify/gate con TTY nunca leen stdin; resolver sí pregunta explícitamente; reporte obsoleto/commit ambiguo bloquea; fallo en C informa head B; SQL publicado intacto; preparación verificada restaura/prepara origen y conserva head; fingerprint cambiado revierte; corrección invalida evidencia vía preparationHistoryHash; fallo irreparable sigue bloqueado.
-- **Evidencia:** [Evidencia T23](migraciones-evidencia/T23.md). Slices #1–#2 implementados/verificados: reportes 5/5 y resolver read-only 5/5; baseline 146 core + 173 consumer = 319. Rojo #3 preparado para artifact de preparación, cierre de recursos/inputCapture y preflight exacto de copia; producción de `preparation.ts` aún no autorizada.
+- **Evidencia:** [Evidencia T23](migraciones-evidencia/T23.md). Slices #1–#3 implementados/verificados: reportes 5/5, resolver read-only 5/5 y preparación inmutable/preflight 5/5; baseline 146 core + 178 consumer = 324. Rojo #4 final preparado para ejecución/receipt, journal e idempotencia/reconciliación, `preparationHistoryHash`, CLI/docs y PostgreSQL end-to-end; producción final aún no autorizada.
 - [ ] Implementación
 - [ ] Verificación
 - [ ] Revisión del desarrollador

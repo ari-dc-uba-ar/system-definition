@@ -477,6 +477,146 @@ function validatePublishedMigration(migration: PublishedMigrationInfo): Validati
     return {ok: true, value: migration};
 }
 
+
+export type MigrationPreparationExecutionInfo = {
+    installation: InstallationInfo;
+};
+
+export type MigrationPreparationBeforeCommit = (
+    session: PgSession,
+    installation: InstallationInfo,
+) => Promise<ValidationResult<true>> | ValidationResult<true>;
+
+/**
+ * Runs a corrective preparation through the same atomic resource/checkpoint/schema
+ * engine used by executeMigration, but deliberately does not append migration
+ * history or advance the installation head. The preparation's from/to release must
+ * therefore be the same confirmed head.
+ */
+export async function executeMigrationPreparation(
+    session: PgSession,
+    migration: MigrationInfo,
+    context: MigrationExecutionContext,
+    beforeCommit?: MigrationPreparationBeforeCommit,
+): Promise<ValidationResult<MigrationPreparationExecutionInfo>> {
+    if (migration === null || typeof migration !== "object"
+        || typeof migration.id !== "string" || migration.id.length === 0
+        || migration.from === null || typeof migration.from !== "object"
+        || migration.to === null || typeof migration.to !== "object"
+        || !sameRelease(migration.from, migration.to)) {
+        return fail("migration.invalidPreparation", {reason: "preparation must remain on the confirmed head"});
+    }
+    const prepared = prepareExecution(migration, context);
+    if (!prepared.ok) return prepared;
+
+    const begun = await controlQuery(session, "BEGIN");
+    if (!begun.ok) return begun;
+    let transactionOpen = true;
+
+    const failInside = async <T>(result: ValidationResult<T>): Promise<ValidationResult<MigrationPreparationExecutionInfo>> => {
+        if (!transactionOpen) return result as ValidationResult<MigrationPreparationExecutionInfo>;
+        transactionOpen = false;
+        return rollbackAfterFailure(session, result) as Promise<ValidationResult<MigrationPreparationExecutionInfo>>;
+    };
+
+    try {
+        const statementTimeout = await controlQuery(
+            session,
+            `SET LOCAL statement_timeout = '${context.options.statementTimeoutMs}ms'`,
+        );
+        if (!statementTimeout.ok) return await failInside(statementTimeout);
+        const lockTimeout = await controlQuery(
+            session,
+            `SET LOCAL lock_timeout = '${context.options.lockTimeoutMs}ms'`,
+        );
+        if (!lockTimeout.ok) return await failInside(lockTimeout);
+
+        const installation = await readInstallation(session, context.journal, context.scope);
+        if (!installation.ok) return await failInside(installation);
+        if (installation.value === null) {
+            return await failInside(fail("migration.headMismatch", {reason: "installation is missing"}));
+        }
+        if (!sameRelease(installation.value.current, migration.from)) {
+            return await failInside(fail("migration.headMismatch", {
+                expected: migration.from.releaseId,
+                actual: installation.value.current.releaseId,
+            }));
+        }
+
+        const history = await readHistory(session, context.journal, installation.value.installationId);
+        if (!history.ok) return await failInside(history);
+        const verifiedHistory = verifyHistory(installation.value, history.value);
+        if (!verifiedHistory.ok) return await failInside(verifiedHistory);
+
+        const sourceSchema = await checkSchema(session, context.from, "source");
+        if (!sourceSchema.ok) return await failInside(sourceSchema);
+
+        const before = await runChecks(session, prepared.value.before);
+        if (!before.ok) return await failInside(before);
+
+        const validationModules = new Map<string, ValidationModule>();
+        for (const step of prepared.value.steps) {
+            const executed = await executePreparedSqlResource(session, step.resource);
+            if (!executed.ok) return await failInside(executed);
+
+            const checkpoint = prepared.value.checkpoints.get(step.id);
+            if (checkpoint !== undefined) {
+                if (prepared.value.validationHost === null) {
+                    return await failInside(fail("migration.invalidReference", {
+                        reason: "authoring checkpoint validation host is missing",
+                    }));
+                }
+                const checkpointResult = await runAuthoringCheckpoint(
+                    session,
+                    checkpoint,
+                    prepared.value.validationHost,
+                    validationModules,
+                );
+                if (!checkpointResult.ok) return await failInside(checkpointResult);
+            }
+        }
+
+        const after = await runChecks(session, prepared.value.after);
+        if (!after.ok) return await failInside(after);
+        const invariants = await runChecks(session, prepared.value.targetInvariants);
+        if (!invariants.ok) return await failInside(invariants);
+        const managed = await checkManagedData(session, context.to.managedData);
+        if (!managed.ok) return await failInside(managed);
+        const targetSchema = await checkSchema(session, context.to, "target");
+        if (!targetSchema.ok) return await failInside(targetSchema);
+
+        if (beforeCommit !== undefined) {
+            let hook: ValidationResult<true>;
+            try {
+                hook = await beforeCommit(session, installation.value);
+            } catch (error) {
+                hook = fail("migration.executionFailed", {
+                    reason: error instanceof Error ? error.message : "preparation before-commit hook failed",
+                });
+            }
+            if (!hook.ok) return await failInside(hook);
+        }
+
+        const committed = await controlQuery(session, "COMMIT");
+        transactionOpen = false;
+        if (!committed.ok) {
+            return fail("migration.commitUnknown", {
+                preparationId: migration.id,
+                reason: committed.problems[0]?.details.reason ?? "commit result is unknown",
+            });
+        }
+        return {ok: true, value: {installation: installation.value}};
+    } catch (error) {
+        const failure = fail<MigrationPreparationExecutionInfo>("migration.executionFailed", {
+            preparationId: migration.id,
+            reason: error instanceof Error ? error.message : "preparation execution threw",
+        });
+        if (!transactionOpen) return failure;
+        transactionOpen = false;
+        return rollbackAfterFailure(session, failure);
+    }
+}
+
 export async function executeMigration(
     session: PgSession,
     migration: PublishedMigrationInfo,

@@ -2,38 +2,119 @@
   {
     "title": "status success",
     "command": "status",
-    "args": ["--installation", "school-prod"],
-    "result": {"ok": true, "value": null},
+    "args": [
+      "--installation",
+      "school-prod"
+    ],
+    "result": {
+      "ok": true,
+      "value": null
+    },
     "exitCode": 0
   },
   {
     "title": "environment mismatch blocks verification",
     "command": "verify",
-    "args": ["--release", "B"],
+    "args": [
+      "--release",
+      "B"
+    ],
     "result": {
       "ok": false,
-      "problems": [{"messageKey": "migration.environmentMismatch", "field": null, "severity": "blocking", "details": {"expected": "18.6", "actual": "18.5"}}]
+      "problems": [
+        {
+          "messageKey": "migration.environmentMismatch",
+          "field": null,
+          "severity": "blocking",
+          "details": {
+            "expected": "18.6",
+            "actual": "18.5"
+          }
+        }
+      ]
     },
     "exitCode": 2
   },
   {
     "title": "deployment gate blocks activation",
     "command": "deployment-gate",
-    "args": ["--deployment", "deploy-B"],
+    "args": [
+      "--deployment",
+      "deploy-B"
+    ],
     "result": {
       "ok": false,
-      "problems": [{"messageKey": "deployment.blocked", "field": null, "severity": "blocking", "details": {}}]
+      "problems": [
+        {
+          "messageKey": "deployment.blocked",
+          "field": null,
+          "severity": "blocking",
+          "details": {}
+        }
+      ]
     },
     "exitCode": 3
   },
   {
     "title": "unknown commit outcome is operational failure",
     "command": "apply",
-    "args": ["--to", "B"],
+    "args": [
+      "--to",
+      "B"
+    ],
     "result": {
       "ok": false,
-      "problems": [{"messageKey": "migration.unknownCommitOutcome", "field": null, "severity": "blocking", "details": {}}]
+      "problems": [
+        {
+          "messageKey": "migration.unknownCommitOutcome",
+          "field": null,
+          "severity": "blocking",
+          "details": {}
+        }
+      ]
     },
     "exitCode": 4
+  },
+  {
+    "title": "resolve an explicit conflict report",
+    "command": "resolve",
+    "args": [
+      "reports/failure.json",
+      "--out",
+      "resolutions/fix-source"
+    ],
+    "result": {
+      "ok": true,
+      "value": null
+    },
+    "exitCode": 0
+  },
+  {
+    "title": "verify a preparation on an identified copy",
+    "command": "verify-resolution",
+    "args": [
+      "resolutions/fix-source",
+      "--copy",
+      "copy-1"
+    ],
+    "result": {
+      "ok": true,
+      "value": null
+    },
+    "exitCode": 0
+  },
+  {
+    "title": "apply a verified preparation non-interactively",
+    "command": "apply-resolution",
+    "args": [
+      "resolutions/fix-source",
+      "--installation",
+      "school-prod"
+    ],
+    "result": {
+      "ok": true,
+      "value": null
+    },
+    "exitCode": 0
   }
 ]

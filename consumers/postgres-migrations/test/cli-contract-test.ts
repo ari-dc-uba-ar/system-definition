@@ -17,7 +17,10 @@ type ExpectedCommand =
     | "status"
     | "install"
     | "apply"
-    | "deployment-gate";
+    | "deployment-gate"
+    | "resolve"
+    | "verify-resolution"
+    | "apply-resolution";
 
 type ExpectedExitCode = 0 | 2 | 3 | 4;
 
