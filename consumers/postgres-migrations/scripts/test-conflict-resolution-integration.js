@@ -112,7 +112,7 @@ class PsqlSession {
         this.stderr = "";
         this.ambiguousCommit = ambiguousCommit;
         this.ambiguousDelivered = false;
-        this.child = spawn("psql", ["--no-psqlrc", "--quiet", "--set", "ON_ERROR_STOP=1"], {env: process.env, stdio: ["pipe", "pipe", "pipe"]});
+        this.child = spawn("psql", ["--no-psqlrc", "--quiet"], {env: process.env, stdio: ["pipe", "pipe", "pipe"]});
         this.child.stderr.setEncoding("utf8");
         this.child.stderr.on("data", chunk => { this.stderr += chunk; });
         this.child.on("error", error => this.rejectPending(error));
@@ -127,9 +127,15 @@ class PsqlSession {
         if (p === null) return;
         if (line === p.start) { p.started = true; return; }
         if (!p.started) return;
+        if (line.startsWith(p.sqlStatePrefix)) { p.sqlState = line.slice(p.sqlStatePrefix.length).trim(); return; }
         if (line.startsWith(p.rowCountPrefix)) { const raw = line.slice(p.rowCountPrefix.length).trim(); p.rowCount = /^\d+$/u.test(raw) ? Number(raw) : null; return; }
         if (line === p.end) {
             this.pending = null;
+            if (p.sqlState !== "00000") {
+                const stderr = this.stderr.trim();
+                p.reject(new Error(stderr || `PostgreSQL query failed with SQLSTATE ${p.sqlState ?? "unknown"}`));
+                return;
+            }
             try { p.resolve({rows: rowsFromCsv(p.lines), rowCount: p.rowCount}); } catch (error) { p.reject(error); }
             return;
         }
@@ -141,11 +147,13 @@ class PsqlSession {
         const id = ++this.sequence;
         const start = `__SD_START_${id}__`;
         const end = `__SD_END_${id}__`;
+        const sqlStatePrefix = `__SD_SQLSTATE_${id}__ `;
         const rowCountPrefix = `__SD_ROWCOUNT_${id}__ `;
         const sql = bindSql(text.trim().replace(/;+\s*$/u, ""), values);
+        this.stderr = "";
         return new Promise((resolve, reject) => {
-            this.pending = {start, end, rowCountPrefix, started: false, lines: [], rowCount: null, resolve, reject};
-            this.child.stdin.write(`\\echo ${start}\n${sql};\n\\echo ${rowCountPrefix}:ROW_COUNT\n\\echo ${end}\n`);
+            this.pending = {start, end, sqlStatePrefix, rowCountPrefix, started: false, lines: [], sqlState: null, rowCount: null, resolve, reject};
+            this.child.stdin.write(`\\echo ${start}\n${sql};\n\\echo ${sqlStatePrefix}:SQLSTATE\n\\echo ${rowCountPrefix}:ROW_COUNT\n\\echo ${end}\n`);
         });
     }
 
