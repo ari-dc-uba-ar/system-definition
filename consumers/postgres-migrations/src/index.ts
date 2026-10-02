@@ -36,3 +36,7 @@ export * from "./data-validation";
 export * from "./migration-plan";
 
 export * from "./migration-plan-runtime";
+
+export * from "./conflict-report";
+
+export * from "./resolve-conflict";
