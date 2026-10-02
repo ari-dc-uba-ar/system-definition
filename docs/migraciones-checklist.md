@@ -19,19 +19,19 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T22 cerradas. T23 activa; slices #1–#3 implementados/verificados y rojo #4 final de ejecución/journal/deployment/integración preparado.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T23 cerradas. T23 fue aprobada explícitamente; aceptación final del sistema completo en revisión.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T23 — reportes y resolver separado de deployment; slices #1–#3 verdes, rojo #4 final preparado |
-| Estado / bloqueo concreto | Slices #1–#3 T23 implementados/verificados: reporte inmutable, resolver read-only y artifact/preflight de preparación. Ejecución/receipt, journal, `preparationHistoryHash`, CLI y PostgreSQL final siguen fuera; rojo #4 fija ese límite restante. |
-| Revisión del rojo y autorización vigente | 2026-10-01: `T23 third red approved` recibido y consumido. Rojo #4 preparado; ejecución/receipt/journal/deployment/CLI/integración T23 no se implementan antes de `T23 fourth red approved`. |
-| Archivos modificados durante implementación | Slice #1: `src/conflict-report.ts`; slice #2: `src/resolve-conflict.ts`; slice #3: `src/preparation.ts`; exports públicos correspondientes. Rojo #4 añade sólo `test/preparation-final-integration-test.ts` + evidencia/checklist. |
-| Última evidencia válida / revisión de código | Docker T23 slice #3: typecheck consumidor clean; `T23 immutable preparation artifact and copy preflight` 5/5; 146 core + 178 consumer = 324. |
-| Próxima acción | Aplicar rojo #4 y comprobar el bloque final 0/6 esperado; esperar `T23 fourth red approved` antes de implementar ejecución/receipt/journal/deployment/CLI/integración. |
-| Decisión pendiente del desarrollador | Aprobar o pedir cambios al cuarto rojo T23. |
+| Tarea activa | Aceptación final del sistema completo — evidencia acumulada completa; revisión final del desarrollador pendiente |
+| Estado / bloqueo concreto | T01–T23 tienen implementación, verificación y revisión del desarrollador registradas. La matriz final acumula 146 core + 184 consumer = 330 passing, PostgreSQL 18.6 real y los criterios de aceptación del sistema; sólo falta la revisión final del sistema completo. |
+| Revisión del rojo y autorización vigente | 2026-10-01: `T23 approved` recibido explícitamente y consumido como revisión final de T23. No queda implementación T01–T23 pendiente ni autorización abierta para ampliar alcance. |
+| Archivos modificados durante implementación | Slices #1–#3: `src/conflict-report.ts`, `src/resolve-conflict.ts`, `src/preparation.ts` y exports. Slice #4: `src/execute-migration.ts`, `src/journal.ts`, `src/preparation.ts`, `src/cli.ts`, tests/fixtures CLI, `package.json`, README consumidor y `scripts/test-conflict-resolution-integration.js`; ajuste final sólo del adaptador `psql` del harness. |
+| Última evidencia válida / revisión de código | Docker final T23: typecheck consumidor clean; contrato final 6/6; 146 core + 184 consumer = 330; PostgreSQL 18.6 con cuatro escenarios T23, incluido SQL publicado irreparable + head/history sin cambios + cero activaciones; exit 0; `docs:check` clean. |
+| Próxima acción | Revisar la aceptación final acumulada T01–T23 y registrar sólo una confirmación explícita del sistema completo; no abrir nuevas tareas por defecto. |
+| Decisión pendiente del desarrollador | Aprobar o pedir cambios a la aceptación final del sistema completo. |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
 
@@ -296,7 +296,7 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** snapshots/persistencia T02/T03, artifacts T06, generador/inspector/comparer T07–T09; completeEntity/completeRecord, sin copiar defaults.
 - **Entregar:** `infer.ts`, diff y clasificación de impacto, IDs estables, reconstrucción de historia y plan de operaciones residual contra SSOT.
 - **Aceptar:** ADD nullable inferido; rename no adivinado; NOT NULL pide datos/prueba; cambios desconocidos bloquean; replay real con runner/harness T11/T13 que no produce head esperado falla; instalación atrasada se compara con su propio head; sin SSOT no genera.
-- **Evidencia:** [Evidencia T18](migraciones-evidencia/T18.md). Las tres fronteras T18 están implementadas y verificadas. Verificación global autoritativa del 2026-09-29: typecheck consumidor limpio y suite raíz 146 core + 73 consumidor = 219 passing; `inferStructureChanges`, replay/historia/drift/SSOT y residual/`compileDraft` permanecen verdes. Revisión final del desarrollador pendiente.
+- **Evidencia:** [Evidencia T18](migraciones-evidencia/T18.md). Las tres fronteras T18 están implementadas y verificadas. Verificación global autoritativa del 2026-09-29: typecheck consumidor limpio y suite raíz 146 core + 73 consumidor = 219 passing; `inferStructureChanges`, replay/historia/drift/SSOT y residual/`compileDraft` permanecen verdes. Revisión final aprobada explícitamente con `T18 approved` el 2026-09-29.
 - [x] Implementación
 - [x] Verificación
 - [x] Revisión del desarrollador
@@ -364,25 +364,26 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** reconciliación T12, transformaciones/decisiones T20/T21, artifacts/gates T22, mismo motor transaccional y lock. Resolver no recibe capacidad de escritura en target.
 - **Entregar:** `conflict-report.ts`, `resolve-conflict.ts`, `preparation.ts`, comandos resolve/verify-resolution/apply-resolution y auditoría de preparaciones sin avanzar head.
 - **Aceptar:** infer/install/apply/verify/gate con TTY nunca leen stdin; resolver sí pregunta explícitamente; reporte obsoleto/commit ambiguo bloquea; fallo en C informa head B; SQL publicado intacto; preparación verificada restaura/prepara origen y conserva head; fingerprint cambiado revierte; corrección invalida evidencia vía preparationHistoryHash; fallo irreparable sigue bloqueado.
-- **Evidencia:** [Evidencia T23](migraciones-evidencia/T23.md). Slices #1–#3 implementados/verificados: reportes 5/5, resolver read-only 5/5 y preparación inmutable/preflight 5/5; baseline 146 core + 178 consumer = 324. Rojo #4 final preparado para ejecución/receipt, journal e idempotencia/reconciliación, `preparationHistoryHash`, CLI/docs y PostgreSQL end-to-end; producción final aún no autorizada.
-- [ ] Implementación
-- [ ] Verificación
-- [ ] Revisión del desarrollador
+- **Evidencia:** [Evidencia T23](migraciones-evidencia/T23.md). Slices #1–#4 implementados/verificados: reportes 5/5, resolver 5/5, preparación/preflight 5/5 y contrato final 6/6; 146 core + 184 consumer = 330; PostgreSQL 18.6 final 4/4 con rollback, fingerprint drift, commit ambiguo/idempotencia, invalidación por `preparationHistoryHash`, SQL publicado irreparable, head/history conservados y cero activaciones; `docs:check` clean. Revisión final aprobada explícitamente con `T23 approved` el 2026-10-01.
+- [x] Implementación
+- [x] Verificación
+- [x] Revisión del desarrollador
+- **Estado final T23 (2026-10-01):** cerrada. Revisión final confirmada explícitamente con `T23 approved`; esta aprobación no se interpreta como aprobación automática de la aceptación final del sistema completo.
 
 ## Aceptación final del sistema completo
 
 No completar esta sección al terminar T17. La [regla de terminación](implementacion-migraciones.md#20-criterio-de-terminación-y-entrega), [matriz general](implementacion-migraciones.md#18-matriz-de-aceptación), [oráculos generales](migraciones-contratos.md#13-pruebas-con-resultados-esperados) y matrices de autoría/resolución siguen siendo obligatorias; los resúmenes anteriores no las recortan.
 
-- [ ] T01–T23 implementadas y verificadas, con evidencia vigente; revisiones del desarrollador identificadas por separado.
-- [ ] Las tres categorías demostradas end-to-end: estructura inferida, datos explícitos y destrucción resuelta conservando/descartando datos según decisiones.
-- [ ] Creación limpia y replay desde historia coinciden con SSOT obligatorio; SQL manual no evita comparación; drift real bloquea antes del upgrade.
-- [ ] Autoría/resolver pregunta sólo cuando se invoca explícitamente; todos los comandos de deployment fallan sin prompts y producen reportes útiles.
-- [ ] Fallos de verificación, datos, recuperación o integridad mantienen bloqueo y cero activaciones; preparación no concede permiso de deployment ni altera historia publicada.
-- [ ] Suite raíz y suite del consumidor pertinentes pasan; integración real PostgreSQL 18.6 y cobertura de CI exigida registradas. Ningún skip/bloqueo se presenta como passed.
-- [ ] API pública/build/docs operativas actualizados; README raíz generado desde LEEME cuando corresponda; referencias y ejemplos finales siguen correctos.
+- [x] T01–T23 implementadas y verificadas, con evidencia vigente; revisiones del desarrollador identificadas por separado.
+- [x] Las tres categorías demostradas end-to-end: estructura inferida, datos explícitos y destrucción resuelta conservando/descartando datos según decisiones.
+- [x] Creación limpia y replay desde historia coinciden con SSOT obligatorio; SQL manual no evita comparación; drift real bloquea antes del upgrade.
+- [x] Autoría/resolver pregunta sólo cuando se invoca explícitamente; todos los comandos de deployment fallan sin prompts y producen reportes útiles.
+- [x] Fallos de verificación, datos, recuperación o integridad mantienen bloqueo y cero activaciones; preparación no concede permiso de deployment ni altera historia publicada.
+- [x] Suite raíz y suite del consumidor pertinentes pasan; integración real PostgreSQL 18.6 y cobertura de CI exigida registradas. Ningún skip/bloqueo se presenta como passed.
+- [x] API pública/build/docs operativas actualizados; README raíz generado desde LEEME cuando corresponda; referencias y ejemplos finales siguen correctos.
 - [ ] Revisión final del desarrollador registrada, sin casillas completadas en su nombre.
 
-**Evidencia de aceptación final:** Pendiente.
+**Evidencia de aceptación final:** [Evidencia final T01–T23](migraciones-evidencia/FINAL.md). Criterios técnicos completos; revisión final del sistema pendiente de confirmación explícita del desarrollador.
 
 ## Registro de cambios de alcance o contradicciones
 
