@@ -9,7 +9,7 @@
     "build": "tsc",
     "test": "tsc && mocha --exit --node-option enable-source-maps dist/test/",
     "test-ci": "tsc && c8 mocha --exit --node-option enable-source-maps dist/test/",
-    "test-integration": "npm run build && node scripts/test-integration.js",
+    "test-integration": "npm run build && node scripts/test-integration.js && node scripts/test-authoring-integration.js",
     "docs:generate": "node scripts/generate-readme.js",
     "docs:check": "node scripts/generate-readme.js --check",
     "prebuild": "npm run bootstrap-repository",

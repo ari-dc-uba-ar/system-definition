@@ -14,7 +14,9 @@ npm --prefix consumers/postgres-migrations run test-integration
 npm --prefix consumers/postgres-migrations run docs:check
 ```
 
-The integration command is intentionally strict: it talks to a real PostgreSQL server and requires `server_version_num = 180006` (PostgreSQL 18.6). A missing client/server or any other PostgreSQL version is a failing integration run, not a skipped success.
+The integration command is intentionally strict: it talks to a real PostgreSQL server and requires `server_version_num = 180006` (PostgreSQL 18.6). A missing client/server or any other PostgreSQL version is a failing integration run, not a skipped success. It also runs the T22 authoring matrix on the same immutable plan/artifact resolver and transactional runner: `generated-only`, `manual`, `mixed`, and a blocking rollback case with zero activations.
+
+Authoring commands are non-interactive unless the explicit resolver flow is invoked. Pending authoring in non-interactive mode returns a non-zero result with `migration.authoringPending`; deployment/apply/verify never waits for stdin to resolve an authoring decision.
 
 ## CLI result examples
 

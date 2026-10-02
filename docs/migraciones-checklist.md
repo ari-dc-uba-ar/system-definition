@@ -19,19 +19,19 @@ El flujo de [CLAUDE.md](../CLAUDE.md#forma-de-trabajo) exige mostrar el test roj
 - [x] Leer decisiones, especificaciones, contratos y código actual indicado por la tarea.
 - [x] Comprobar entorno real: compilador/scripts del repo, dependencias y PostgreSQL 18.6 para integración; registrar versiones y pruebas base ejecutadas. No sustituir 18.6 silenciosamente. **Resultado:** dependencias no instalables en esta sesión y `psql` ausente; ver [evidencia T01](migraciones-evidencia/T01.md).
 - [ ] Identificar cambios preexistentes del desarrollador y preservarlos; contrastar casillas con código/evidencia antes de retomar. **Límite:** el ZIP no contiene `.git`; no hay base de commit para distinguir cambios previos. Se preservó el contenido recibido.
-- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T21 cerradas. T22 activa; slices #1–#3 implementados y verificados en Docker. Rojo #4 preparado para CLI/CI y matriz generated/manual/mixed con PostgreSQL 18.6 real. No implementar producción del slice #4 hasta aprobación explícita del rojo.**
+- [x] Elegir una tarea cuyas dependencias estén implementadas/verificadas, registrar el test rojo y seguir el flujo de revisión vigente. **T01–T21 cerradas. T22 implementada y verificada; revisión final del desarrollador pendiente.**
 
 Actualizar este bloque al cerrar una sesión o cambiar de agente; no dejar sólo información en el chat:
 
 | Campo | Registro actual |
 | --- | --- |
-| Tarea activa | T22 — integración completa de autoría y deployment; rojo #4 pendiente de revisión |
-| Estado / bloqueo concreto | T01–T21 cerradas. T22 slices #1–#3 implementados/verificados: manifest/hash inmutable, loader/buildMigrationPlan/planHash y resolución artifact-to-runner. Rojo #4 añade sólo wiring CLI/CI/docs y matriz generated/manual/mixed sobre PostgreSQL 18.6 real. |
-| Revisión del rojo y autorización vigente | 2026-10-01: `T22 third red approved` consumido implementando sólo resolución artifact-to-runner. Slice #3 verificado en Docker. Rojo #4 preparado pero aún no aprobado; no hay autorización para su producción. |
-| Archivos modificados durante implementación | Slice #3 añadió `migration-plan-runtime.ts` y reutilizó/refactorizó `migration-plan.ts` + export en `index.ts`; su test es `migration-plan-runtime-test.ts`. Este patch de rojo #4 no modifica producción: añade `authoring-integration-test.ts` y actualiza handoff/evidencia. |
-| Última evidencia válida / revisión de código | Docker 2026-10-01: typecheck consumidor limpio; T22 artifact/hash 5/5, plan/hash 5/5 y artifact-to-runner 5/5; core 146 passing; consumer 158 passing; total 304. Rojo #4 esperado: nuevo bloque de integración contractual 0/5 hasta cablear harness/fixture/docs. |
-| Próxima acción | Aplicar y ejecutar T22 rojo #4. Si el desarrollador confirma `T22 fourth red approved`, implementar únicamente harness PostgreSQL real + fixture + wiring CLI/CI/docs; no abrir T23. |
-| Decisión pendiente del desarrollador | Revisión del rojo T22 #4; ninguna decisión de producto adicional identificada (U01–U11 siguen acordadas) |
+| Tarea activa | T22 — integración completa de autoría y deployment; implementación y verificación completas, revisión final pendiente |
+| Estado / bloqueo concreto | T01–T21 cerradas. T22 completa técnicamente: manifest/hash, planHash, resolución artifact-to-runner, fixture §11 y matriz PostgreSQL 18.6 generated/manual/mixed/rollback verificadas. Falta sólo revisión final explícita del desarrollador. |
+| Revisión del rojo y autorización vigente | 2026-10-01: `T22 fourth red approved` recibido y consumido. T22 quedó implementada/verificada; T23 sigue fuera de alcance hasta `T22 approved`. |
+| Archivos modificados durante implementación | Slice #4: `package.json`, `scripts/test-authoring-integration.js`, `fixtures/authoring-email/index.ts`, generador + README del consumidor. No cambia `src/`; reutiliza `buildMigrationPlan`, `resolveMigrationExecutionContext`, `executeMigrationPath` y `checkDeploymentReady`. |
+| Última evidencia válida / revisión de código | Docker final T22: typecheck consumidor clean; suite pura 146 core + 163 consumer = 309; bloque final T22 5/5; `test-integration` verde sobre PostgreSQL 18.6 con generated-only/manual/mixed/rollback+zero activations; `docs:check` clean. Primer intento del harness detectó una coerción de `journal_format_version`; se corrigió sólo el adapter de test y el rerun quedó verde. |
+| Próxima acción | Revisar el cierre T22. Si el desarrollador responde `T22 approved`, marcar revisión final y recién entonces abrir T23 con un rojo nuevo. |
+| Decisión pendiente del desarrollador | Revisión final T22: confirmar explícitamente `T22 approved` o solicitar cambios. |
 
 Para cada tarea, sustituir «Pendiente» en Evidencia por un enlace a un registro o bloque completo con: revisión del código (commit o resumen de cambios si aún no hay commit), archivos, reutilización R/P/N, caso rojo y revisión recibida, comandos exactos, entorno, fecha, exit code/resultados, criterios cubiertos y bloqueos. No exigir crear un commit para registrar progreso. Si se guardan registros, usar `docs/migraciones-evidencia/Txx.md`; no guardar credenciales ni datos productivos. No crear archivos de evidencia vacíos para aparentar trabajo.
 
@@ -350,11 +350,11 @@ T17 integra lo construido hasta T16; T22/T23 amplían y vuelven a verificar CLI/
 - **Reutilizar:** artifact loader T06, runner T11, verificador T13, evidencia/gates T15/T16 y CLI/CI T17; ningún runner especial para SQL generado.
 - **Entregar:** unión de authoring manifest, queries, validadores y checkpoints a hashes/plan/gates; fixture email transferido + nota descartada; CLI/CI/docs ampliados.
 - **Aceptar:** flujo generado, manual y mixto produce SSOT destino; manifest/checkpoint/recurso faltante bloquea; evidencia cambia con validator/SQL/decisión; respuestas interactivas y archivo equivalentes; tests negativos conservan cero activaciones; matrices T18–T21 pasan con PostgreSQL real.
-- **Evidencia:** [Evidencia T22](migraciones-evidencia/T22.md). Slices #1–#3 implementados y verificados en Docker (304 total). Rojo #4 preparado para CLI/CI/docs y matriz generated/manual/mixed sobre PostgreSQL 18.6 real; producción del slice #4 todavía no autorizada.
-- [ ] Implementación
-- [ ] Verificación
+- **Evidencia:** [Evidencia T22](migraciones-evidencia/T22.md). Slices #1–#4 implementados y verificados. Suite final 146 core + 163 consumer = 309; PostgreSQL 18.6 real verde para generated-only/manual/mixed/rollback + cero activaciones; `docs:check` clean.
+- [x] Implementación
+- [x] Verificación
 - [ ] Revisión del desarrollador
-- **Estado de sesión T22 (2026-10-01):** slices #1–#3 cerrados técnicamente: manifest inmutable + `migrationHash`, loader exacto de `authoring.json`, `buildMigrationPlan`/`planHash` y resolución runtime de queries/snapshots/validation artifacts; Docker 146+158=304. Rojo #4 queda acotado a fixture §11, harness PostgreSQL generated/manual/mixed y wiring CLI/CI/docs. T23 permanece fuera.
+- **Estado de sesión T22 (2026-10-01):** implementación y verificación completas. El harness real reutiliza plan/resolver/runner/gate existentes y quedó verde en PostgreSQL 18.6 después de corregir una coerción numérica exclusiva del adapter `psql` de test. T23 permanece fuera hasta aprobación final explícita de T22.
 
 ## T23
 
