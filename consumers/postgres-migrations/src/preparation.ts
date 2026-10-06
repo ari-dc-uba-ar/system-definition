@@ -23,7 +23,10 @@ import type {
     QueryRefInfo,
     SourceSelectionInfo,
 } from "./migration-authoring";
-import type {RehearsalCopyRef} from "./rehearsal";
+import {
+    hasWellFormedRehearsalCopyIdentity,
+    type RehearsalCopyRef,
+} from "./rehearsal-copy";
 import {
     executeMigrationPreparation,
     type MigrationExecutionContext,
@@ -445,27 +448,6 @@ function decodeCheckpoints(value: JsonValue): ValidationResult<CompiledAuthoring
     return {ok: true, value: value.map(one => one) as CompiledAuthoringInfo["checkpoints"]};
 }
 
-function sameStrings(left: readonly string[], right: readonly string[]): boolean {
-    return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function sameCopy(left: RehearsalCopyRef, right: RehearsalCopyRef): boolean {
-    return left.copyId === right.copyId
-        && left.provenance === right.provenance
-        && left.installationId === right.installationId
-        && sameReleaseRef(left.source, right.source)
-        && sameStrings(left.schemas, right.schemas);
-}
-
-function validCopy(value: RehearsalCopyRef): boolean {
-    return value.copyId.length > 0
-        && value.provenance.length > 0
-        && value.installationId.length > 0
-        && value.schemas.length > 0
-        && value.schemas.every(schema => schema.length > 0)
-        && new Set(value.schemas).size === value.schemas.length;
-}
-
 function sameResource(ref: ResourceRefInfo, resources: Readonly<Record<string, ResourceInfo>>): boolean {
     const resource = resources[ref.name];
     return resource !== undefined
@@ -703,7 +685,7 @@ export function checkPreparationPreconditions(
     artifact: PreparationArtifactInfo,
     state: PreparationPreflightStateInfo,
 ): ValidationResult<true> {
-    if (!validCopy(state.copy)) return fail("invalid identified copy");
+    if (!hasWellFormedRehearsalCopyIdentity(state.copy)) return fail("invalid identified copy");
     if (artifact.installationId !== state.installationId
         || state.copy.installationId !== artifact.installationId
         || !sameReleaseRef(state.copy.source, artifact.head)

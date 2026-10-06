@@ -15,14 +15,13 @@ import {
 } from "./journal";
 import type {PgSession} from "./pg-schema";
 import {executeMigrationPath} from "./runner";
+import {
+    decodeRehearsalCopyRef,
+    sameRehearsalCopyRef,
+    type RehearsalCopyRef,
+} from "./rehearsal-copy";
 
-export type RehearsalCopyRef = {
-    copyId: string;
-    provenance: string;
-    installationId: string;
-    source: ReleaseRefInfo;
-    schemas: readonly string[];
-};
+export type {RehearsalCopyRef} from "./rehearsal-copy";
 
 export type RehearsalHandle = {
     copy: RehearsalCopyRef;
@@ -125,22 +124,12 @@ function sameScope(left: InstallationScope, right: InstallationScope): boolean {
     return left.systemId === right.systemId && sameStrings(left.schemas, right.schemas);
 }
 
-function sameCopy(left: RehearsalCopyRef, right: RehearsalCopyRef): boolean {
-    return left.copyId === right.copyId
-        && left.provenance === right.provenance
-        && left.installationId === right.installationId
-        && sameReleaseRef(left.source, right.source)
-        && sameStrings(left.schemas, right.schemas);
-}
-
 function validCopy(value: unknown): value is RehearsalCopyRef {
-    return isObject(value)
-        && exactKeys(value, ["copyId", "provenance", "installationId", "source", "schemas"])
-        && nonEmpty(value.copyId)
-        && nonEmpty(value.provenance)
-        && nonEmpty(value.installationId)
-        && validRelease(value.source)
-        && validSchemas(value.schemas);
+    return decodeRehearsalCopyRef(
+        value,
+        "$",
+        () => fail("migration.invalidReference", {reason: "invalid rehearsal copy reference"}) as ValidationResult<never>,
+    ).ok;
 }
 
 function validScope(value: unknown): value is InstallationScope {
@@ -337,7 +326,7 @@ async function withOwnedHandle<T>(
     }
 
     let result: ValidationResult<T>;
-    if (!sameCopy(opened.value.copy, copy)) {
+    if (!sameRehearsalCopyRef(opened.value.copy, copy)) {
         result = fail("deployment.evidenceMismatch", {
             copyId: copy.copyId,
             reason: "opened copy identity does not match the requested copy",
