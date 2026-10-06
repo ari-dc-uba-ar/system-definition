@@ -1,6 +1,13 @@
 import {createHash} from "node:crypto";
 import {
     canonicalJson,
+    decodeFileInfo,
+    decodeProblem as decodeProblemInfo,
+    decodeReleaseRefInfo,
+    exactKeys,
+    isNonEmptyString,
+    isPlainObject,
+    isSha256,
     toJsonValue,
     type FileInfo,
     type JsonValue,
@@ -42,7 +49,6 @@ export type ConflictReportInfo = {
 
 type JsonObject = {readonly [key: string]: JsonValue};
 
-const HASH_RE = /^[0-9a-f]{64}$/;
 const CONFLICT_KINDS: readonly ConflictKind[] = [
     "authoringDecision",
     "targetData",
@@ -93,60 +99,36 @@ function failure<T>(reason: string): ValidationResult<T> {
 }
 
 function isObject(value: JsonValue): value is JsonObject {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function hasExactKeys(value: JsonObject, expected: readonly string[]): boolean {
-    const actual = Object.keys(value).sort();
-    const wanted = [...expected].sort();
-    return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
-}
-
-function nonEmptyString(value: JsonValue): value is string {
-    return typeof value === "string" && value.length > 0;
+    return isPlainObject(value);
 }
 
 function hashOrNull(value: JsonValue): value is string | null {
-    return value === null || (typeof value === "string" && HASH_RE.test(value));
+    return value === null || isSha256(value);
 }
 
 function opaqueIdOrNull(value: JsonValue): value is string | null {
-    return value === null || nonEmptyString(value);
+    return value === null || isNonEmptyString(value);
 }
 
 function decodeReleaseRef(value: JsonValue, name: string): ValidationResult<ReleaseRefInfo | null> {
     if (value === null) return {ok: true, value: null};
-    if (!isObject(value)
-        || !hasExactKeys(value, ["systemId", "releaseId", "releaseHash"])
-        || !nonEmptyString(value.systemId)
-        || !nonEmptyString(value.releaseId)
-        || typeof value.releaseHash !== "string"
-        || !HASH_RE.test(value.releaseHash)) {
-        return failure(`invalid ${name}`);
-    }
-    return {
-        ok: true,
-        value: {
-            systemId: value.systemId,
-            releaseId: value.releaseId,
-            releaseHash: value.releaseHash,
-        },
-    };
+    return decodeReleaseRefInfo(value, "$", () => failure(`invalid ${name}`));
 }
 
 function decodeQuestion(value: JsonValue): ValidationResult<PendingQuestionInfo> {
-    if (!isObject(value)
-        || !hasExactKeys(value, ["id", "kind", "subjects", "messageKey"])
-        || !nonEmptyString(value.id)
+    if (!isObject(value)) return failure("invalid pending question");
+    const shape = exactKeys(value, ["id", "kind", "subjects", "messageKey"], "$", () => failure("invalid pending question"));
+    if (!shape.ok
+        || !isNonEmptyString(value.id)
         || typeof value.kind !== "string"
         || !QUESTION_KINDS.includes(value.kind as PendingQuestionInfo["kind"])
         || !Array.isArray(value.subjects)
-        || !nonEmptyString(value.messageKey)) {
+        || !isNonEmptyString(value.messageKey)) {
         return failure("invalid pending question");
     }
     const subjects: string[] = [];
     for (const subject of value.subjects) {
-        if (!nonEmptyString(subject)) return failure("pending question subjects must be non-empty strings");
+        if (!isNonEmptyString(subject)) return failure("pending question subjects must be non-empty strings");
         subjects.push(subject);
     }
     return {
@@ -160,50 +142,16 @@ function decodeQuestion(value: JsonValue): ValidationResult<PendingQuestionInfo>
     };
 }
 
-function decodeProblem(value: JsonValue): ValidationResult<Problem> {
-    if (!isObject(value)
-        || !hasExactKeys(value, ["field", "messageKey", "severity", "details"])
-        || !(value.field === null || typeof value.field === "string")
-        || !nonEmptyString(value.messageKey)
-        || !(value.severity === "blocking" || value.severity === "regular")
-        || !isObject(value.details)) {
-        return failure("invalid problem");
-    }
-    const details: Record<string, string> = Object.create(null) as Record<string, string>;
-    for (const [key, detail] of Object.entries(value.details)) {
-        if (typeof detail !== "string") return failure("problem details must be strings");
-        details[key] = detail;
-    }
-    return {
-        ok: true,
-        value: {
-            field: value.field,
-            messageKey: value.messageKey,
-            severity: value.severity,
-            details,
-        },
-    };
+function decodeReportProblem(value: JsonValue): ValidationResult<Problem> {
+    return decodeProblemInfo(value, "$", (path, _reason) => (
+        path.includes('["details"]["')
+            ? failure("problem details must be strings")
+            : failure("invalid problem")
+    ));
 }
 
-function decodeFileInfo(value: JsonValue): ValidationResult<FileInfo> {
-    if (!isObject(value)
-        || !hasExactKeys(value, ["path", "contentHash", "byteLength"])
-        || !nonEmptyString(value.path)
-        || typeof value.contentHash !== "string"
-        || !HASH_RE.test(value.contentHash)
-        || typeof value.byteLength !== "number"
-        || !Number.isSafeInteger(value.byteLength)
-        || value.byteLength < 0) {
-        return failure("invalid evidence file reference");
-    }
-    return {
-        ok: true,
-        value: {
-            path: value.path,
-            contentHash: value.contentHash,
-            byteLength: value.byteLength,
-        },
-    };
+function decodeEvidenceFile(value: JsonValue): ValidationResult<FileInfo> {
+    return decodeFileInfo(value, "$", () => failure("invalid evidence file reference"));
 }
 
 function hashableReport(report: ConflictReportInfo): JsonValue {
@@ -226,17 +174,17 @@ function decodeReport(value: unknown, verifyHash: boolean): ValidationResult<Con
     const converted = toJsonValue(value);
     if (!converted.ok) return failure("report must be strict JSON");
     const raw = converted.value;
-    if (!isObject(raw)
-        || !hasExactKeys(raw, REPORT_KEYS)
+    if (!isObject(raw)) return failure("invalid conflict report shape");
+    const reportShape = exactKeys(raw, REPORT_KEYS, "$", () => failure("invalid conflict report shape"));
+    if (!reportShape.ok
         || raw.formatVersion !== 1
-        || !nonEmptyString(raw.reportId)
-        || typeof raw.reportHash !== "string"
-        || !HASH_RE.test(raw.reportHash)
-        || !nonEmptyString(raw.command)
+        || !isNonEmptyString(raw.reportId)
+        || !isSha256(raw.reportHash)
+        || !isNonEmptyString(raw.command)
         || typeof raw.kind !== "string"
         || !CONFLICT_KINDS.includes(raw.kind as ConflictKind)
-        || !nonEmptyString(raw.phase)
-        || !nonEmptyString(raw.systemId)
+        || !isNonEmptyString(raw.phase)
+        || !isNonEmptyString(raw.systemId)
         || !hashOrNull(raw.draftHash)
         || !opaqueIdOrNull(raw.installationId)
         || !opaqueIdOrNull(raw.attemptId)
@@ -263,14 +211,14 @@ function decodeReport(value: unknown, verifyHash: boolean): ValidationResult<Con
 
     const problems: Problem[] = [];
     for (const one of raw.problems) {
-        const decoded = decodeProblem(one);
+        const decoded = decodeReportProblem(one);
         if (!decoded.ok) return decoded;
         problems.push(decoded.value);
     }
 
     const evidenceRefs: FileInfo[] = [];
     for (const one of raw.evidenceRefs) {
-        const decoded = decodeFileInfo(one);
+        const decoded = decodeEvidenceFile(one);
         if (!decoded.ok) return decoded;
         evidenceRefs.push(decoded.value);
     }
