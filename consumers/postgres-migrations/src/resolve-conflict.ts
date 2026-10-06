@@ -4,16 +4,15 @@ import {
     toJsonValue,
     type Problem,
     type ReleaseRefInfo,
-    type ResourceRefInfo,
     type ValidationResult,
 } from "system-definition";
 import {computeDraftRevisionHash} from "./authoring-cli";
 import {canonicalJsonSha256} from "./canonical-hash";
-import type {
-    AuthoringRuntime,
-    DestructiveDecisionInfo,
-    FieldRefInfo,
-    MigrationDraftInfo,
+import {
+    decodeDestructiveDecisionInfo,
+    type AuthoringRuntime,
+    type DestructiveDecisionInfo,
+    type MigrationDraftInfo,
 } from "./authoring-contract";
 import {
     decodeConflictReport,
@@ -110,96 +109,6 @@ function schemaHash(schema: PgSchemaInfo): ValidationResult<string> {
     };
 }
 
-function decodeFieldRef(value: unknown): ValidationResult<FieldRefInfo | null> {
-    if (value === null) return {ok: true, value: null};
-    if (!isObject(value)
-        || !exactKeys(value, ["side", "entity", "field"])
-        || !(value.side === "from" || value.side === "to")
-        || !nonEmptyString(value.entity)
-        || !nonEmptyString(value.field)) {
-        return failure("invalid destructive decision source");
-    }
-    return {
-        ok: true,
-        value: {side: value.side, entity: value.entity, field: value.field},
-    };
-}
-
-function decodePartitionCheck(value: unknown): ValidationResult<ResourceRefInfo | null> {
-    if (value === null) return {ok: true, value: null};
-    if (!isObject(value)
-        || !exactKeys(value, ["name", "kind", "contentHash"])
-        || !nonEmptyString(value.name)
-        || value.kind !== "check"
-        || typeof value.contentHash !== "string"
-        || !HASH_RE.test(value.contentHash)) {
-        return failure("invalid destructive decision partition check");
-    }
-    return {
-        ok: true,
-        value: {name: value.name, kind: "check", contentHash: value.contentHash},
-    };
-}
-
-function decodeDecision(value: unknown): ValidationResult<DestructiveDecisionInfo> {
-    if (!isObject(value)
-        || !exactKeys(value, ["changeId", "source", "partitionCheck", "resolution"])
-        || !nonEmptyString(value.changeId)
-        || !isObject(value.resolution)
-        || !nonEmptyString(value.resolution.kind)) {
-        return failure("invalid destructive decision");
-    }
-
-    const source = decodeFieldRef(value.source);
-    if (!source.ok) return source;
-    const partitionCheck = decodePartitionCheck(value.partitionCheck);
-    if (!partitionCheck.ok) return partitionCheck;
-
-    if (value.resolution.kind === "discard") {
-        if (!exactKeys(value.resolution, ["kind", "reason"])
-            || !nonEmptyString(value.resolution.reason)) {
-            return failure("invalid discard resolution");
-        }
-        return {
-            ok: true,
-            value: {
-                changeId: value.changeId,
-                source: source.value,
-                partitionCheck: partitionCheck.value,
-                resolution: {kind: "discard", reason: value.resolution.reason},
-            },
-        };
-    }
-
-    if (value.resolution.kind === "migrate") {
-        if (!exactKeys(value.resolution, ["kind", "dataMigrationId", "outputs"])
-            || !nonEmptyString(value.resolution.dataMigrationId)
-            || !Array.isArray(value.resolution.outputs)) {
-            return failure("invalid migrate resolution");
-        }
-        const outputs: string[] = [];
-        for (const output of value.resolution.outputs) {
-            if (!nonEmptyString(output)) return failure("invalid migrate output");
-            outputs.push(output);
-        }
-        return {
-            ok: true,
-            value: {
-                changeId: value.changeId,
-                source: source.value,
-                partitionCheck: partitionCheck.value,
-                resolution: {
-                    kind: "migrate",
-                    dataMigrationId: value.resolution.dataMigrationId,
-                    outputs,
-                },
-            },
-        };
-    }
-
-    return failure("unknown destructive resolution kind");
-}
-
 function decodeAnswers(value: unknown, report: ConflictReportInfo): ValidationResult<ResolutionAnswersInfo> {
     const converted = toJsonValue(value);
     if (!converted.ok) return failure("answers must be strict JSON");
@@ -232,14 +141,19 @@ function decodeAnswers(value: unknown, report: ConflictReportInfo): ValidationRe
     }
 
     const answers: DestructiveAnswerInfo[] = [];
-    for (const answer of raw.answers) {
+    for (let index = 0; index < raw.answers.length; index++) {
+        const answer = raw.answers[index];
         if (!isObject(answer)
             || !exactKeys(answer, ["questionId", "kind", "decision"])
             || !nonEmptyString(answer.questionId)
             || answer.kind !== "destructive") {
             return failure("invalid conflict answer");
         }
-        const decision = decodeDecision(answer.decision);
+        const decision = decodeDestructiveDecisionInfo(
+            answer.decision,
+            `answers[${index}]["decision"]`,
+            (_path, reason) => failure(reason),
+        );
         if (!decision.ok) return decision;
         answers.push({questionId: answer.questionId, kind: "destructive", decision: decision.value});
     }

@@ -7,10 +7,11 @@ import {
     type ResourceRefInfo,
     type ValidationResult,
 } from "system-definition";
-import type {
-    CompiledAuthoringInfo,
-    DestructiveDecisionInfo,
-    QueryResourceInfo,
+import {
+    decodeDestructiveDecisionInfo,
+    type CompiledAuthoringInfo,
+    type DestructiveDecisionInfo,
+    type QueryResourceInfo,
 } from "./authoring-contract";
 import type {
     DomainRefInfo,
@@ -265,47 +266,6 @@ function decodeQueryResources(value: JsonValue): ValidationResult<Readonly<Recor
     return {ok: true, value: queries};
 }
 
-function decodeDecision(value: JsonValue): ValidationResult<DestructiveDecisionInfo> {
-    if (!isObject(value)
-        || !exactKeys(value, ["changeId", "source", "partitionCheck", "resolution"])
-        || !nonEmpty(value.changeId)
-        || !isObject(value.resolution)) {
-        return fail("invalid destructive decision");
-    }
-    const source = decodeFieldRef(value.source);
-    if (!source.ok) return source;
-    let partitionCheck: ResourceRefInfo | null = null;
-    if (value.partitionCheck !== null) {
-        const decodedCheck = decodeResourceRef(value.partitionCheck, "check");
-        if (!decodedCheck.ok) return decodedCheck;
-        partitionCheck = decodedCheck.value;
-    }
-
-    let resolution: DestructiveDecisionInfo["resolution"];
-    if (value.resolution.kind === "discard"
-        && exactKeys(value.resolution, ["kind", "reason"])
-        && nonEmpty(value.resolution.reason)) {
-        resolution = {kind: "discard", reason: value.resolution.reason};
-    } else if (value.resolution.kind === "migrate"
-        && exactKeys(value.resolution, ["kind", "dataMigrationId", "outputs"])
-        && nonEmpty(value.resolution.dataMigrationId)
-        && Array.isArray(value.resolution.outputs)) {
-        const outputs: string[] = [];
-        for (const output of value.resolution.outputs) {
-            if (!nonEmpty(output) || outputs.includes(output)) return fail("invalid migrate decision outputs");
-            outputs.push(output);
-        }
-        if (outputs.length === 0) return fail("migrate decision requires outputs");
-        resolution = {kind: "migrate", dataMigrationId: value.resolution.dataMigrationId, outputs};
-    } else {
-        return fail("invalid destructive resolution");
-    }
-    return {
-        ok: true,
-        value: {changeId: value.changeId, source: source.value, partitionCheck, resolution},
-    };
-}
-
 function decodeSteps(value: JsonValue): ValidationResult<readonly {id: string; run: ResourceRefInfo}[]> {
     if (!Array.isArray(value)) return fail("invalid preparation steps");
     const steps: {id: string; run: ResourceRefInfo}[] = [];
@@ -496,8 +456,12 @@ function decodePreparation(
     if (!validationArtifacts.ok) return validationArtifacts;
 
     const decisions: DestructiveDecisionInfo[] = [];
-    for (const rawDecision of raw.decisions) {
-        const decision = decodeDecision(rawDecision);
+    for (let index = 0; index < raw.decisions.length; index++) {
+        const decision = decodeDestructiveDecisionInfo(
+            raw.decisions[index],
+            `preparation["decisions"][${index}]`,
+            (_path, reason) => fail(reason),
+        );
         if (!decision.ok) return decision;
         decisions.push(decision.value);
     }

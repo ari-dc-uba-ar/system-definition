@@ -1,10 +1,16 @@
-import type {
-    FileInfo,
-    JsonValue,
-    MigrationInfo,
-    ReleaseRefInfo,
-    ResourceRefInfo,
-    ValidationResult,
+import {
+    childPath,
+    decodeResourceRefInfo,
+    exactKeys,
+    isNonEmptyString,
+    isPlainObject,
+    type FileInfo,
+    type JsonValue,
+    type MigrationInfo,
+    type ReleaseRefInfo,
+    type ResourceRefInfo,
+    type StructuralFailure,
+    type ValidationResult,
 } from "system-definition";
 import type {PgObjectIdentity, PgSchemaInfo} from "./pg-schema";
 import type {DataMigrationInfo, FieldRefInfo, QueryRefInfo} from "./migration-authoring";
@@ -62,6 +68,117 @@ export type DestructiveDecisionInfo = {
         | {kind: "discard"; reason: string}
         | {kind: "migrate"; dataMigrationId: string; outputs: readonly string[]};
 };
+
+export function decodeFieldRefInfo(
+    value: unknown,
+    path: string,
+    invalid: StructuralFailure,
+): ValidationResult<FieldRefInfo> {
+    if (!isPlainObject(value)) return invalid(path, "expected a field reference");
+    const shape = exactKeys(value, ["side", "entity", "field"], path, invalid);
+    if (!shape.ok) return shape;
+    if (value.side !== "from" && value.side !== "to") {
+        return invalid(childPath(path, "side"), "field side must be from or to");
+    }
+    if (!isNonEmptyString(value.entity)) {
+        return invalid(childPath(path, "entity"), "field entity must not be empty");
+    }
+    if (!isNonEmptyString(value.field)) {
+        return invalid(childPath(path, "field"), "field name must not be empty");
+    }
+    return {ok: true, value: {side: value.side, entity: value.entity, field: value.field}};
+}
+
+export function decodeDestructiveDecisionInfo(
+    value: unknown,
+    path: string,
+    invalid: StructuralFailure,
+): ValidationResult<DestructiveDecisionInfo> {
+    if (!isPlainObject(value)) return invalid(path, "expected a destructive decision");
+    const shape = exactKeys(value, ["changeId", "source", "partitionCheck", "resolution"], path, invalid);
+    if (!shape.ok) return shape;
+    if (!isNonEmptyString(value.changeId)) {
+        return invalid(childPath(path, "changeId"), "changeId must not be empty");
+    }
+
+    let source: FieldRefInfo | null = null;
+    if (value.source !== null) {
+        const decoded = decodeFieldRefInfo(value.source, childPath(path, "source"), invalid);
+        if (!decoded.ok) return decoded;
+        source = decoded.value;
+    }
+
+    let partitionCheck: ResourceRefInfo | null = null;
+    if (value.partitionCheck !== null) {
+        const checkPath = childPath(path, "partitionCheck");
+        const decoded = decodeResourceRefInfo(value.partitionCheck, checkPath, invalid);
+        if (!decoded.ok) return decoded;
+        if (decoded.value.kind !== "check") {
+            return invalid(childPath(checkPath, "kind"), "partitionCheck must reference a check resource");
+        }
+        partitionCheck = decoded.value;
+    }
+
+    const resolutionPath = childPath(path, "resolution");
+    if (!isPlainObject(value.resolution)) {
+        return invalid(resolutionPath, "expected a destructive resolution");
+    }
+
+    if (value.resolution.kind === "discard") {
+        const discardShape = exactKeys(value.resolution, ["kind", "reason"], resolutionPath, invalid);
+        if (!discardShape.ok) return discardShape;
+        if (!isNonEmptyString(value.resolution.reason)) {
+            return invalid(childPath(resolutionPath, "reason"), "discard reason must not be empty");
+        }
+        return {
+            ok: true,
+            value: {
+                changeId: value.changeId,
+                source,
+                partitionCheck,
+                resolution: {kind: "discard", reason: value.resolution.reason},
+            },
+        };
+    }
+
+    if (value.resolution.kind === "migrate") {
+        const migrateShape = exactKeys(
+            value.resolution,
+            ["kind", "dataMigrationId", "outputs"],
+            resolutionPath,
+            invalid,
+        );
+        if (!migrateShape.ok) return migrateShape;
+        if (!isNonEmptyString(value.resolution.dataMigrationId)) {
+            return invalid(childPath(resolutionPath, "dataMigrationId"), "dataMigrationId must not be empty");
+        }
+        const outputsPath = childPath(resolutionPath, "outputs");
+        if (!Array.isArray(value.resolution.outputs) || value.resolution.outputs.length === 0) {
+            return invalid(outputsPath, "migrate outputs must contain at least one output");
+        }
+        const outputs: string[] = [];
+        const seen = new Set<string>();
+        for (let index = 0; index < value.resolution.outputs.length; index++) {
+            const output = value.resolution.outputs[index];
+            const outputPath = `${outputsPath}[${index}]`;
+            if (!isNonEmptyString(output)) return invalid(outputPath, "migrate output must not be empty");
+            if (seen.has(output)) return invalid(outputPath, "migrate outputs must be unique");
+            seen.add(output);
+            outputs.push(output);
+        }
+        return {
+            ok: true,
+            value: {
+                changeId: value.changeId,
+                source,
+                partitionCheck,
+                resolution: {kind: "migrate", dataMigrationId: value.resolution.dataMigrationId, outputs},
+            },
+        };
+    }
+
+    return invalid(childPath(resolutionPath, "kind"), "unknown destructive resolution kind");
+}
 
 
 export type PendingQuestionInfo = {
