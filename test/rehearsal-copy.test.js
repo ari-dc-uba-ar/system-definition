@@ -37,11 +37,11 @@ assert.equal(decodeRehearsalCopyRef(typedButBadSource, "$", invalid).ok, false);
 assert.equal(hasWellFormedRehearsalCopyIdentity({...valid, copyId: ""}), false);
 assert.equal(hasWellFormedRehearsalCopyIdentity({...valid, schemas: ["app", "app"]}), false);
 
-const preparationSource = require("node:fs").readFileSync(
-  require("node:path").join(__dirname, "../consumers/postgres-migrations/src/preparation.ts"),
+const preflightSource = require("node:fs").readFileSync(
+  require("node:path").join(__dirname, "../consumers/postgres-migrations/src/preparation-preflight.ts"),
   "utf8",
 );
-assert.equal(preparationSource.includes("decodeRehearsalCopyRef"), false);
-assert.equal(preparationSource.includes("hasWellFormedRehearsalCopyIdentity"), true);
+assert.equal(preflightSource.includes("decodeRehearsalCopyRef"), false);
+assert.equal(preflightSource.includes("hasWellFormedRehearsalCopyIdentity"), true);
 
 console.log("rehearsal-copy tests passed");

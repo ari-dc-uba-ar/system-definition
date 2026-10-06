@@ -7,10 +7,7 @@ import {
     type ReleaseRefInfo,
     type ValidationResult,
 } from "system-definition";
-import {
-    hasWellFormedRehearsalCopyIdentity,
-    type RehearsalCopyRef,
-} from "./rehearsal-copy";
+import type {RehearsalCopyRef} from "./rehearsal-copy";
 import {
     executeMigrationPreparation,
     type MigrationExecutionContext,
@@ -32,20 +29,20 @@ import {
     decodePreparationArtifact,
     type PreparationArtifactInfo,
 } from "./preparation-artifact";
+import {
+    checkCurrentPreparationPreconditions,
+    checkPreparationPreconditions,
+    type PreparationCurrentStateInfo,
+    type PreparationPreflightStateInfo,
+} from "./preparation-preflight";
 import {invalidPreparation as fail} from "./preparation-error";
 
 export * from "./preparation-artifact";
-
-
-export type PreparationPreflightStateInfo = {
-    copy: RehearsalCopyRef;
-    installationId: string;
-    head: ReleaseRefInfo;
-    historyHash: string;
-    observedSchemaHash: string;
-    inputFingerprint: string;
-    requestedPlanHash: string;
-};
+export {
+    checkPreparationPreconditions,
+    type PreparationCurrentStateInfo,
+    type PreparationPreflightStateInfo,
+} from "./preparation-preflight";
 
 
 export type PreparationReceiptInfo = {
@@ -66,8 +63,6 @@ export type PreparationHistoryEntryInfo = {
     beforeFingerprint: string;
     afterFingerprint: string;
 };
-
-export type PreparationCurrentStateInfo = Omit<PreparationPreflightStateInfo, "copy">;
 
 export type PreparationExecutionTarget =
     | {kind: "copy"; copy: RehearsalCopyRef}
@@ -100,39 +95,6 @@ export interface PreparationExecutionRuntime {
     ): Promise<ValidationResult<string>>;
     now(): string;
     attemptId(artifact: PreparationArtifactInfo): string;
-}
-
-export function checkPreparationPreconditions(
-    artifact: PreparationArtifactInfo,
-    state: PreparationPreflightStateInfo,
-): ValidationResult<true> {
-    if (!hasWellFormedRehearsalCopyIdentity(state.copy)) return fail("invalid identified copy");
-    if (artifact.installationId !== state.installationId
-        || state.copy.installationId !== artifact.installationId
-        || !sameReleaseRef(state.copy.source, artifact.head)
-        || !sameReleaseRef(state.head, artifact.head)
-        || artifact.historyHash !== state.historyHash
-        || artifact.observedSchemaHash !== state.observedSchemaHash
-        || artifact.inputFingerprint !== state.inputFingerprint
-        || artifact.requestedPlanHash !== state.requestedPlanHash) {
-        return fail("preparation preconditions changed");
-    }
-    return {ok: true, value: true};
-}
-
-function checkCurrentPreparationPreconditions(
-    artifact: PreparationArtifactInfo,
-    state: PreparationCurrentStateInfo,
-): ValidationResult<true> {
-    if (artifact.installationId !== state.installationId
-        || !sameReleaseRef(state.head, artifact.head)
-        || artifact.historyHash !== state.historyHash
-        || artifact.observedSchemaHash !== state.observedSchemaHash
-        || artifact.inputFingerprint !== state.inputFingerprint
-        || artifact.requestedPlanHash !== state.requestedPlanHash) {
-        return fail("preparation preconditions changed");
-    }
-    return {ok: true, value: true};
 }
 
 function validReceipt(artifact: PreparationArtifactInfo, receipt: PreparationReceiptInfo): boolean {
