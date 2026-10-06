@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {childPath, exactKeys, isPlainObject} = require("../.verify-dist/decode-structure.js");
+const {childPath, exactKeys, exactOptionalKeys, isPlainObject} = require("../.verify-dist/decode-structure.js");
 
 assert.equal(childPath("$", 'a"b'), '$["a\\\"b"]');
 assert.equal(isPlainObject({}), true);
@@ -22,4 +22,33 @@ assert.equal(missing.ok, false);
 assert.deepEqual(missing.problems[0].details, {path: '$["representations"]', reason: "missing property"});
 
 assert.deepEqual(exactKeys({entities: [], representations: {}}, ["entities", "representations"], "$", invalid), {ok: true, value: true});
+const optionalOk = exactOptionalKeys(
+    {id: "m1", from: "r1", to: "r2", steps: [], description: "optional"},
+    ["id", "from", "to", "steps"],
+    ["description", "before", "after"],
+    "$",
+    invalid,
+);
+assert.deepEqual(optionalOk, {ok: true, value: true});
+
+const optionalMissing = exactOptionalKeys(
+    {id: "m1", from: "r1", steps: []},
+    ["id", "from", "to", "steps"],
+    ["description", "before", "after"],
+    "$",
+    invalid,
+);
+assert.equal(optionalMissing.ok, false);
+assert.deepEqual(optionalMissing.problems[0].details, {path: '$["to"]', reason: "missing property"});
+
+const optionalExtra = exactOptionalKeys(
+    {id: "m1", from: "r1", to: "r2", steps: [], extra: true},
+    ["id", "from", "to", "steps"],
+    ["description", "before", "after"],
+    "$",
+    invalid,
+);
+assert.equal(optionalExtra.ok, false);
+assert.deepEqual(optionalExtra.problems[0].details, {path: '$["extra"]', reason: "unexpected property"});
+
 console.log("decode-structure tests passed");

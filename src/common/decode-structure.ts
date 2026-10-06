@@ -23,21 +23,30 @@ export function childPath(path: string, key: string): string {
  * Share exact-shape mechanics without taking ownership of boundary semantics.
  * The caller still decides which Problem/message key represents the structural failure.
  */
+export function exactOptionalKeys(
+    value: StructuralObject,
+    required: readonly string[],
+    optional: readonly string[],
+    path: string,
+    invalid: StructuralFailure,
+): ValidationResult<true> {
+    const allowed = new Set([...required, ...optional]);
+    const unexpected = Object.keys(value).find(key => !allowed.has(key));
+    if (unexpected !== undefined) {
+        return invalid(childPath(path, unexpected), "unexpected property");
+    }
+    const missing = required.find(key => !Object.prototype.hasOwnProperty.call(value, key));
+    if (missing !== undefined) {
+        return invalid(childPath(path, missing), "missing property");
+    }
+    return {ok: true, value: true};
+}
+
 export function exactKeys(
     value: StructuralObject,
     expected: readonly string[],
     path: string,
     invalid: StructuralFailure,
 ): ValidationResult<true> {
-    const actual = Object.keys(value);
-    const expectedSet = new Set(expected);
-    const unexpected = actual.find(key => !expectedSet.has(key));
-    if (unexpected !== undefined) {
-        return invalid(childPath(path, unexpected), "unexpected property");
-    }
-    const missing = expected.find(key => !Object.prototype.hasOwnProperty.call(value, key));
-    if (missing !== undefined) {
-        return invalid(childPath(path, missing), "missing property");
-    }
-    return {ok: true, value: true};
+    return exactOptionalKeys(value, expected, [], path, invalid);
 }

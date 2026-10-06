@@ -1,5 +1,6 @@
 import {ValidationResult, problem} from "./problem";
 import {JsonValue, toJsonValue} from "./json-value";
+import {childPath, exactKeys, exactOptionalKeys, isPlainObject} from "./decode-structure";
 
 export type FileInfo = {
     path: string;
@@ -147,6 +148,10 @@ type DecodeResult<T> = ValidationResult<T>;
 
 type JsonObject = {readonly [key: string]: JsonValue};
 
+function isObject(value: JsonValue): value is JsonObject {
+    return isPlainObject(value);
+}
+
 function invalidJson(path: string, reason: string): DecodeResult<never> {
     return {
         ok: false,
@@ -173,46 +178,6 @@ function invalidCatalog(path: string, reason: string): DecodeResult<never> {
         ok: false,
         problems: [problem(null, "migration.invalidCatalog", "blocking", {path, reason})],
     };
-}
-
-function isObject(value: JsonValue): value is JsonObject {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function childPath(path: string, key: string): string {
-    return path + "[" + JSON.stringify(key) + "]";
-}
-
-function exactKeys(value: JsonObject, keys: readonly string[], path: string): DecodeResult<true> {
-    const allowed = new Set(keys);
-    const actual = Object.keys(value);
-    for (const key of actual) {
-        if (!allowed.has(key)) return invalidJson(childPath(path, key), "unexpected property");
-    }
-    for (const key of keys) {
-        if (!Object.prototype.hasOwnProperty.call(value, key)) {
-            return invalidJson(childPath(path, key), "missing property");
-        }
-    }
-    return {ok: true, value: true};
-}
-
-function exactOptionalKeys(
-    value: JsonObject,
-    required: readonly string[],
-    optional: readonly string[],
-    path: string,
-): DecodeResult<true> {
-    const allowed = new Set([...required, ...optional]);
-    for (const key of Object.keys(value)) {
-        if (!allowed.has(key)) return invalidJson(childPath(path, key), "unexpected property");
-    }
-    for (const key of required) {
-        if (!Object.prototype.hasOwnProperty.call(value, key)) {
-            return invalidJson(childPath(path, key), "missing property");
-        }
-    }
-    return {ok: true, value: true};
 }
 
 function nonEmptyString(value: JsonValue, path: string, label: string): DecodeResult<string> {
@@ -265,7 +230,7 @@ function namedResources(
 
 function resolveDef(value: JsonValue, context: MigrationContext): DecodeResult<MigrationInfo> {
     if (!isObject(value)) return invalidJson("$", "expected a migration object");
-    const shape = exactOptionalKeys(value, ["id", "from", "to", "steps"], ["description", "before", "after"], "$");
+    const shape = exactOptionalKeys(value, ["id", "from", "to", "steps"], ["description", "before", "after"], "$", invalidJson);
     if (!shape.ok) return shape;
 
     const id = nonEmptyString(value.id, '$["id"]', "migration id");
@@ -302,7 +267,7 @@ function resolveDef(value: JsonValue, context: MigrationContext): DecodeResult<M
         const rawStep = value.steps[index];
         const stepPath = '$["steps"][' + index + "]";
         if (!isObject(rawStep)) return invalidJson(stepPath, "expected a step object");
-        const stepShape = exactKeys(rawStep, ["id", "run"], stepPath);
+        const stepShape = exactKeys(rawStep, ["id", "run"], stepPath, invalidJson);
         if (!stepShape.ok) return stepShape;
         const stepId = nonEmptyString(rawStep.id, childPath(stepPath, "id"), "step id");
         if (!stepId.ok) return stepId;
@@ -346,7 +311,7 @@ export function completeMigration<
 
 function decodeReleaseRef(value: JsonValue, context: MigrationContext, path: string): DecodeResult<ReleaseRefInfo> {
     if (!isObject(value)) return invalidJson(path, "expected a release reference");
-    const shape = exactKeys(value, ["systemId", "releaseId", "releaseHash"], path);
+    const shape = exactKeys(value, ["systemId", "releaseId", "releaseHash"], path, invalidJson);
     if (!shape.ok) return shape;
     if (typeof value.systemId !== "string") return invalidJson(childPath(path, "systemId"), "expected a string");
     if (typeof value.releaseId !== "string") return invalidJson(childPath(path, "releaseId"), "expected a string");
@@ -372,7 +337,7 @@ function decodeResourceRef(
     path: string,
 ): DecodeResult<ResourceRefInfo> {
     if (!isObject(value)) return invalidJson(path, "expected a resource reference");
-    const shape = exactKeys(value, ["name", "kind", "contentHash"], path);
+    const shape = exactKeys(value, ["name", "kind", "contentHash"], path, invalidJson);
     if (!shape.ok) return shape;
     if (typeof value.name !== "string") return invalidJson(childPath(path, "name"), "expected a string");
     if (typeof value.kind !== "string") return invalidJson(childPath(path, "kind"), "expected a string");
@@ -415,7 +380,7 @@ function decodeResourceRefs(
 
 function decodeCopiedMigration(value: JsonValue, context: MigrationContext): DecodeResult<MigrationInfo> {
     if (!isObject(value)) return invalidJson("$", "expected a migration object");
-    const shape = exactKeys(value, ["id", "from", "to", "description", "before", "steps", "after"], "$");
+    const shape = exactKeys(value, ["id", "from", "to", "description", "before", "steps", "after"], "$", invalidJson);
     if (!shape.ok) return shape;
 
     const id = nonEmptyString(value.id, '$["id"]', "migration id");
@@ -444,7 +409,7 @@ function decodeCopiedMigration(value: JsonValue, context: MigrationContext): Dec
         const rawStep = value.steps[index];
         const stepPath = '$["steps"][' + index + "]";
         if (!isObject(rawStep)) return invalidJson(stepPath, "expected a step object");
-        const stepShape = exactKeys(rawStep, ["id", "run"], stepPath);
+        const stepShape = exactKeys(rawStep, ["id", "run"], stepPath, invalidJson);
         if (!stepShape.ok) return stepShape;
         const stepId = nonEmptyString(rawStep.id, childPath(stepPath, "id"), "step id");
         if (!stepId.ok) return stepId;
