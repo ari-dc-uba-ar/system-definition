@@ -1,11 +1,16 @@
 import {compareUtf16, problem, type ValidationResult} from "system-definition";
 import type {
-    PgObjectIdentity,
     PgObjectInfo,
     PgSchemaInfo,
     PgSession,
     SqlParameter,
 } from "./pg-schema";
+import {
+    comparePgIdentity,
+    pgIdentityKey,
+    samePgIdentity,
+    type PgObjectIdentity,
+} from "./pg-identity";
 import {POSTGRES_SUPPORT} from "./postgres-support";
 
 export type InspectionScope = {
@@ -26,24 +31,6 @@ function fail<T>(
     details: Readonly<Record<string, string>> = {},
 ): ValidationResult<T> {
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
-}
-
-function identityKey(identity: PgObjectIdentity): string {
-    return JSON.stringify([
-        identity.schema,
-        identity.kind,
-        identity.parentName,
-        identity.name,
-        [...identity.signature],
-    ]);
-}
-
-function compareIdentity(left: PgObjectIdentity, right: PgObjectIdentity): number {
-    return compareUtf16(identityKey(left), identityKey(right));
-}
-
-function sameIdentity(left: PgObjectIdentity, right: PgObjectIdentity): boolean {
-    return identityKey(left) === identityKey(right);
 }
 
 function stringValue(row: CatalogRow, key: string): string | null {
@@ -484,15 +471,15 @@ export async function inspectSchema(
         if (identity === null || !scope.schemas.includes(identity.schema)) {
             return fail("migration.unsupportedSchemaFeature", {reason: "catalog inventory row has an invalid identity"});
         }
-        const exclusion = scope.excluded.find(one => sameIdentity(one.object, identity));
+        const exclusion = scope.excluded.find(one => samePgIdentity(one.object, identity));
         if (exclusion !== undefined) {
-            if (!excluded.some(one => sameIdentity(one.object, exclusion.object))) {
+            if (!excluded.some(one => samePgIdentity(one.object, exclusion.object))) {
                 excluded.push({object: {...exclusion.object, signature: [...exclusion.object.signature]}, reason: exclusion.reason});
             }
             continue;
         }
 
-        const key = identityKey(identity);
+        const key = pgIdentityKey(identity);
         if (seen.has(key)) {
             return fail("migration.unsupportedSchemaFeature", {object: key, reason: "duplicate catalog identity"});
         }
@@ -509,9 +496,9 @@ export async function inspectSchema(
         objects.push(object);
     }
 
-    objects.sort((left, right) => compareIdentity(left.identity, right.identity));
-    unknown.sort((left, right) => compareIdentity(left.object, right.object));
-    excluded.sort((left, right) => compareIdentity(left.object, right.object));
+    objects.sort((left, right) => comparePgIdentity(left.identity, right.identity));
+    unknown.sort((left, right) => comparePgIdentity(left.object, right.object));
+    excluded.sort((left, right) => comparePgIdentity(left.object, right.object));
 
     return {
         ok: true,

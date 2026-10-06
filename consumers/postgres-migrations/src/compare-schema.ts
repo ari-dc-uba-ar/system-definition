@@ -4,7 +4,8 @@ import {
     type JsonValue,
     type ValidationResult,
 } from "system-definition";
-import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo} from "./pg-schema";
+import type {PgObjectInfo, PgSchemaInfo} from "./pg-schema";
+import {pgIdentityKey, type PgObjectIdentity} from "./pg-identity";
 import type {InspectionInfo} from "./inspect-schema";
 import {POSTGRES_SUPPORT} from "./postgres-support";
 
@@ -33,16 +34,6 @@ function identityParts(identity: PgObjectIdentity): readonly string[] {
     parts.push(identity.name);
     if (identity.signature.length > 0) parts.push(...identity.signature);
     return parts;
-}
-
-function identityKey(identity: PgObjectIdentity): string {
-    return JSON.stringify([
-        identity.schema,
-        identity.kind,
-        identity.parentName,
-        identity.name,
-        [...identity.signature],
-    ]);
 }
 
 function jsonValue(value: unknown): JsonValue {
@@ -108,11 +99,11 @@ function objectMap(objects: readonly PgObjectInfo[]): ValidationResult<Map<strin
     for (const object of objects) {
         if (object.identity.kind !== object.kind) {
             return fail("migration.unsupportedSchemaFeature", {
-                object: identityKey(object.identity),
+                object: pgIdentityKey(object.identity),
                 reason: "object identity kind does not match its descriptor kind",
             });
         }
-        const key = identityKey(object.identity);
+        const key = pgIdentityKey(object.identity);
         if (result.has(key)) {
             return fail("migration.unsupportedSchemaFeature", {object: key, reason: "duplicate schema object identity"});
         }
@@ -129,7 +120,7 @@ export function compareSchemas(
         const first = actual.unknown[0];
         return fail("migration.unsupportedSchemaFeature", {
             feature: first?.feature ?? "unknown",
-            object: first === undefined ? "unknown" : identityKey(first.object),
+            object: first === undefined ? "unknown" : pgIdentityKey(first.object),
         });
     }
     if (expected.formatVersion !== 1 || actual.schema.formatVersion !== 1

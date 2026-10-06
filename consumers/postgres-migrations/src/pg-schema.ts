@@ -8,6 +8,8 @@ import {
     type ValidationResult,
 } from "system-definition";
 import type {EnvironmentInfo, ManagedDataInfo} from "./artifact";
+import type {PgObjectIdentity} from "./pg-identity";
+export type {PgObjectIdentity} from "./pg-identity";
 import {matchesPostgresSupport, POSTGRES_SUPPORT} from "./postgres-support";
 import {quotePgIdentifier, quotePgQualified} from "./pg-sql";
 export {quotePgIdentifier, quotePgQualified} from "./pg-sql";
@@ -21,14 +23,6 @@ export type PgTypeRepresentation = {
 export type MachineCodecInfo = {
     readExpression: string;
     transportType: string;
-};
-
-export type PgObjectIdentity = {
-    schema: string;
-    kind: string;
-    name: string;
-    parentName: string | null;
-    signature: readonly string[];
 };
 
 export type PgTypeInfo = {
