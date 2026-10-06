@@ -7,6 +7,8 @@ import {
     type ValidationResult,
 } from "system-definition";
 import type {EnvironmentInfo, ManagedDataInfo} from "./artifact";
+import {quotePgIdentifier, quotePgQualified} from "./pg-sql";
+export {quotePgIdentifier, quotePgQualified} from "./pg-sql";
 
 export type PgTypeRepresentation = {
     schema: string;
@@ -202,14 +204,6 @@ function constraintIdentity(schema: string, table: string, name: string): PgObje
     return {schema, kind: "constraint", name, parentName: table, signature: []};
 }
 
-export function quotePgIdentifier(identifier: string): string {
-    if (identifier.includes("\0")) throw new TypeError("PostgreSQL identifiers cannot contain NUL");
-    return '"' + identifier.replaceAll('"', '""') + '"';
-}
-
-function qualified(schema: string, name: string): string {
-    return quotePgIdentifier(schema) + "." + quotePgIdentifier(name);
-}
 
 function keyDefinition(kind: "PRIMARY KEY" | "UNIQUE", columns: readonly string[]): string {
     return kind + " (" + columns.map(quotePgIdentifier).join(", ") + ")";
@@ -221,7 +215,7 @@ function fkDefinition(
     pairs: readonly {source: string; target: string}[],
 ): string {
     return "FOREIGN KEY (" + pairs.map(one => quotePgIdentifier(one.source)).join(", ") + ") REFERENCES "
-        + qualified(schema, targetTable) + " (" + pairs.map(one => quotePgIdentifier(one.target)).join(", ") + ")";
+        + quotePgQualified(schema, targetTable) + " (" + pairs.map(one => quotePgIdentifier(one.target)).join(", ") + ")";
 }
 
 function environmentProblem(storage: StorageContext): Problem | null {

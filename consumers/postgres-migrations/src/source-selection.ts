@@ -9,6 +9,8 @@ import {
     type PortInfo,
     type SourceSelectionInfo,
 } from "./migration-authoring";
+import {quotePgIdentifier, quotePgQualified} from "./pg-sql";
+import {isPgNonEmptyText} from "./pg-text";
 
 export type SourceTableRef = {
     entity: string;
@@ -60,16 +62,8 @@ function failure<T>(reason: string, details: Readonly<Record<string, unknown>> =
     };
 }
 
-function quoteIdentifier(value: string): string {
-    return `"${value.replaceAll('"', '""')}"`;
-}
-
-function qualified(schema: string, entity: string): string {
-    return `${quoteIdentifier(schema)}.${quoteIdentifier(entity)}`;
-}
-
 function fieldSql(ref: SourceFieldSelection): string {
-    return `${quoteIdentifier(ref.alias)}.${quoteIdentifier(ref.field)}`;
+    return quotePgQualified(ref.alias, ref.field);
 }
 
 function hashSql(sql: string): string {
@@ -91,6 +85,12 @@ function fieldFor(
     aliases: ReadonlyMap<string, AliasInfo>,
     ref: SourceFieldSelection,
 ): ValidationResult<{entity: string; type: string; nullable: boolean}> {
+    if (!isPgNonEmptyText(ref.alias) || !isPgNonEmptyText(ref.field)) {
+        return failure("source field alias and field must be valid PostgreSQL identifiers", {
+            alias: ref.alias,
+            field: ref.field,
+        });
+    }
     const alias = aliases.get(ref.alias);
     if (alias === undefined) return failure("unknown source alias", {alias: ref.alias});
     const entity = context.from.entities[alias.entity];
@@ -144,9 +144,9 @@ export function buildSourceSelection(
     def: SourceSelectionDef,
 ): ValidationResult<GeneratedSourceSelectionInfo> {
     if (!isNonEmpty(def.queryName)) return failure("queryName must be non-empty");
-    if (!isNonEmpty(def.schema)) return failure("schema must be non-empty");
-    if (!isNonEmpty(def.base.entity) || !isNonEmpty(def.base.alias)) {
-        return failure("base entity and alias must be non-empty");
+    if (!isPgNonEmptyText(def.schema)) return failure("schema must be a valid PostgreSQL identifier");
+    if (!isPgNonEmptyText(def.base.entity) || !isPgNonEmptyText(def.base.alias)) {
+        return failure("base entity and alias must be valid PostgreSQL identifiers");
     }
     if (context.from.entities[def.base.entity] === undefined) {
         return failure("unknown base entity", {entity: def.base.entity});
@@ -159,8 +159,8 @@ export function buildSourceSelection(
     let excludesRows = false;
 
     for (const join of def.joins) {
-        if (!isNonEmpty(join.entity) || !isNonEmpty(join.alias)) {
-            return failure("join entity and alias must be non-empty");
+        if (!isPgNonEmptyText(join.entity) || !isPgNonEmptyText(join.alias)) {
+            return failure("join entity and alias must be valid PostgreSQL identifiers");
         }
         if (aliases.has(join.alias)) return failure("duplicate source alias", {alias: join.alias});
         if (context.from.entities[join.entity] === undefined) {
@@ -197,7 +197,7 @@ export function buildSourceSelection(
         predicates.sort();
         const keyword = join.kind === "left" ? "LEFT JOIN" : "INNER JOIN";
         joinSql.push(
-            `${keyword} ${qualified(def.schema, join.entity)} AS ${quoteIdentifier(join.alias)} ON ${predicates.join(" AND ")}`,
+            `${keyword} ${quotePgQualified(def.schema, join.entity)} AS ${quotePgIdentifier(join.alias)} ON ${predicates.join(" AND ")}`,
         );
         aliases.set(join.alias, {entity: join.entity, nullable: join.kind === "left"});
         if (join.whenUnmatched === "exclude") excludesRows = true;
@@ -215,7 +215,7 @@ export function buildSourceSelection(
     const ports: Record<string, PortInfo> = {};
     const selectSql: string[] = [];
     for (const name of portNames) {
-        if (!isNonEmpty(name) || name.startsWith("__")) {
+        if (!isPgNonEmptyText(name) || name.startsWith("__")) {
             return failure("invalid source port name", {port: name});
         }
         const ref = def.ports[name]!;
@@ -225,7 +225,7 @@ export function buildSourceSelection(
             domain: {side: "from", type: source.value.type, nullable: source.value.nullable},
             field: {side: "from", entity: source.value.entity, field: ref.field},
         };
-        selectSql.push(`  ${fieldSql(ref)} AS ${quoteIdentifier(name)}`);
+        selectSql.push(`  ${fieldSql(ref)} AS ${quotePgIdentifier(name)}`);
     }
 
     if (def.identity.length === 0) return failure("source identity must not be empty");
@@ -243,7 +243,7 @@ export function buildSourceSelection(
     const sql = [
         "SELECT",
         selectSql.join(",\n"),
-        `FROM ${qualified(def.schema, def.base.entity)} AS ${quoteIdentifier(def.base.alias)}`,
+        `FROM ${quotePgQualified(def.schema, def.base.entity)} AS ${quotePgIdentifier(def.base.alias)}`,
         ...joinSql,
         ";",
         "",
