@@ -8,6 +8,7 @@ export * from "./serialize";
 export * from "./validate";
 export * from "./human";
 export * from "./json-value";
+export * from "./decode-structure";
 
 export * from "./system-snapshot";
 

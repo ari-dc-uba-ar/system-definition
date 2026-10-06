@@ -1,7 +1,7 @@
 import {JsonValue, toJsonValue} from "./json-value";
-import type {MigrationInfo, ReleaseRefInfo, ResourceRefInfo} from "./migration";
+import {decodeReleaseRefInfo, decodeResourceRefInfo, type MigrationInfo, type ReleaseRefInfo, type ResourceRefInfo} from "./migration";
 import {ValidationResult, problem} from "./problem";
-import {childPath, exactKeys, isPlainObject} from "./decode-structure";
+import {childPath, exactKeys, isNonBlankString, isPlainObject, isSha256} from "./decode-structure";
 
 export type PublishedMigrationInfo = {
     migration: MigrationInfo;
@@ -56,47 +56,30 @@ function isObject(value: JsonValue): value is JsonObject {
 }
 
 function nonEmptyString(value: JsonValue, path: string, label: string): ValidationResult<string> {
-    if (typeof value !== "string" || value.trim().length === 0) {
+    if (!isNonBlankString(value)) {
         return invalidCatalog(path, label + " must be a non-empty string");
     }
     return {ok: true, value};
 }
 
 function sha256(value: JsonValue, path: string, label: string): ValidationResult<string> {
-    if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) {
+    if (!isSha256(value)) {
         return invalidCatalog(path, label + " must be a lowercase SHA-256 hex digest");
     }
     return {ok: true, value};
 }
 
 function releaseRef(value: JsonValue, path: string): ValidationResult<ReleaseRefInfo> {
-    if (!isObject(value)) return invalidCatalog(path, "expected a release reference");
-    const shape = exactKeys(value, ["systemId", "releaseId", "releaseHash"], path, invalidCatalog);
-    if (!shape.ok) return shape;
-    const systemId = nonEmptyString(value.systemId, childPath(path, "systemId"), "systemId");
-    if (!systemId.ok) return systemId;
-    const releaseId = nonEmptyString(value.releaseId, childPath(path, "releaseId"), "releaseId");
-    if (!releaseId.ok) return releaseId;
-    const releaseHash = sha256(value.releaseHash, childPath(path, "releaseHash"), "releaseHash");
-    if (!releaseHash.ok) return releaseHash;
-    return {ok: true, value: {systemId: systemId.value, releaseId: releaseId.value, releaseHash: releaseHash.value}};
+    return decodeReleaseRefInfo(value, path, invalidCatalog);
 }
 
 function resourceRef(value: JsonValue, path: string, expectedKind?: ResourceRefInfo["kind"]): ValidationResult<ResourceRefInfo> {
-    if (!isObject(value)) return invalidCatalog(path, "expected a resource reference");
-    const shape = exactKeys(value, ["name", "kind", "contentHash"], path, invalidCatalog);
-    if (!shape.ok) return shape;
-    const name = nonEmptyString(value.name, childPath(path, "name"), "resource name");
-    if (!name.ok) return name;
-    if (value.kind !== "sql" && value.kind !== "check") {
-        return invalidCatalog(childPath(path, "kind"), "unsupported resource kind");
-    }
-    if (expectedKind !== undefined && value.kind !== expectedKind) {
+    const decoded = decodeResourceRefInfo(value, path, invalidCatalog);
+    if (!decoded.ok) return decoded;
+    if (expectedKind !== undefined && decoded.value.kind !== expectedKind) {
         return invalidCatalog(childPath(path, "kind"), "resource kind does not match position");
     }
-    const contentHash = sha256(value.contentHash, childPath(path, "contentHash"), "resource contentHash");
-    if (!contentHash.ok) return contentHash;
-    return {ok: true, value: {name: name.value, kind: value.kind, contentHash: contentHash.value}};
+    return decoded;
 }
 
 function resourceRefs(value: JsonValue, path: string, expectedKind: ResourceRefInfo["kind"]): ValidationResult<readonly ResourceRefInfo[]> {

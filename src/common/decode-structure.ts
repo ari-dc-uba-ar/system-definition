@@ -14,6 +14,14 @@ export function isPlainObject(value: unknown): value is StructuralObject {
     return prototype === Object.prototype || prototype === null;
 }
 
+export function isNonBlankString(value: unknown): value is string {
+    return typeof value === "string" && value.trim().length > 0;
+}
+
+export function isSha256(value: unknown): value is string {
+    return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
 /** Preserve the bracket-path convention already used by migration diagnostics. */
 export function childPath(path: string, key: string): string {
     return path + "[" + JSON.stringify(key) + "]";

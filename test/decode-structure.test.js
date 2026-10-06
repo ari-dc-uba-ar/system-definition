@@ -1,11 +1,15 @@
 const assert = require("node:assert/strict");
-const {childPath, exactKeys, exactOptionalKeys, isPlainObject} = require("../.verify-dist/decode-structure.js");
+const {childPath, exactKeys, exactOptionalKeys, isNonBlankString, isPlainObject, isSha256} = require("../.verify-dist/decode-structure.js");
 
 assert.equal(childPath("$", 'a"b'), '$["a\\\"b"]');
 assert.equal(isPlainObject({}), true);
 assert.equal(isPlainObject(Object.create(null)), true);
 assert.equal(isPlainObject([]), false);
 assert.equal(isPlainObject(new (class Example {})()), false);
+assert.equal(isNonBlankString("value"), true);
+assert.equal(isNonBlankString("   "), false);
+assert.equal(isSha256("a".repeat(64)), true);
+assert.equal(isSha256("A".repeat(64)), false);
 
 const invalid = (path, reason) => ({
     ok: false,

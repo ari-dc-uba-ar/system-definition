@@ -1,6 +1,6 @@
 import {ValidationResult, problem} from "./problem";
 import {JsonValue, toJsonValue} from "./json-value";
-import {childPath, exactKeys, exactOptionalKeys, isPlainObject} from "./decode-structure";
+import {childPath, exactKeys, exactOptionalKeys, isNonBlankString, isPlainObject, isSha256, type StructuralFailure} from "./decode-structure";
 
 export type FileInfo = {
     path: string;
@@ -180,10 +180,62 @@ function invalidCatalog(path: string, reason: string): DecodeResult<never> {
     };
 }
 
-function nonEmptyString(value: JsonValue, path: string, label: string): DecodeResult<string> {
-    if (typeof value !== "string") return invalidJson(path, "expected a string");
-    if (value.trim().length === 0) return invalidJson(path, label + " must not be empty");
+function nonEmptyString(
+    value: unknown,
+    path: string,
+    label: string,
+    invalid: StructuralFailure,
+): DecodeResult<string> {
+    if (typeof value !== "string") return invalid(path, "expected a string");
+    if (!isNonBlankString(value)) return invalid(path, label + " must not be empty");
     return {ok: true, value};
+}
+
+function sha256String(
+    value: unknown,
+    path: string,
+    label: string,
+    invalid: StructuralFailure,
+): DecodeResult<string> {
+    if (!isSha256(value)) {
+        return invalid(path, label + " must be a lowercase SHA-256 hex digest");
+    }
+    return {ok: true, value};
+}
+
+export function decodeReleaseRefInfo(
+    value: unknown,
+    path: string,
+    invalid: StructuralFailure,
+): ValidationResult<ReleaseRefInfo> {
+    if (!isPlainObject(value)) return invalid(path, "expected a release reference");
+    const shape = exactKeys(value, ["systemId", "releaseId", "releaseHash"], path, invalid);
+    if (!shape.ok) return shape;
+    const systemId = nonEmptyString(value.systemId, childPath(path, "systemId"), "systemId", invalid);
+    if (!systemId.ok) return systemId;
+    const releaseId = nonEmptyString(value.releaseId, childPath(path, "releaseId"), "releaseId", invalid);
+    if (!releaseId.ok) return releaseId;
+    const releaseHash = sha256String(value.releaseHash, childPath(path, "releaseHash"), "releaseHash", invalid);
+    if (!releaseHash.ok) return releaseHash;
+    return {ok: true, value: {systemId: systemId.value, releaseId: releaseId.value, releaseHash: releaseHash.value}};
+}
+
+export function decodeResourceRefInfo(
+    value: unknown,
+    path: string,
+    invalid: StructuralFailure,
+): ValidationResult<ResourceRefInfo> {
+    if (!isPlainObject(value)) return invalid(path, "expected a resource reference");
+    const shape = exactKeys(value, ["name", "kind", "contentHash"], path, invalid);
+    if (!shape.ok) return shape;
+    const name = nonEmptyString(value.name, childPath(path, "name"), "resource name", invalid);
+    if (!name.ok) return name;
+    if (value.kind !== "sql" && value.kind !== "check") {
+        return invalid(childPath(path, "kind"), "unsupported resource kind");
+    }
+    const contentHash = sha256String(value.contentHash, childPath(path, "contentHash"), "resource contentHash", invalid);
+    if (!contentHash.ok) return contentHash;
+    return {ok: true, value: {name: name.value, kind: value.kind, contentHash: contentHash.value}};
 }
 
 function copyRelease(reference: ReleaseRefInfo): ReleaseRefInfo {
@@ -233,7 +285,7 @@ function resolveDef(value: JsonValue, context: MigrationContext): DecodeResult<M
     const shape = exactOptionalKeys(value, ["id", "from", "to", "steps"], ["description", "before", "after"], "$", invalidJson);
     if (!shape.ok) return shape;
 
-    const id = nonEmptyString(value.id, '$["id"]', "migration id");
+    const id = nonEmptyString(value.id, '$["id"]', "migration id", invalidJson);
     if (!id.ok) return id;
     if (typeof value.from !== "string") return invalidJson('$["from"]', "expected a release name");
     if (typeof value.to !== "string") return invalidJson('$["to"]', "expected a release name");
@@ -269,7 +321,7 @@ function resolveDef(value: JsonValue, context: MigrationContext): DecodeResult<M
         if (!isObject(rawStep)) return invalidJson(stepPath, "expected a step object");
         const stepShape = exactKeys(rawStep, ["id", "run"], stepPath, invalidJson);
         if (!stepShape.ok) return stepShape;
-        const stepId = nonEmptyString(rawStep.id, childPath(stepPath, "id"), "step id");
+        const stepId = nonEmptyString(rawStep.id, childPath(stepPath, "id"), "step id", invalidJson);
         if (!stepId.ok) return stepId;
         if (stepIds.has(stepId.value)) {
             return invalidCatalog(childPath(stepPath, "id"), "step ids must not repeat");
@@ -310,21 +362,16 @@ export function completeMigration<
 }
 
 function decodeReleaseRef(value: JsonValue, context: MigrationContext, path: string): DecodeResult<ReleaseRefInfo> {
-    if (!isObject(value)) return invalidJson(path, "expected a release reference");
-    const shape = exactKeys(value, ["systemId", "releaseId", "releaseHash"], path, invalidJson);
-    if (!shape.ok) return shape;
-    if (typeof value.systemId !== "string") return invalidJson(childPath(path, "systemId"), "expected a string");
-    if (typeof value.releaseId !== "string") return invalidJson(childPath(path, "releaseId"), "expected a string");
-    if (typeof value.releaseHash !== "string") return invalidJson(childPath(path, "releaseHash"), "expected a string");
-
-    const match = Object.values(context.releases).find(reference => reference.releaseId === value.releaseId);
+    const decoded = decodeReleaseRefInfo(value, path, invalidJson);
+    if (!decoded.ok) return decoded;
+    const match = Object.values(context.releases).find(reference => reference.releaseId === decoded.value.releaseId);
     if (match === undefined) {
-        return invalidReference(childPath(path, "releaseId"), "unknown release " + JSON.stringify(value.releaseId));
+        return invalidReference(childPath(path, "releaseId"), "unknown release " + JSON.stringify(decoded.value.releaseId));
     }
-    if (match.systemId !== value.systemId) {
+    if (match.systemId !== decoded.value.systemId) {
         return invalidReference(childPath(path, "systemId"), "release system does not match context");
     }
-    if (match.releaseHash !== value.releaseHash) {
+    if (match.releaseHash !== decoded.value.releaseHash) {
         return invalidReference(childPath(path, "releaseHash"), "release hash does not match context");
     }
     return {ok: true, value: copyRelease(match)};
@@ -336,30 +383,22 @@ function decodeResourceRef(
     context: MigrationContext,
     path: string,
 ): DecodeResult<ResourceRefInfo> {
-    if (!isObject(value)) return invalidJson(path, "expected a resource reference");
-    const shape = exactKeys(value, ["name", "kind", "contentHash"], path, invalidJson);
-    if (!shape.ok) return shape;
-    if (typeof value.name !== "string") return invalidJson(childPath(path, "name"), "expected a string");
-    if (typeof value.kind !== "string") return invalidJson(childPath(path, "kind"), "expected a string");
-    if (value.kind !== "sql" && value.kind !== "check") {
-        return invalidJson(childPath(path, "kind"), "unsupported resource kind");
+    const decoded = decodeResourceRefInfo(value, path, invalidJson);
+    if (!decoded.ok) return decoded;
+    if (decoded.value.kind !== expectedKind) {
+        return invalidResourceKind(childPath(path, "kind"), expectedKind, decoded.value.kind);
     }
-    if (value.kind !== expectedKind) {
-        return invalidResourceKind(childPath(path, "kind"), expectedKind, value.kind);
-    }
-    if (typeof value.contentHash !== "string") return invalidJson(childPath(path, "contentHash"), "expected a string");
-
-    const resource = context.resources[value.name];
+    const resource = context.resources[decoded.value.name];
     if (resource === undefined) {
-        return invalidReference(childPath(path, "name"), "unknown resource " + JSON.stringify(value.name));
+        return invalidReference(childPath(path, "name"), "unknown resource " + JSON.stringify(decoded.value.name));
     }
     if (resource.kind !== expectedKind) {
         return invalidResourceKind(childPath(path, "kind"), expectedKind, resource.kind);
     }
-    if (resource.file.contentHash !== value.contentHash) {
+    if (resource.file.contentHash !== decoded.value.contentHash) {
         return invalidReference(childPath(path, "contentHash"), "resource hash does not match context");
     }
-    return {ok: true, value: {name: value.name, kind: expectedKind, contentHash: value.contentHash}};
+    return {ok: true, value: {name: decoded.value.name, kind: expectedKind, contentHash: decoded.value.contentHash}};
 }
 
 function decodeResourceRefs(
@@ -383,7 +422,7 @@ function decodeCopiedMigration(value: JsonValue, context: MigrationContext): Dec
     const shape = exactKeys(value, ["id", "from", "to", "description", "before", "steps", "after"], "$", invalidJson);
     if (!shape.ok) return shape;
 
-    const id = nonEmptyString(value.id, '$["id"]', "migration id");
+    const id = nonEmptyString(value.id, '$["id"]', "migration id", invalidJson);
     if (!id.ok) return id;
     const from = decodeReleaseRef(value.from, context, '$["from"]');
     if (!from.ok) return from;
@@ -411,7 +450,7 @@ function decodeCopiedMigration(value: JsonValue, context: MigrationContext): Dec
         if (!isObject(rawStep)) return invalidJson(stepPath, "expected a step object");
         const stepShape = exactKeys(rawStep, ["id", "run"], stepPath, invalidJson);
         if (!stepShape.ok) return stepShape;
-        const stepId = nonEmptyString(rawStep.id, childPath(stepPath, "id"), "step id");
+        const stepId = nonEmptyString(rawStep.id, childPath(stepPath, "id"), "step id", invalidJson);
         if (!stepId.ok) return stepId;
         if (stepIds.has(stepId.value)) {
             return invalidCatalog(childPath(stepPath, "id"), "step ids must not repeat");
