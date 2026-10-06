@@ -1,10 +1,15 @@
 import {
+    decodeProblem as decodeContractProblem,
+    decodeReleaseRefInfo,
+    isPlainObject,
+    isSha256,
     problem,
     type Problem,
     type ReleaseRefInfo,
     type ValidationResult,
 } from "system-definition";
 import {quotePgIdentifier, type PgSession, type SqlParameter} from "./pg-schema";
+import {isPgNonEmptyText} from "./pg-text";
 
 export type JournalConfig = {
     schema: string;
@@ -122,7 +127,6 @@ type QueryResult = Awaited<ReturnType<PgSession["query"]>>;
 type Row = Readonly<Record<string, unknown>>;
 
 const JOURNAL_FORMAT_VERSION = 1 as const;
-const HASH_RE = /^[0-9a-f]{64}$/;
 const UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 const ATTEMPT_STATE_SET = new Set<string>(ATTEMPT_STATES);
@@ -156,24 +160,10 @@ function queryFailure<T>(error: unknown): ValidationResult<T> {
     });
 }
 
-function isPlainObject(value: unknown): value is Row {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-    const prototype = Object.getPrototypeOf(value);
-    return prototype === Object.prototype || prototype === null;
-}
-
 function hasExactKeys(row: Row, expected: readonly string[]): boolean {
     const actual = Object.keys(row).sort();
     const wanted = [...expected].sort();
     return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
-}
-
-function nonEmptyString(value: unknown): value is string {
-    return typeof value === "string" && value.length > 0 && !value.includes("\0");
-}
-
-function hashString(value: unknown): value is string {
-    return typeof value === "string" && HASH_RE.test(value);
 }
 
 function positiveInteger(value: unknown): value is number {
@@ -185,10 +175,16 @@ function decodeReleaseParts(
     releaseId: unknown,
     releaseHash: unknown,
 ): ValidationResult<ReleaseRefInfo> {
-    if (!nonEmptyString(systemId) || !nonEmptyString(releaseId) || !hashString(releaseHash)) {
+    const decoded = decodeReleaseRefInfo(
+        {systemId, releaseId, releaseHash},
+        "$",
+        () => failure("migration.invalidJournal", {reason: "invalid release reference"}),
+    );
+    if (!decoded.ok) return decoded;
+    if (!isPgNonEmptyText(decoded.value.systemId) || !isPgNonEmptyText(decoded.value.releaseId)) {
         return failure("migration.invalidJournal", {reason: "invalid release reference"});
     }
-    return {ok: true, value: {systemId, releaseId, releaseHash}};
+    return decoded;
 }
 
 function validateRelease(value: ReleaseRefInfo): ValidationResult<ReleaseRefInfo> {
@@ -208,7 +204,7 @@ function canonicalSchemas(schemas: readonly string[]): ValidationResult<readonly
     const result: string[] = [];
     const seen = new Set<string>();
     for (const schema of schemas) {
-        if (!nonEmptyString(schema)) {
+        if (!isPgNonEmptyText(schema)) {
             return failure("migration.invalidJournal", {reason: "invalid application schema"});
         }
         if (seen.has(schema)) {
@@ -225,7 +221,7 @@ function validateScope(scope: InstallationScope): ValidationResult<InstallationS
     if (!isPlainObject(scope) || !hasExactKeys(scope, ["systemId", "schemas"])) {
         return failure("migration.invalidJournal", {reason: "invalid installation scope"});
     }
-    if (!nonEmptyString(scope.systemId)) {
+    if (!isPgNonEmptyText(scope.systemId)) {
         return failure("migration.invalidJournal", {reason: "invalid system id"});
     }
     const schemas = canonicalSchemas(scope.schemas);
@@ -234,7 +230,7 @@ function validateScope(scope: InstallationScope): ValidationResult<InstallationS
 }
 
 function validateConfig(config: JournalConfig): ValidationResult<JournalConfig> {
-    if (!isPlainObject(config) || !hasExactKeys(config, ["schema"]) || !nonEmptyString(config.schema)) {
+    if (!isPlainObject(config) || !hasExactKeys(config, ["schema"]) || !isPgNonEmptyText(config.schema)) {
         return failure("migration.invalidJournal", {reason: "invalid journal schema"});
     }
     return {ok: true, value: {schema: config.schema}};
@@ -257,38 +253,23 @@ function validateConfigForScope(
     return {ok: true, value: {config: checkedConfig.value, scope: checkedScope.value}};
 }
 
-function decodeProblem(value: unknown): ValidationResult<Problem> {
-    if (!isPlainObject(value)
-        || !hasExactKeys(value, ["field", "messageKey", "severity", "details"])
-        || !(value.field === null || typeof value.field === "string")
-        || !nonEmptyString(value.messageKey)
-        || !(value.severity === "blocking" || value.severity === "regular")
-        || !isPlainObject(value.details)) {
+function decodeAttemptProblem(value: unknown): ValidationResult<Problem> {
+    const decoded = decodeContractProblem(value, "$", (_path, reason) => failure(
+        "migration.invalidJournal",
+        {reason: reason === "problem detail must be a string" ? "problem details must be strings" : "invalid attempt problem"},
+    ));
+    if (!decoded.ok) return decoded;
+    if (!isPgNonEmptyText(decoded.value.messageKey)) {
         return failure("migration.invalidJournal", {reason: "invalid attempt problem"});
     }
-    const details: Record<string, string> = Object.create(null) as Record<string, string>;
-    for (const [key, detail] of Object.entries(value.details)) {
-        if (typeof detail !== "string") {
-            return failure("migration.invalidJournal", {reason: "problem details must be strings"});
-        }
-        details[key] = detail;
-    }
-    return {
-        ok: true,
-        value: {
-            field: value.field,
-            messageKey: value.messageKey,
-            severity: value.severity,
-            details,
-        },
-    };
+    return decoded;
 }
 
 function decodeProblems(value: unknown): ValidationResult<readonly Problem[]> {
     if (!Array.isArray(value)) return failure("migration.invalidJournal", {reason: "invalid attempt problems"});
     const result: Problem[] = [];
     for (const one of value) {
-        const decoded = decodeProblem(one);
+        const decoded = decodeAttemptProblem(one);
         if (!decoded.ok) return decoded;
         result.push(decoded.value);
     }
@@ -311,8 +292,8 @@ function decodeInstallationRow(value: unknown): ValidationResult<InstallationInf
     if (!isPlainObject(value) || !hasExactKeys(value, keys)) {
         return failure("migration.invalidJournal", {reason: "invalid installation row"});
     }
-    if (!nonEmptyString(value.installation_id)
-        || !nonEmptyString(value.system_id)
+    if (!isPgNonEmptyText(value.installation_id)
+        || !isPgNonEmptyText(value.system_id)
         || value.journal_format_version !== JOURNAL_FORMAT_VERSION
         || !Array.isArray(value.schemas)) {
         return failure("migration.invalidJournal", {reason: "invalid installation row values"});
@@ -362,10 +343,10 @@ function decodeHistoryRow(value: unknown): ValidationResult<MigrationHistoryInfo
         "committed_at",
     ] as const;
     if (!isPlainObject(value) || !hasExactKeys(value, keys)
-        || !nonEmptyString(value.installation_id)
+        || !isPgNonEmptyText(value.installation_id)
         || !positiveInteger(value.ordinal)
-        || !nonEmptyString(value.migration_id)
-        || !hashString(value.migration_hash)
+        || !isPgNonEmptyText(value.migration_id)
+        || !isSha256(value.migration_hash)
         || typeof value.committed_at !== "string"
         || !UTC_RE.test(value.committed_at)) {
         return failure("migration.invalidJournal", {reason: "invalid migration history row"});
@@ -404,10 +385,10 @@ function decodeAttemptRow(value: unknown): ValidationResult<AttemptInfo> {
         "problems",
     ] as const;
     if (!isPlainObject(value) || !hasExactKeys(value, keys)
-        || !nonEmptyString(value.attempt_id)
-        || !nonEmptyString(value.deployment_id)
-        || !nonEmptyString(value.installation_id)
-        || !hashString(value.plan_hash)
+        || !isPgNonEmptyText(value.attempt_id)
+        || !isPgNonEmptyText(value.deployment_id)
+        || !isPgNonEmptyText(value.installation_id)
+        || !isSha256(value.plan_hash)
         || !isAttemptState(value.state)) {
         return failure("migration.invalidJournal", {reason: "invalid execution attempt row"});
     }
@@ -624,7 +605,7 @@ export async function installBaseline(
     input: {installationId: string; scope: InstallationScope; baseline: ReleaseRefInfo},
 ): Promise<ValidationResult<InstallationInfo>> {
     if (!isPlainObject(input) || !hasExactKeys(input, ["installationId", "scope", "baseline"])
-        || !nonEmptyString(input.installationId)) {
+        || !isPgNonEmptyText(input.installationId)) {
         return failure("migration.invalidJournal", {reason: "invalid baseline installation input"});
     }
     const checked = validateConfigForScope(config, input.scope);
@@ -697,7 +678,7 @@ export async function readHistory(
 ): Promise<ValidationResult<readonly MigrationHistoryInfo[]>> {
     const checked = validateConfig(config);
     if (!checked.ok) return checked;
-    if (!nonEmptyString(installationId)) {
+    if (!isPgNonEmptyText(installationId)) {
         return failure("migration.invalidJournal", {reason: "invalid installation id"});
     }
     const table = `${quotePgIdentifier(checked.value.schema)}.migration_history`;
@@ -858,10 +839,10 @@ export async function startAttempt(
     if (!checked.ok) return checked;
     if (!isPlainObject(input)
         || !hasExactKeys(input, ["attemptId", "deploymentId", "installationId", "planHash"])
-        || !nonEmptyString(input.attemptId)
-        || !nonEmptyString(input.deploymentId)
-        || !nonEmptyString(input.installationId)
-        || !hashString(input.planHash)) {
+        || !isPgNonEmptyText(input.attemptId)
+        || !isPgNonEmptyText(input.deploymentId)
+        || !isPgNonEmptyText(input.installationId)
+        || !isSha256(input.planHash)) {
         return failure("migration.invalidJournal", {reason: "invalid attempt start input"});
     }
     const schema = quotePgIdentifier(checked.value.schema);
@@ -886,7 +867,7 @@ export async function finishAttempt(
 ): Promise<ValidationResult<AttemptInfo>> {
     const checked = validateConfig(config);
     if (!checked.ok) return checked;
-    if (!nonEmptyString(attemptId)
+    if (!isPgNonEmptyText(attemptId)
         || !isPlainObject(resultInput)
         || !hasExactKeys(resultInput, ["state", "confirmedTarget", "problems"])
         || !isFinishedAttemptState(resultInput.state)) {
@@ -943,10 +924,6 @@ function wait(milliseconds: number): Promise<void> {
 }
 
 
-function validPreparationHash(value: unknown): value is string {
-    return typeof value === "string" && HASH_RE.test(value);
-}
-
 function preparationAttemptSelect(alias: string): string {
     return `${alias}.attempt_id, ${alias}.installation_id, ${alias}.preparation_id, ${alias}.artifact_hash,
         ${alias}.state, ${alias}.before_fingerprint, ${alias}.after_fingerprint, ${alias}.report_hash, ${alias}.problems`;
@@ -954,14 +931,14 @@ function preparationAttemptSelect(alias: string): string {
 
 function decodePreparationAttemptRow(value: unknown): ValidationResult<PreparationAttemptInfo> {
     if (!isPlainObject(value)
-        || !nonEmptyString(value.attempt_id)
-        || !nonEmptyString(value.installation_id)
-        || !nonEmptyString(value.preparation_id)
-        || !validPreparationHash(value.artifact_hash)
+        || !isPgNonEmptyText(value.attempt_id)
+        || !isPgNonEmptyText(value.installation_id)
+        || !isPgNonEmptyText(value.preparation_id)
+        || !isSha256(value.artifact_hash)
         || !isAttemptState(value.state)
-        || !validPreparationHash(value.before_fingerprint)
-        || !(value.after_fingerprint === null || validPreparationHash(value.after_fingerprint))
-        || !validPreparationHash(value.report_hash)) {
+        || !isSha256(value.before_fingerprint)
+        || !(value.after_fingerprint === null || isSha256(value.after_fingerprint))
+        || !isSha256(value.report_hash)) {
         return failure("migration.invalidJournal", {reason: "invalid preparation attempt row"});
     }
     const problems = decodeProblems(value.problems);
@@ -990,19 +967,18 @@ function preparationSelect(alias: string): string {
 
 function decodePreparationRow(value: unknown): ValidationResult<PreparationHistoryInfo> {
     if (!isPlainObject(value)
-        || !nonEmptyString(value.installation_id)
+        || !isPgNonEmptyText(value.installation_id)
         || !positiveInteger(value.ordinal)
-        || !nonEmptyString(value.preparation_id)
-        || !validPreparationHash(value.artifact_hash)
-        || !nonEmptyString(value.head_system_id)
-        || !nonEmptyString(value.head_release_id)
-        || !validPreparationHash(value.head_release_hash)
-        || !validPreparationHash(value.before_fingerprint)
-        || !validPreparationHash(value.after_fingerprint)
-        || !validPreparationHash(value.report_hash)
+        || !isPgNonEmptyText(value.preparation_id)
+        || !isSha256(value.artifact_hash)
+        || !isSha256(value.before_fingerprint)
+        || !isSha256(value.after_fingerprint)
+        || !isSha256(value.report_hash)
         || typeof value.committed_at !== "string" || !UTC_RE.test(value.committed_at)) {
         return failure("migration.invalidJournal", {reason: "invalid confirmed preparation row"});
     }
+    const head = decodeReleaseParts(value.head_system_id, value.head_release_id, value.head_release_hash);
+    if (!head.ok) return head;
     return {
         ok: true,
         value: {
@@ -1010,11 +986,7 @@ function decodePreparationRow(value: unknown): ValidationResult<PreparationHisto
             ordinal: value.ordinal,
             preparationId: value.preparation_id,
             artifactHash: value.artifact_hash,
-            head: {
-                systemId: value.head_system_id,
-                releaseId: value.head_release_id,
-                releaseHash: value.head_release_hash,
-            },
+            head: head.value,
             beforeFingerprint: value.before_fingerprint,
             afterFingerprint: value.after_fingerprint,
             reportHash: value.report_hash,
@@ -1031,12 +1003,12 @@ export async function startPreparationAttempt(
     const checked = validateConfig(config);
     if (!checked.ok) return checked;
     if (!isPlainObject(input)
-        || !nonEmptyString(input.attemptId)
-        || !nonEmptyString(input.installationId)
-        || !nonEmptyString(input.preparationId)
-        || !validPreparationHash(input.artifactHash)
-        || !validPreparationHash(input.beforeFingerprint)
-        || !validPreparationHash(input.reportHash)) {
+        || !isPgNonEmptyText(input.attemptId)
+        || !isPgNonEmptyText(input.installationId)
+        || !isPgNonEmptyText(input.preparationId)
+        || !isSha256(input.artifactHash)
+        || !isSha256(input.beforeFingerprint)
+        || !isSha256(input.reportHash)) {
         return failure("migration.invalidJournal", {reason: "invalid preparation attempt input"});
     }
     const table = `${quotePgIdentifier(checked.value.schema)}.preparation_attempts`;
@@ -1065,10 +1037,10 @@ export async function finishPreparationAttempt(
 ): Promise<ValidationResult<PreparationAttemptInfo>> {
     const checked = validateConfig(config);
     if (!checked.ok) return checked;
-    if (!nonEmptyString(attemptId)
+    if (!isPgNonEmptyText(attemptId)
         || !isPlainObject(input)
         || !isFinishedAttemptState(input.state)
-        || !(input.afterFingerprint === null || validPreparationHash(input.afterFingerprint))
+        || !(input.afterFingerprint === null || isSha256(input.afterFingerprint))
         || !Array.isArray(input.problems)) {
         return failure("migration.invalidJournal", {reason: "invalid preparation attempt finish input"});
     }
@@ -1095,7 +1067,7 @@ export async function readConfirmedPreparation(
 ): Promise<ValidationResult<PreparationHistoryInfo | null>> {
     const checked = validateConfig(config);
     if (!checked.ok) return checked;
-    if (!nonEmptyString(installationId) || !nonEmptyString(preparationId)) {
+    if (!isPgNonEmptyText(installationId) || !isPgNonEmptyText(preparationId)) {
         return failure("migration.invalidJournal", {reason: "invalid preparation lookup"});
     }
     const table = `${quotePgIdentifier(checked.value.schema)}.preparations`;
@@ -1116,12 +1088,12 @@ export async function recordConfirmedPreparation(
     const checked = validateConfig(config);
     if (!checked.ok) return checked;
     if (!isPlainObject(input)
-        || !nonEmptyString(input.installationId)
-        || !nonEmptyString(input.preparationId)
-        || !validPreparationHash(input.artifactHash)
-        || !validPreparationHash(input.beforeFingerprint)
-        || !validPreparationHash(input.afterFingerprint)
-        || !validPreparationHash(input.reportHash)
+        || !isPgNonEmptyText(input.installationId)
+        || !isPgNonEmptyText(input.preparationId)
+        || !isSha256(input.artifactHash)
+        || !isSha256(input.beforeFingerprint)
+        || !isSha256(input.afterFingerprint)
+        || !isSha256(input.reportHash)
         || typeof input.committedAt !== "string" || !UTC_RE.test(input.committedAt)) {
         return failure("migration.invalidJournal", {reason: "invalid confirmed preparation input"});
     }
@@ -1173,7 +1145,7 @@ export async function readPreparationHistory(
 ): Promise<ValidationResult<readonly PreparationHistoryInfo[]>> {
     const checked = validateConfig(config);
     if (!checked.ok) return checked;
-    if (!nonEmptyString(installationId)) return failure("migration.invalidJournal", {reason: "invalid installation id"});
+    if (!isPgNonEmptyText(installationId)) return failure("migration.invalidJournal", {reason: "invalid installation id"});
     const table = `${quotePgIdentifier(checked.value.schema)}.preparations`;
     const result = await safeQuery(session, `SELECT ${preparationSelect("preparations")}
         FROM ${table} preparations WHERE installation_id=$1 ORDER BY ordinal`, [installationId]);
