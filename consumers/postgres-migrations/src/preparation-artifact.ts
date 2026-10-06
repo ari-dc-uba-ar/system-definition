@@ -1,4 +1,7 @@
 import {
+    decodeFileInfo as decodePackageFileInfo,
+    decodeReleaseRefInfo as decodePackageReleaseRefInfo,
+    decodeResourceRefInfo as decodePackageResourceRefInfo,
     toJsonValue,
     type FileInfo,
     type JsonValue,
@@ -99,52 +102,35 @@ function hash(value: JsonValue): value is string {
 }
 
 function decodeRelease(value: JsonValue): ValidationResult<ReleaseRefInfo> {
-    if (!isObject(value)
-        || !exactKeys(value, ["systemId", "releaseId", "releaseHash"])
-        || !nonEmpty(value.systemId)
-        || !nonEmpty(value.releaseId)
-        || !hash(value.releaseHash)) {
-        return fail("invalid head release");
-    }
-    return {
-        ok: true,
-        value: {
-            systemId: value.systemId,
-            releaseId: value.releaseId,
-            releaseHash: value.releaseHash,
-        },
-    };
+    return decodePackageReleaseRefInfo(
+        value,
+        "preparation.head",
+        () => fail<never>("invalid head release"),
+    );
 }
 
 function decodeFileInfo(value: JsonValue, label: string): ValidationResult<FileInfo> {
-    if (!isObject(value)
-        || !exactKeys(value, ["path", "contentHash", "byteLength"])
-        || !nonEmpty(value.path)
-        || !hash(value.contentHash)
-        || typeof value.byteLength !== "number"
-        || !Number.isSafeInteger(value.byteLength)
-        || value.byteLength < 0) {
-        return fail(`invalid ${label} file`);
-    }
-    return {
-        ok: true,
-        value: {path: value.path, contentHash: value.contentHash, byteLength: value.byteLength},
-    };
+    return decodePackageFileInfo(
+        value,
+        "preparation." + label,
+        () => fail<never>(`invalid ${label} file`),
+    );
 }
 
 function decodeResourceRef(
     value: JsonValue,
     expectedKind?: ResourceRefInfo["kind"],
 ): ValidationResult<ResourceRefInfo> {
-    if (!isObject(value)
-        || !exactKeys(value, ["name", "kind", "contentHash"])
-        || !nonEmpty(value.name)
-        || !(value.kind === "sql" || value.kind === "check")
-        || (expectedKind !== undefined && value.kind !== expectedKind)
-        || !hash(value.contentHash)) {
+    const decoded = decodePackageResourceRefInfo(
+        value,
+        "preparation.resource",
+        () => fail<never>("invalid resource reference"),
+    );
+    if (!decoded.ok) return decoded;
+    if (expectedKind !== undefined && decoded.value.kind !== expectedKind) {
         return fail("invalid resource reference");
     }
-    return {ok: true, value: {name: value.name, kind: value.kind, contentHash: value.contentHash}};
+    return decoded;
 }
 
 function decodeQueryRef(value: JsonValue): ValidationResult<QueryRefInfo> {
