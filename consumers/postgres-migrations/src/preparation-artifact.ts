@@ -1,6 +1,4 @@
-import {createHash} from "node:crypto";
 import {
-    canonicalJson,
     toJsonValue,
     type FileInfo,
     type JsonValue,
@@ -23,8 +21,10 @@ import type {
 } from "./migration-authoring";
 import {
     decodeValidationArtifact,
+    validationArtifactEvidenceHash,
     type ValidationArtifactInfo,
 } from "./validation-artifact";
+import {canonicalJsonSha256, omitJsonObjectKeys} from "./canonical-hash";
 import {invalidPreparation as fail} from "./preparation-error";
 
 export type PreparationArtifactInfo = {
@@ -409,12 +409,6 @@ function collectCheckpointRefs(checkpoints: CompiledAuthoringInfo["checkpoints"]
     return {ok: true, value: {resources, queries, validatorHashes}};
 }
 
-function validationArtifactHash(artifact: ValidationArtifactInfo): string {
-    const converted = toJsonValue(artifact);
-    if (!converted.ok) throw new TypeError("validation artifact is not strict JSON");
-    return createHash("sha256").update(canonicalJson(converted.value), "utf8").digest("hex");
-}
-
 function validateClosure(artifact: PreparationInput): ValidationResult<true> {
     const referencedResources: ResourceRefInfo[] = [
         ...artifact.before,
@@ -441,7 +435,7 @@ function validateClosure(artifact: PreparationInput): ValidationResult<true> {
         }
     }
     if (checkpointRefs.value.validatorHashes.length > 0) {
-        const available = new Set(artifact.validationArtifacts.map(validationArtifactHash));
+        const available = new Set(artifact.validationArtifacts.map(validationArtifactEvidenceHash));
         for (const validatorHash of checkpointRefs.value.validatorHashes) {
             if (!available.has(validatorHash)) {
                 return fail("checkpoint validator artifact is not closed over validationArtifacts", {validatorHash});
@@ -555,15 +549,11 @@ function hashableArtifact(artifact: PreparationArtifactInfo): JsonValue {
     if (!converted.ok || !isObject(converted.value)) {
         throw new TypeError("preparation artifact is not strict JSON");
     }
-    const result: Record<string, JsonValue> = {};
-    for (const [key, value] of Object.entries(converted.value)) {
-        if (key !== "artifactHash") result[key] = value;
-    }
-    return result;
+    return omitJsonObjectKeys(converted.value, ["artifactHash"]);
 }
 
 export function computePreparationArtifactHash(artifact: PreparationArtifactInfo): string {
-    return createHash("sha256").update(canonicalJson(hashableArtifact(artifact)), "utf8").digest("hex");
+    return canonicalJsonSha256(hashableArtifact(artifact));
 }
 
 export function decodePreparationArtifact(

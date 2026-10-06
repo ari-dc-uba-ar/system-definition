@@ -26,6 +26,7 @@ import {
     type ResourceRefInfo,
     type SystemSnapshotInfo,
 } from "system-definition";
+import {canonicalJsonSha256, omitJsonObjectKeys} from "./canonical-hash";
 import {matchesPostgresSupport, POSTGRES_SUPPORT} from "./postgres-support";
 
 export type EnvironmentInfo = {
@@ -191,20 +192,13 @@ function hashableReleaseManifest(manifest: ReleaseManifestInfo): JsonValue {
     if (!converted.ok || !isObject(converted.value) || !isObject(converted.value.release)) {
         throw new TypeError("release manifest is not strict JSON");
     }
-    const result = Object.create(null) as Record<string, JsonValue>;
-    for (const [key, value] of Object.entries(converted.value)) {
-        if (key !== "release") result[key] = value;
-    }
-    const release = Object.create(null) as Record<string, JsonValue>;
-    for (const [key, value] of Object.entries(converted.value.release)) {
-        if (key !== "releaseHash") release[key] = value;
-    }
-    result.release = release;
+    const result = omitJsonObjectKeys(converted.value, ["release"]);
+    result.release = omitJsonObjectKeys(converted.value.release, ["releaseHash"]);
     return result;
 }
 
 export function computeReleaseHash(manifest: ReleaseManifestInfo): string {
-    return sha256Hex(encoder.encode(canonicalJson(hashableReleaseManifest(manifest))));
+    return canonicalJsonSha256(hashableReleaseManifest(manifest));
 }
 
 function hashableMigrationManifest(manifest: MigrationManifestInfo): JsonValue {
@@ -212,15 +206,11 @@ function hashableMigrationManifest(manifest: MigrationManifestInfo): JsonValue {
     if (!converted.ok || !isObject(converted.value)) {
         throw new TypeError("migration manifest is not strict JSON");
     }
-    const result = Object.create(null) as Record<string, JsonValue>;
-    for (const [key, value] of Object.entries(converted.value)) {
-        if (key !== "migrationHash") result[key] = value;
-    }
-    return result;
+    return omitJsonObjectKeys(converted.value, ["migrationHash"]);
 }
 
 export function computeMigrationHash(manifest: MigrationManifestInfo): string {
-    return sha256Hex(encoder.encode(canonicalJson(hashableMigrationManifest(manifest))));
+    return canonicalJsonSha256(hashableMigrationManifest(manifest));
 }
 
 function isSafeOpaqueId(value: string): boolean {
@@ -809,14 +799,14 @@ export async function loadReleaseArtifact(directory: string): Promise<ArtifactRe
 
     const snapshotJson = await loadVerifiedJsonFile(root.value, manifest.value.snapshot);
     if (!snapshotJson.ok) return snapshotJson;
-    if (sha256Hex(encoder.encode(canonicalJson(snapshotJson.value))) !== manifest.value.snapshotHash) {
+    if (canonicalJsonSha256(snapshotJson.value) !== manifest.value.snapshotHash) {
         return failure("migration.checksumMismatch", {path: manifest.value.snapshot.path, reason: "snapshot hash mismatch"});
     }
     const persistenceJson = await loadVerifiedJsonFile(root.value, manifest.value.persistence);
     if (!persistenceJson.ok) return persistenceJson;
     const schemaJson = await loadVerifiedJsonFile(root.value, manifest.value.schema);
     if (!schemaJson.ok) return schemaJson;
-    if (sha256Hex(encoder.encode(canonicalJson(schemaJson.value))) !== manifest.value.schemaHash) {
+    if (canonicalJsonSha256(schemaJson.value) !== manifest.value.schemaHash) {
         return failure("migration.checksumMismatch", {path: manifest.value.schema.path, reason: "schema hash mismatch"});
     }
     const createPlanJson = await loadVerifiedJsonFile(root.value, manifest.value.createPlan);

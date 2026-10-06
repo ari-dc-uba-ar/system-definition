@@ -1,6 +1,4 @@
-import {createHash} from "node:crypto";
 import {
-    canonicalJson,
     problem,
     sameReleaseRef,
     toJsonValue,
@@ -10,6 +8,7 @@ import {
     type ValidationResult,
 } from "system-definition";
 import {computeDraftRevisionHash} from "./authoring-cli";
+import {canonicalJsonSha256} from "./canonical-hash";
 import type {
     AuthoringRuntime,
     DestructiveDecisionInfo,
@@ -107,7 +106,7 @@ function schemaHash(schema: PgSchemaInfo): ValidationResult<string> {
     if (!converted.ok) return converted;
     return {
         ok: true,
-        value: createHash("sha256").update(canonicalJson(converted.value), "utf8").digest("hex"),
+        value: canonicalJsonSha256(converted.value),
     };
 }
 

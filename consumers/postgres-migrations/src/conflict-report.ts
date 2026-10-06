@@ -1,6 +1,4 @@
-import {createHash} from "node:crypto";
 import {
-    canonicalJson,
     decodeFileInfo,
     decodeProblem as decodeProblemInfo,
     decodeReleaseRefInfo,
@@ -16,6 +14,7 @@ import {
     type ValidationResult,
 } from "system-definition";
 import type {PendingQuestionInfo} from "./authoring-contract";
+import {canonicalJsonSha256, omitJsonObjectKeys} from "./canonical-hash";
 
 export type ConflictKind =
     | "authoringDecision"
@@ -159,15 +158,11 @@ function hashableReport(report: ConflictReportInfo): JsonValue {
     if (!converted.ok || !isObject(converted.value)) {
         throw new TypeError("conflict report is not strict JSON");
     }
-    const result = Object.create(null) as Record<string, JsonValue>;
-    for (const [key, value] of Object.entries(converted.value)) {
-        if (key !== "reportHash") result[key] = value;
-    }
-    return result;
+    return omitJsonObjectKeys(converted.value, ["reportHash"]);
 }
 
 export function computeConflictReportHash(report: ConflictReportInfo): string {
-    return createHash("sha256").update(canonicalJson(hashableReport(report)), "utf8").digest("hex");
+    return canonicalJsonSha256(hashableReport(report));
 }
 
 function decodeReport(value: unknown, verifyHash: boolean): ValidationResult<ConflictReportInfo> {

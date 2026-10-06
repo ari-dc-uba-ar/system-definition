@@ -1,6 +1,5 @@
 import {createHash} from "node:crypto";
 import {
-    canonicalJson,
     decodeFileInfo,
     exactKeys,
     isPlainObject,
@@ -12,6 +11,7 @@ import {
     type Problem,
     type ValidationResult,
 } from "system-definition";
+import {canonicalJsonSha256} from "./canonical-hash";
 import type {PortInfo, SnapshotSide} from "./migration-authoring";
 
 export type ValidationArtifactInfo = {
@@ -152,7 +152,7 @@ export function validationArtifactEvidenceHash(info: ValidationArtifactInfo): st
     if (!decoded.ok) throw new TypeError("validation artifact is invalid");
     const json = toJsonValue(decoded.value);
     if (!json.ok) throw new TypeError("validation artifact is not strict JSON");
-    return createHash("sha256").update(encoder.encode(canonicalJson(json.value))).digest("hex");
+    return canonicalJsonSha256(json.value);
 }
 
 function isValidationModule(value: unknown): value is ValidationModule {

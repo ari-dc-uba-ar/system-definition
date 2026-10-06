@@ -1,6 +1,4 @@
-import {createHash} from "node:crypto";
 import {
-    canonicalJson,
     toJsonValue,
     type ValidationResult,
 } from "system-definition";
@@ -10,6 +8,7 @@ import {
     type PreparationHistoryInfo,
 } from "./journal";
 import type {PgSession} from "./pg-schema";
+import {canonicalJsonSha256} from "./canonical-hash";
 
 export type PreparationHistoryEntryInfo = {
     ordinal: number;
@@ -25,7 +24,7 @@ export function computePreparationHistoryHash(
 ): string {
     const converted = toJsonValue(history);
     if (!converted.ok) throw new TypeError("preparation history is not strict JSON");
-    return createHash("sha256").update(canonicalJson(converted.value), "utf8").digest("hex");
+    return canonicalJsonSha256(converted.value);
 }
 
 export function preparationHistoryEntries(
