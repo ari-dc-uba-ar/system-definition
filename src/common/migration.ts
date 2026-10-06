@@ -1,6 +1,6 @@
 import {ValidationResult, problem} from "./problem";
 import {JsonValue, toJsonValue} from "./json-value";
-import {childPath, exactKeys, exactOptionalKeys, isNonBlankString, isPlainObject, isSha256, type StructuralFailure} from "./decode-structure";
+import {childPath, exactKeys, exactOptionalKeys, isNonBlankString, isNonEmptyString, isPlainObject, isSha256, type StructuralFailure} from "./decode-structure";
 
 export type FileInfo = {
     path: string;
@@ -201,6 +201,28 @@ function sha256String(
         return invalid(path, label + " must be a lowercase SHA-256 hex digest");
     }
     return {ok: true, value};
+}
+
+export function decodeFileInfo(
+    value: unknown,
+    path: string,
+    invalid: StructuralFailure,
+): ValidationResult<FileInfo> {
+    if (!isPlainObject(value)) return invalid(path, "expected a file reference");
+    const shape = exactKeys(value, ["path", "contentHash", "byteLength"], path, invalid);
+    if (!shape.ok) return shape;
+    if (!isNonEmptyString(value.path)) {
+        return invalid(childPath(path, "path"), "file path must not be empty");
+    }
+    const contentHash = sha256String(value.contentHash, childPath(path, "contentHash"), "file contentHash", invalid);
+    if (!contentHash.ok) return contentHash;
+    if (typeof value.byteLength !== "number" || !Number.isSafeInteger(value.byteLength) || value.byteLength < 0) {
+        return invalid(childPath(path, "byteLength"), "file byteLength must be a non-negative safe integer");
+    }
+    return {
+        ok: true,
+        value: {path: value.path, contentHash: contentHash.value, byteLength: value.byteLength},
+    };
 }
 
 export function decodeReleaseRefInfo(

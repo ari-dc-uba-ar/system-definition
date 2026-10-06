@@ -1,3 +1,5 @@
+import {childPath, exactKeys, isNonEmptyString, isPlainObject, type StructuralFailure} from "./decode-structure";
+
 /* A problem is never a text: it carries the message key, so the wording is resolved
    where the language is known (multilang, later). `details` holds whatever the message
    needs interpolated. */
@@ -33,4 +35,38 @@ export function problem(
 
 export function hasBlocking(problems: readonly Problem[]): boolean {
     return problems.some(one => one.severity === 'blocking');
+}
+
+
+export function decodeProblem(
+    value: unknown,
+    path: string,
+    invalid: StructuralFailure,
+): ValidationResult<Problem> {
+    if (!isPlainObject(value)) return invalid(path, "expected a problem");
+    const shape = exactKeys(value, ["field", "messageKey", "severity", "details"], path, invalid);
+    if (!shape.ok) return shape;
+    if (!(value.field === null || typeof value.field === "string")) {
+        return invalid(childPath(path, "field"), "problem field must be a string or null");
+    }
+    if (!isNonEmptyString(value.messageKey)) {
+        return invalid(childPath(path, "messageKey"), "problem messageKey must not be empty");
+    }
+    if (value.severity !== "blocking" && value.severity !== "regular") {
+        return invalid(childPath(path, "severity"), "unsupported problem severity");
+    }
+    if (!isPlainObject(value.details)) {
+        return invalid(childPath(path, "details"), "problem details must be an object");
+    }
+    const details: Record<string, string> = Object.create(null) as Record<string, string>;
+    for (const [key, detail] of Object.entries(value.details)) {
+        if (typeof detail !== "string") {
+            return invalid(childPath(childPath(path, "details"), key), "problem detail must be a string");
+        }
+        details[key] = detail;
+    }
+    return {
+        ok: true,
+        value: {field: value.field, messageKey: value.messageKey, severity: value.severity, details},
+    };
 }

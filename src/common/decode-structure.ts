@@ -14,8 +14,12 @@ export function isPlainObject(value: unknown): value is StructuralObject {
     return prototype === Object.prototype || prototype === null;
 }
 
+export function isNonEmptyString(value: unknown): value is string {
+    return typeof value === "string" && value.length > 0;
+}
+
 export function isNonBlankString(value: unknown): value is string {
-    return typeof value === "string" && value.trim().length > 0;
+    return isNonEmptyString(value) && value.trim().length > 0;
 }
 
 export function isSha256(value: unknown): value is string {
