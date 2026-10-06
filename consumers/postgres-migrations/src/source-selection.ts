@@ -1,5 +1,6 @@
 import {createHash} from "node:crypto";
 import {
+    decodeResourceRefInfo,
     type ResourceRefInfo,
     type ValidationResult,
     problem,
@@ -74,12 +75,6 @@ function isNonEmpty(value: string): boolean {
     return value.length > 0;
 }
 
-function validCheck(ref: ResourceRefInfo): boolean {
-    return ref.kind === "check"
-        && isNonEmpty(ref.name)
-        && /^[0-9a-f]{64}$/.test(ref.contentHash);
-}
-
 function fieldFor(
     context: AuthoringContext,
     aliases: ReadonlyMap<string, AliasInfo>,
@@ -125,11 +120,17 @@ function copyChecks(checks: readonly ResourceRefInfo[]): ValidationResult<readon
     const seen = new Set<string>();
     const result: ResourceRefInfo[] = [];
     for (const ref of checks) {
-        if (!validCheck(ref)) return failure("invalid coverage check", {name: ref.name});
-        const key = `${ref.name}\u0000${ref.contentHash}`;
-        if (seen.has(key)) return failure("duplicate coverage check", {name: ref.name});
+        const decoded = decodeResourceRefInfo(ref, "$", () => (
+            failure("invalid coverage check", {name: typeof ref?.name === "string" ? ref.name : ""})
+        ));
+        if (!decoded.ok) return decoded;
+        if (decoded.value.kind !== "check") {
+            return failure("invalid coverage check", {name: decoded.value.name});
+        }
+        const key = `${decoded.value.name}\u0000${decoded.value.contentHash}`;
+        if (seen.has(key)) return failure("duplicate coverage check", {name: decoded.value.name});
         seen.add(key);
-        result.push({name: ref.name, kind: "check", contentHash: ref.contentHash});
+        result.push(decoded.value);
     }
     return {ok: true, value: result};
 }
