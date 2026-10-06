@@ -1,6 +1,7 @@
 import {JsonValue, toJsonValue} from "./json-value";
 import type {MigrationInfo, ReleaseRefInfo, ResourceRefInfo} from "./migration";
 import {ValidationResult, problem} from "./problem";
+import {childPath, exactKeys, isPlainObject} from "./decode-structure";
 
 export type PublishedMigrationInfo = {
     migration: MigrationInfo;
@@ -51,20 +52,7 @@ function downgradeUnsupported(fromId: string, toId: string): ValidationResult<ne
 }
 
 function isObject(value: JsonValue): value is JsonObject {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function exactKeys(value: JsonObject, keys: readonly string[], path: string): ValidationResult<true> {
-    const expected = new Set(keys);
-    for (const key of Object.keys(value)) {
-        if (!expected.has(key)) return invalidCatalog(path + "[" + JSON.stringify(key) + "]", "unexpected property");
-    }
-    for (const key of keys) {
-        if (!Object.prototype.hasOwnProperty.call(value, key)) {
-            return invalidCatalog(path + "[" + JSON.stringify(key) + "]", "missing property");
-        }
-    }
-    return {ok: true, value: true};
+    return isPlainObject(value);
 }
 
 function nonEmptyString(value: JsonValue, path: string, label: string): ValidationResult<string> {
@@ -83,30 +71,30 @@ function sha256(value: JsonValue, path: string, label: string): ValidationResult
 
 function releaseRef(value: JsonValue, path: string): ValidationResult<ReleaseRefInfo> {
     if (!isObject(value)) return invalidCatalog(path, "expected a release reference");
-    const shape = exactKeys(value, ["systemId", "releaseId", "releaseHash"], path);
+    const shape = exactKeys(value, ["systemId", "releaseId", "releaseHash"], path, invalidCatalog);
     if (!shape.ok) return shape;
-    const systemId = nonEmptyString(value.systemId, path + '["systemId"]', "systemId");
+    const systemId = nonEmptyString(value.systemId, childPath(path, "systemId"), "systemId");
     if (!systemId.ok) return systemId;
-    const releaseId = nonEmptyString(value.releaseId, path + '["releaseId"]', "releaseId");
+    const releaseId = nonEmptyString(value.releaseId, childPath(path, "releaseId"), "releaseId");
     if (!releaseId.ok) return releaseId;
-    const releaseHash = sha256(value.releaseHash, path + '["releaseHash"]', "releaseHash");
+    const releaseHash = sha256(value.releaseHash, childPath(path, "releaseHash"), "releaseHash");
     if (!releaseHash.ok) return releaseHash;
     return {ok: true, value: {systemId: systemId.value, releaseId: releaseId.value, releaseHash: releaseHash.value}};
 }
 
 function resourceRef(value: JsonValue, path: string, expectedKind?: ResourceRefInfo["kind"]): ValidationResult<ResourceRefInfo> {
     if (!isObject(value)) return invalidCatalog(path, "expected a resource reference");
-    const shape = exactKeys(value, ["name", "kind", "contentHash"], path);
+    const shape = exactKeys(value, ["name", "kind", "contentHash"], path, invalidCatalog);
     if (!shape.ok) return shape;
-    const name = nonEmptyString(value.name, path + '["name"]', "resource name");
+    const name = nonEmptyString(value.name, childPath(path, "name"), "resource name");
     if (!name.ok) return name;
     if (value.kind !== "sql" && value.kind !== "check") {
-        return invalidCatalog(path + '["kind"]', "unsupported resource kind");
+        return invalidCatalog(childPath(path, "kind"), "unsupported resource kind");
     }
     if (expectedKind !== undefined && value.kind !== expectedKind) {
-        return invalidCatalog(path + '["kind"]', "resource kind does not match position");
+        return invalidCatalog(childPath(path, "kind"), "resource kind does not match position");
     }
-    const contentHash = sha256(value.contentHash, path + '["contentHash"]', "resource contentHash");
+    const contentHash = sha256(value.contentHash, childPath(path, "contentHash"), "resource contentHash");
     if (!contentHash.ok) return contentHash;
     return {ok: true, value: {name: name.value, kind: value.kind, contentHash: contentHash.value}};
 }
@@ -124,33 +112,33 @@ function resourceRefs(value: JsonValue, path: string, expectedKind: ResourceRefI
 
 function migrationInfo(value: JsonValue, path: string): ValidationResult<MigrationInfo> {
     if (!isObject(value)) return invalidCatalog(path, "expected a migration object");
-    const shape = exactKeys(value, ["id", "from", "to", "description", "before", "steps", "after"], path);
+    const shape = exactKeys(value, ["id", "from", "to", "description", "before", "steps", "after"], path, invalidCatalog);
     if (!shape.ok) return shape;
-    const id = nonEmptyString(value.id, path + '["id"]', "migration id");
+    const id = nonEmptyString(value.id, childPath(path, "id"), "migration id");
     if (!id.ok) return id;
-    const from = releaseRef(value.from, path + '["from"]');
+    const from = releaseRef(value.from, childPath(path, "from"));
     if (!from.ok) return from;
-    const to = releaseRef(value.to, path + '["to"]');
+    const to = releaseRef(value.to, childPath(path, "to"));
     if (!to.ok) return to;
-    if (typeof value.description !== "string") return invalidCatalog(path + '["description"]', "expected a string");
-    const before = resourceRefs(value.before, path + '["before"]', "check");
+    if (typeof value.description !== "string") return invalidCatalog(childPath(path, "description"), "expected a string");
+    const before = resourceRefs(value.before, childPath(path, "before"), "check");
     if (!before.ok) return before;
-    const after = resourceRefs(value.after, path + '["after"]', "check");
+    const after = resourceRefs(value.after, childPath(path, "after"), "check");
     if (!after.ok) return after;
-    if (!Array.isArray(value.steps)) return invalidCatalog(path + '["steps"]', "expected an array");
+    if (!Array.isArray(value.steps)) return invalidCatalog(childPath(path, "steps"), "expected an array");
     const steps: {id: string, run: ResourceRefInfo}[] = [];
     const ids = new Set<string>();
     for (let index = 0; index < value.steps.length; index++) {
         const stepPath = path + '["steps"][' + index + "]";
         const rawStep = value.steps[index];
         if (!isObject(rawStep)) return invalidCatalog(stepPath, "expected a step object");
-        const stepShape = exactKeys(rawStep, ["id", "run"], stepPath);
+        const stepShape = exactKeys(rawStep, ["id", "run"], stepPath, invalidCatalog);
         if (!stepShape.ok) return stepShape;
-        const stepId = nonEmptyString(rawStep.id, stepPath + '["id"]', "step id");
+        const stepId = nonEmptyString(rawStep.id, childPath(stepPath, "id"), "step id");
         if (!stepId.ok) return stepId;
-        if (ids.has(stepId.value)) return invalidCatalog(stepPath + '["id"]', "step ids must not repeat");
+        if (ids.has(stepId.value)) return invalidCatalog(childPath(stepPath, "id"), "step ids must not repeat");
         ids.add(stepId.value);
-        const run = resourceRef(rawStep.run, stepPath + '["run"]', "sql");
+        const run = resourceRef(rawStep.run, childPath(stepPath, "run"), "sql");
         if (!run.ok) return run;
         steps.push({id: stepId.value, run: run.value});
     }
@@ -170,11 +158,11 @@ function migrationInfo(value: JsonValue, path: string): ValidationResult<Migrati
 
 function publishedMigration(value: JsonValue, path: string): ValidationResult<PublishedMigrationInfo> {
     if (!isObject(value)) return invalidCatalog(path, "expected a published migration");
-    const shape = exactKeys(value, ["migration", "migrationHash"], path);
+    const shape = exactKeys(value, ["migration", "migrationHash"], path, invalidCatalog);
     if (!shape.ok) return shape;
-    const migration = migrationInfo(value.migration, path + '["migration"]');
+    const migration = migrationInfo(value.migration, childPath(path, "migration"));
     if (!migration.ok) return migration;
-    const migrationHash = sha256(value.migrationHash, path + '["migrationHash"]', "migrationHash");
+    const migrationHash = sha256(value.migrationHash, childPath(path, "migrationHash"), "migrationHash");
     if (!migrationHash.ok) return migrationHash;
     return {ok: true, value: {migration: migration.value, migrationHash: migrationHash.value}};
 }
