@@ -1,5 +1,6 @@
 import {JsonValue, toJsonValue} from "./json-value";
 import {ValidationResult, problem} from "./problem";
+import {childPath, exactKeys, isPlainObject} from "./decode-structure";
 import {EntityDef, EntityInfoOf, SystemEntityContext, completeEntity} from "./ssot-entity";
 import {RecordDef, RecordInfoOf, completeRecord} from "./ssot-record";
 
@@ -72,25 +73,7 @@ function invalidReference(path: string, reason: string): SnapshotDecodeResult<ne
 }
 
 function isObject(value: JsonValue): value is JsonObject {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function childPath(path: string, key: string): string {
-    return path + "[" + JSON.stringify(key) + "]";
-}
-
-function exactKeys(value: JsonObject, expected: readonly string[], path: string): SnapshotDecodeResult<true> {
-    const actual = Object.keys(value);
-    const expectedSet = new Set(expected);
-    const unexpected = actual.find(key => !expectedSet.has(key));
-    if (unexpected !== undefined) {
-        return invalidSnapshot(childPath(path, unexpected), "unexpected property");
-    }
-    const missing = expected.find(key => !Object.prototype.hasOwnProperty.call(value, key));
-    if (missing !== undefined) {
-        return invalidSnapshot(childPath(path, missing), "missing property");
-    }
-    return {ok: true, value: true};
+    return isPlainObject(value);
 }
 
 function stringArray(value: JsonValue, path: string): SnapshotDecodeResult<readonly string[]> {
@@ -173,7 +156,7 @@ function fkMap(
     for (const [fkName, rawFk] of Object.entries(value)) {
         const fkPath = childPath(path, fkName);
         if (!isObject(rawFk)) return invalidSnapshot(fkPath, "expected an fk object");
-        const shape = exactKeys(rawFk, ["entity", "fields"], fkPath);
+        const shape = exactKeys(rawFk, ["entity", "fields"], fkPath, invalidSnapshot);
         if (!shape.ok) return shape;
         if (typeof rawFk.entity !== "string") {
             return invalidSnapshot(childPath(fkPath, "entity"), "expected a string");
@@ -238,7 +221,7 @@ function validateFkTargets(
 
 function decodeCopiedSnapshot(value: JsonValue): SnapshotDecodeResult<SystemSnapshotInfo> {
     if (!isObject(value)) return invalidSnapshot("$", "expected a snapshot object");
-    const topShape = exactKeys(value, ["formatVersion", "systemId", "typeNames", "entities", "records"], "$");
+    const topShape = exactKeys(value, ["formatVersion", "systemId", "typeNames", "entities", "records"], "$", invalidSnapshot);
     if (!topShape.ok) return topShape;
 
     if (value.formatVersion !== 1) {
@@ -268,7 +251,7 @@ function decodeCopiedSnapshot(value: JsonValue): SnapshotDecodeResult<SystemSnap
     for (const [entityName, rawEntity] of Object.entries(value.entities)) {
         const entityPath = childPath("$[\"entities\"]", entityName);
         if (!isObject(rawEntity)) return invalidSnapshot(entityPath, "expected an entity object");
-        const entityShape = exactKeys(rawEntity, ["name", "record", "fields", "pk", "uks", "fks", "validators"], entityPath);
+        const entityShape = exactKeys(rawEntity, ["name", "record", "fields", "pk", "uks", "fks", "validators"], entityPath, invalidSnapshot);
         if (!entityShape.ok) return entityShape;
 
         if (typeof rawEntity.name !== "string") {
