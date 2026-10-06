@@ -12,117 +12,26 @@ import {
 import {quotePgIdentifier, type PgSession, type SqlParameter} from "./pg-schema";
 import {isPgNonEmptyText} from "./pg-text";
 
-export type JournalConfig = {
-    schema: string;
-};
+export * from "./journal-contracts";
 
-export type InstallationScope = {
-    systemId: string;
-    schemas: readonly string[];
-};
-
-export type InstallationInfo = {
-    installationId: string;
-    systemId: string;
-    schemas: readonly string[];
-    baseline: ReleaseRefInfo;
-    current: ReleaseRefInfo;
-    journalFormatVersion: 1;
-};
-
-export type MigrationHistoryInfo = {
-    installationId: string;
-    ordinal: number;
-    migrationId: string;
-    migrationHash: string;
-    from: ReleaseRefInfo;
-    to: ReleaseRefInfo;
-    committedAt: string;
-};
-
-export const ATTEMPT_STATE = {
-    running: "running",
-    failed: "failed",
-    unknown: "unknown",
-    succeeded: "succeeded",
-} as const;
-
-export const ATTEMPT_STATES = [
-    ATTEMPT_STATE.running,
-    ATTEMPT_STATE.failed,
-    ATTEMPT_STATE.unknown,
-    ATTEMPT_STATE.succeeded,
-] as const;
-
-export type AttemptState = typeof ATTEMPT_STATES[number];
-
-export type AttemptInfo = {
-    attemptId: string;
-    deploymentId: string;
-    installationId: string;
-    planHash: string;
-    state: AttemptState;
-    confirmedTarget: ReleaseRefInfo | null;
-    problems: readonly Problem[];
-};
-
-export type AttemptStartInput = {
-    attemptId: string;
-    deploymentId: string;
-    installationId: string;
-    planHash: string;
-};
-
-export type AttemptFinishInput = {
-    state: Exclude<AttemptState, "running">;
-    confirmedTarget: ReleaseRefInfo | null;
-    problems: readonly Problem[];
-};
-
-export type PreparationAttemptState = AttemptState;
-
-export type PreparationAttemptInfo = {
-    attemptId: string;
-    installationId: string;
-    preparationId: string;
-    artifactHash: string;
-    state: PreparationAttemptState;
-    beforeFingerprint: string;
-    afterFingerprint: string | null;
-    reportHash: string;
-    problems: readonly Problem[];
-};
-
-export type PreparationHistoryInfo = {
-    installationId: string;
-    ordinal: number;
-    preparationId: string;
-    artifactHash: string;
-    head: ReleaseRefInfo;
-    beforeFingerprint: string;
-    afterFingerprint: string;
-    reportHash: string;
-    committedAt: string;
-};
-
-export type PreparationAttemptStartInput = {
-    attemptId: string;
-    installationId: string;
-    preparationId: string;
-    artifactHash: string;
-    beforeFingerprint: string;
-    reportHash: string;
-};
-
-export type PreparationAttemptFinishInput = {
-    state: Exclude<PreparationAttemptState, "running">;
-    afterFingerprint: string | null;
-    problems: readonly Problem[];
-};
-
-export interface PgSessionFactory {
-    openTarget(): Promise<PgSession>;
-}
+import {
+    ATTEMPT_STATE,
+    ATTEMPT_STATES,
+    type AttemptFinishInput,
+    type AttemptInfo,
+    type AttemptStartInput,
+    type AttemptState,
+    type InstallationInfo,
+    type InstallationScope,
+    type JournalConfig,
+    type MigrationHistoryInfo,
+    type PgSessionFactory,
+    type PreparationAttemptFinishInput,
+    type PreparationAttemptInfo,
+    type PreparationAttemptStartInput,
+    type PreparationAttemptState,
+    type PreparationHistoryInfo,
+} from "./journal-contracts";
 
 type QueryResult = Awaited<ReturnType<PgSession["query"]>>;
 type Row = Readonly<Record<string, unknown>>;
