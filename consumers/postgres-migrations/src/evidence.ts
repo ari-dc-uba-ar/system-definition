@@ -11,6 +11,11 @@ import {
     type ValidationResult,
 } from "system-definition";
 import {type JournalConfig} from "./journal";
+import {
+    VERIFICATION_STATUS,
+    VERIFICATION_STATUSES,
+    type VerificationStatus,
+} from "./journal-contracts";
 import {POSTGRES_SUPPORT} from "./postgres-support";
 import {quotePgIdentifier, type PgSession, type SqlParameter} from "./pg-schema";
 import {isPgNonEmptyText} from "./pg-text";
@@ -36,7 +41,7 @@ export type DeploymentBindingInfo = DeploymentBindingBase & (
 export type VerificationCheckInfo = {
     id: string;
     kind: "artifacts" | "environment" | "structure" | "data" | "rehearsal";
-    status: "passed" | "failed" | "incomplete";
+    status: VerificationStatus;
     reportId: string;
     problems: readonly Problem[];
 };
@@ -45,7 +50,7 @@ export type VerificationRunInfo = {
     verificationId: string;
     ordinal: number;
     binding: DeploymentBindingInfo;
-    status: "passed" | "failed" | "incomplete";
+    status: VerificationStatus;
     checks: readonly VerificationCheckInfo[];
     createdAt: string;
 };
@@ -58,7 +63,6 @@ export type EvidenceContext = {
 };
 
 type QueryResult = Awaited<ReturnType<PgSession["query"]>>;
-type VerificationStatus = VerificationRunInfo["status"];
 type VerificationKind = VerificationCheckInfo["kind"];
 
 const UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -69,7 +73,6 @@ const CHECK_KINDS: readonly VerificationKind[] = [
     "data",
     "rehearsal",
 ];
-const CHECK_STATUSES: readonly VerificationStatus[] = ["passed", "failed", "incomplete"];
 
 function failure<T>(
     messageKey: string,
@@ -235,7 +238,7 @@ function decodeCheck(value: unknown): ValidationResult<VerificationCheckInfo> {
     if (!shape.ok
         || !isPgNonEmptyText(value.id)
         || !CHECK_KINDS.includes(value.kind as VerificationKind)
-        || !CHECK_STATUSES.includes(value.status as VerificationStatus)
+        || !VERIFICATION_STATUSES.includes(value.status as VerificationStatus)
         || !isPgNonEmptyText(value.reportId)
         || !Array.isArray(value.problems)) {
         return failure("deployment.evidenceMismatch", {reason: "invalid verification check"});
@@ -317,7 +320,7 @@ function decodeRunRow(value: unknown): ValidationResult<VerificationRunInfo> {
         || !isPgNonEmptyText(value.verification_id)
         || !positiveInteger(value.ordinal)
         || !isPgNonEmptyText(value.deployment_id)
-        || !CHECK_STATUSES.includes(value.status as VerificationStatus)
+        || !VERIFICATION_STATUSES.includes(value.status as VerificationStatus)
         || typeof value.created_at !== "string"
         || !UTC_RE.test(value.created_at)) {
         return failure("deployment.evidenceMismatch", {reason: "invalid verification journal row"});
@@ -352,14 +355,14 @@ export function deriveVerificationStatus(
     binding: DeploymentBindingInfo,
     checks: readonly VerificationCheckInfo[],
 ): VerificationStatus {
-    if (checks.some(one => one.status === "failed")) return "failed";
+    if (checks.some(one => one.status === VERIFICATION_STATUS.failed)) return VERIFICATION_STATUS.failed;
     const required = requiredKinds(binding);
     for (const kind of required) {
         const matching = checks.filter(one => one.kind === kind);
-        if (matching.length !== 1 || matching[0].status !== "passed") return "incomplete";
+        if (matching.length !== 1 || matching[0].status !== VERIFICATION_STATUS.passed) return VERIFICATION_STATUS.incomplete;
     }
-    if (checks.some(one => one.status === "incomplete")) return "incomplete";
-    return "passed";
+    if (checks.some(one => one.status === VERIFICATION_STATUS.incomplete)) return VERIFICATION_STATUS.incomplete;
+    return VERIFICATION_STATUS.passed;
 }
 
 function sameOptionalRelease(left: ReleaseRefInfo | null, right: ReleaseRefInfo | null): boolean {
@@ -536,10 +539,10 @@ export async function checkApplyEligibility(
         return failure("deployment.evidenceMismatch");
     }
     const status = deriveVerificationStatus(latest.value.binding, latest.value.checks);
-    if (status === "failed" || latest.value.status === "failed") {
+    if (status === VERIFICATION_STATUS.failed || latest.value.status === VERIFICATION_STATUS.failed) {
         return failure("deployment.verificationFailed");
     }
-    if (status === "incomplete" || latest.value.status === "incomplete") {
+    if (status === VERIFICATION_STATUS.incomplete || latest.value.status === VERIFICATION_STATUS.incomplete) {
         return failure("deployment.verificationIncomplete");
     }
     return {ok: true, value: latest.value};

@@ -34,12 +34,20 @@ export function isFinishedAttemptState(value: unknown): value is Exclude<Attempt
     return isAttemptState(value) && value !== ATTEMPT_STATE.running;
 }
 
+export function sqlTextLiteral(value: string): string {
+    return "'" + value.replaceAll("'", "''") + "'";
+}
+
+export function sqlTextLiterals(values: readonly string[]): string {
+    return values.map(sqlTextLiteral).join(",");
+}
+
 export function sqlAttemptState(state: AttemptState): string {
-    return "'" + state.replaceAll("'", "''") + "'";
+    return sqlTextLiteral(state);
 }
 
 export function sqlAttemptStates(states: readonly AttemptState[]): string {
-    return states.map(sqlAttemptState).join(",");
+    return sqlTextLiterals(states);
 }
 
 export function failure<T>(

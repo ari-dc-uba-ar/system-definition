@@ -17,6 +17,10 @@ import {
     type JournalConfig,
 } from "./journal";
 import {
+    DEPLOYMENT_READINESS_STATE,
+    type DeploymentReadinessState,
+} from "./journal-contracts";
+import {
     quotePgIdentifier,
     type PgSession,
     type SqlParameter,
@@ -24,7 +28,7 @@ import {
 
 export type DeploymentReadinessInfo = {
     binding: DeploymentBindingInfo;
-    state: "pending" | "blocked" | "ready" | "consumed";
+    state: DeploymentReadinessState;
     verificationId: string | null;
     applyAttemptId: string | null;
     confirmedTarget: ReleaseRefInfo | null;
@@ -141,7 +145,7 @@ async function writeBlocked(
 ): Promise<void> {
     await writeReadiness(runtime, {
         binding,
-        state: "blocked",
+        state: DEPLOYMENT_READINESS_STATE.blocked,
         verificationId,
         applyAttemptId,
         confirmedTarget,
@@ -276,7 +280,7 @@ export async function checkDeploymentReady(
 
     const ready: DeploymentReadinessInfo = {
         binding,
-        state: "ready",
+        state: DEPLOYMENT_READINESS_STATE.ready,
         verificationId: evidence.value.verificationId,
         applyAttemptId: attempt.value.attemptId,
         confirmedTarget: head.value,
@@ -302,7 +306,7 @@ async function markPending(
 ): Promise<ValidationResult<true>> {
     return writeReadiness(runtime, {
         binding,
-        state: "pending",
+        state: DEPLOYMENT_READINESS_STATE.pending,
         verificationId,
         applyAttemptId: null,
         confirmedTarget: null,
@@ -316,10 +320,10 @@ async function consumeReady(
 ): Promise<ValidationResult<true>> {
     const table = readinessTable(runtime.journal);
     const text = `UPDATE ${table}
-        SET state = 'consumed', updated_at = clock_timestamp()
+        SET state = $6, updated_at = clock_timestamp()
         WHERE deployment_id = $1
           AND installation_id = $2
-          AND state = 'ready'
+          AND state = $7
           AND verification_id = $3
           AND apply_attempt_id = $4
           AND binding = $5::jsonb`;
@@ -329,6 +333,8 @@ async function consumeReady(
         ready.verificationId,
         ready.applyAttemptId,
         JSON.stringify(ready.binding),
+        DEPLOYMENT_READINESS_STATE.consumed,
+        DEPLOYMENT_READINESS_STATE.ready,
     ]);
     if (!result.ok) return result;
     if (result.value.rowCount !== null && result.value.rowCount !== 1) {

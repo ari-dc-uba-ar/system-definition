@@ -1,7 +1,12 @@
 import type {ValidationResult} from "system-definition";
 import {quotePgIdentifier, type PgSession} from "./pg-schema";
-import {ATTEMPT_STATES, type JournalConfig} from "./journal-contracts";
-import {safeQuery, sqlAttemptStates, validateConfig} from "./journal-internal";
+import {
+    ATTEMPT_STATES,
+    DEPLOYMENT_READINESS_STATES,
+    VERIFICATION_STATUSES,
+    type JournalConfig,
+} from "./journal-contracts";
+import {safeQuery, sqlAttemptStates, sqlTextLiterals, validateConfig} from "./journal-internal";
 
 export async function bootstrapJournal(
     session: PgSession,
@@ -12,6 +17,8 @@ export async function bootstrapJournal(
     const schema = quotePgIdentifier(checked.value.schema);
 
     const attemptStatesSql = sqlAttemptStates(ATTEMPT_STATES);
+    const verificationStatusesSql = sqlTextLiterals(VERIFICATION_STATUSES);
+    const readinessStatesSql = sqlTextLiterals(DEPLOYMENT_READINESS_STATES);
     const statements = [
         `CREATE SCHEMA IF NOT EXISTS ${schema}`,
         `CREATE TABLE IF NOT EXISTS ${schema}.installation (
@@ -89,7 +96,7 @@ export async function bootstrapJournal(
             deployment_id text NOT NULL,
             ordinal integer NOT NULL CHECK (ordinal > 0),
             binding jsonb NOT NULL,
-            status text NOT NULL CHECK (status IN ('passed','failed','incomplete')),
+            status text NOT NULL CHECK (status IN (${verificationStatusesSql})),
             checks jsonb NOT NULL,
             created_at text NOT NULL,
             UNIQUE (deployment_id, ordinal)
@@ -98,7 +105,7 @@ export async function bootstrapJournal(
             deployment_id text PRIMARY KEY,
             installation_id text NOT NULL,
             binding jsonb NOT NULL,
-            state text NOT NULL CHECK (state IN ('pending','blocked','ready','consumed')),
+            state text NOT NULL CHECK (state IN (${readinessStatesSql})),
             verification_id text NULL,
             apply_attempt_id text NULL,
             confirmed_target_system_id text NULL,

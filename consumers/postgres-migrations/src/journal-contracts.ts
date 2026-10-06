@@ -109,6 +109,36 @@ export type PreparationAttemptFinishInput = {
     problems: readonly Problem[];
 };
 
+export const VERIFICATION_STATUS = {
+    passed: "passed",
+    failed: "failed",
+    incomplete: "incomplete",
+} as const;
+
+export const VERIFICATION_STATUSES = [
+    VERIFICATION_STATUS.passed,
+    VERIFICATION_STATUS.failed,
+    VERIFICATION_STATUS.incomplete,
+] as const;
+
+export type VerificationStatus = typeof VERIFICATION_STATUSES[number];
+
+export const DEPLOYMENT_READINESS_STATE = {
+    pending: "pending",
+    blocked: "blocked",
+    ready: "ready",
+    consumed: "consumed",
+} as const;
+
+export const DEPLOYMENT_READINESS_STATES = [
+    DEPLOYMENT_READINESS_STATE.pending,
+    DEPLOYMENT_READINESS_STATE.blocked,
+    DEPLOYMENT_READINESS_STATE.ready,
+    DEPLOYMENT_READINESS_STATE.consumed,
+] as const;
+
+export type DeploymentReadinessState = typeof DEPLOYMENT_READINESS_STATES[number];
+
 export interface PgSessionFactory {
     openTarget(): Promise<PgSession>;
 }
