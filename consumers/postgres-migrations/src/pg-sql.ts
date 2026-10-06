@@ -1,6 +1,10 @@
 /** PostgreSQL SQL-syntax primitives shared by all SQL emitters. */
+export function isPgIdentifierText(value: unknown): value is string {
+    return typeof value === "string" && !value.includes("\0");
+}
+
 export function quotePgIdentifier(identifier: string): string {
-    if (identifier.includes("\0")) {
+    if (!isPgIdentifierText(identifier)) {
         throw new TypeError("PostgreSQL identifiers cannot contain NUL");
     }
     return '"' + identifier.replaceAll('"', '""') + '"';

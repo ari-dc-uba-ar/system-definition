@@ -7,6 +7,7 @@ import type {
     WriteInfo,
 } from "./migration-authoring";
 import type {MachineCodecInfo, PgSchemaInfo, PgTypeRepresentation, StorageContext} from "./pg-schema";
+import {isPgIdentifierText, quotePgIdentifier, quotePgQualified} from "./pg-sql";
 
 export type RelationRewriteRequest = {
     sql: string;
@@ -63,14 +64,6 @@ function failure<T>(reason: string, details: Readonly<Record<string, string>> = 
     };
 }
 
-function quoteIdentifier(value: string): string {
-    return `"${value.replaceAll('"', '""')}"`;
-}
-
-function qualified(schema: string, entity: string): string {
-    return `${quoteIdentifier(schema)}.${quoteIdentifier(entity)}`;
-}
-
 function hashText(text: string): string {
     return createHash("sha256").update(text, "utf8").digest("hex");
 }
@@ -104,10 +97,59 @@ function sameQueryRef(left: QueryRefInfo, right: QueryRefInfo): boolean {
     return left.kind === right.kind && left.name === right.name && left.contentHash === right.contentHash;
 }
 
+function validateIdentifierText(value: string, role: string): ValidationResult<true> {
+    if (!isPgIdentifierText(value)) {
+        return failure("PostgreSQL identifier contains NUL", {role});
+    }
+    return {ok: true, value: true};
+}
+
+function validateSqlIdentifiers(
+    migration: DataMigrationInfo,
+    context: CompileDataContext,
+): ValidationResult<true> {
+    const values: {value: string; role: string}[] = [
+        {value: context.schema, role: "schema"},
+        ...migration.source.identity.map(value => ({value, role: "source identity"})),
+        ...Object.keys(context.transformation.parameters).map(value => ({value, role: "transformation parameter"})),
+    ];
+    const writtenEntities = new Set<string>();
+    for (const write of migration.writes) {
+        writtenEntities.add(write.entity);
+        values.push({value: write.entity, role: "destination entity"});
+        for (const binding of write.values) {
+            values.push({value: binding.target.field, role: "destination field"});
+            values.push({value: binding.output, role: "transformation output"});
+        }
+        if (write.kind === "update") {
+            for (const pair of write.match) {
+                values.push({value: pair.targetField, role: "update match field"});
+                values.push({value: pair.output, role: "update match output"});
+            }
+        }
+    }
+    if (context.targetSnapshot !== undefined) {
+        for (const entityName of writtenEntities) {
+            const entity = context.targetSnapshot.entities[entityName];
+            if (entity === undefined) continue;
+            for (const field of Object.keys(entity.fields)) {
+                values.push({value: field, role: "destination snapshot field"});
+            }
+        }
+    }
+    for (const one of values) {
+        const valid = validateIdentifierText(one.value, one.role);
+        if (!valid.ok) return valid;
+    }
+    return {ok: true, value: true};
+}
+
 function validateBoundary(
     migration: DataMigrationInfo,
     context: CompileDataContext,
 ): ValidationResult<true> {
+    const identifiers = validateSqlIdentifiers(migration, context);
+    if (!identifiers.ok) return identifiers;
     if (migration.transformation !== context.transformation.name) {
         return failure("migration references a different transformation", {
             expected: migration.transformation,
@@ -338,9 +380,9 @@ function captureSql(
     sourceText: string,
     input: string,
 ): string {
-    const identity = migration.source.identity.map(quoteIdentifier).join(", ");
+    const identity = migration.source.identity.map(quotePgIdentifier).join(", ");
     return [
-        `CREATE TEMP TABLE ${quoteIdentifier(input)} ON COMMIT DROP AS`,
+        `CREATE TEMP TABLE ${quotePgIdentifier(input)} ON COMMIT DROP AS`,
         `SELECT row_number() OVER (ORDER BY ${identity}) AS "__source_id", "source".*`,
         "FROM (",
         stripFinalSemicolon(sourceText),
@@ -372,7 +414,7 @@ function pgTypeSql(type: PgTypeRepresentation): ValidationResult<string> {
         return failure("physical type has an unsupported PostgreSQL modifier");
     }
     const modifiers = type.modifiers.length === 0 ? "" : `(${type.modifiers.join(", ")})`;
-    return {ok: true, value: `${quoteIdentifier(type.schema)}.${quoteIdentifier(type.name)}${modifiers}`};
+    return {ok: true, value: `${quotePgIdentifier(type.schema)}.${quotePgIdentifier(type.name)}${modifiers}`};
 }
 
 function requireCodec(
@@ -412,7 +454,7 @@ function compileParameters(
             ok: true,
             value: {
                 text: [
-                    `CREATE TEMP TABLE ${quoteIdentifier(parameters)} ON COMMIT DROP AS`,
+                    `CREATE TEMP TABLE ${quotePgIdentifier(parameters)} ON COMMIT DROP AS`,
                     `SELECT 1::integer AS "__present";`,
                 ].join("\n"),
                 values: [],
@@ -462,7 +504,7 @@ function compileParameters(
         const expression = resolved.value.codec.transportType === physicalName
             ? transportCast
             : `${transportCast}::${physicalSql.value}`;
-        expressions.push(`    ${expression} AS ${quoteIdentifier(name)}`);
+        expressions.push(`    ${expression} AS ${quotePgIdentifier(name)}`);
         values.push(argument.value);
     }
 
@@ -470,7 +512,7 @@ function compileParameters(
         ok: true,
         value: {
             text: [
-                `CREATE TEMP TABLE ${quoteIdentifier(parameters)} ON COMMIT DROP AS`,
+                `CREATE TEMP TABLE ${quotePgIdentifier(parameters)} ON COMMIT DROP AS`,
                 "SELECT",
                 expressions.join(",\n") + ";",
             ].join("\n"),
@@ -481,14 +523,14 @@ function compileParameters(
 
 function transformSql(output: string, rewritten: string): string {
     return [
-        `CREATE TEMP TABLE ${quoteIdentifier(output)} ON COMMIT DROP AS`,
+        `CREATE TEMP TABLE ${quotePgIdentifier(output)} ON COMMIT DROP AS`,
         `${stripFinalSemicolon(rewritten)};`,
     ].join("\n");
 }
 
 function rowProtocolSql(input: string, output: string): string {
-    const inputName = quoteIdentifier(input);
-    const outputName = quoteIdentifier(output);
+    const inputName = quotePgIdentifier(input);
+    const outputName = quotePgIdentifier(output);
     return [
         "SELECT 1 / CASE WHEN (",
         "    EXISTS (",
@@ -513,15 +555,15 @@ function rowProtocolSql(input: string, output: string): string {
 
 function lineageSql(lineage: string, rewritten: string): string {
     return [
-        `CREATE TEMP TABLE ${quoteIdentifier(lineage)} ON COMMIT DROP AS`,
+        `CREATE TEMP TABLE ${quotePgIdentifier(lineage)} ON COMMIT DROP AS`,
         `${stripFinalSemicolon(rewritten)};`,
     ].join("\n");
 }
 
 function setProtocolSql(input: string, output: string, lineage: string): string {
-    const inputName = quoteIdentifier(input);
-    const outputName = quoteIdentifier(output);
-    const lineageName = quoteIdentifier(lineage);
+    const inputName = quotePgIdentifier(input);
+    const outputName = quotePgIdentifier(output);
+    const lineageName = quotePgIdentifier(lineage);
     return [
         "SELECT 1 / CASE WHEN (",
         "    EXISTS (",
@@ -566,7 +608,7 @@ function setProtocolSql(input: string, output: string, lineage: string): string 
 
 function matchPredicate(write: Extract<WriteInfo, {kind: "update"}>): string {
     return write.match.map(pair => (
-        `"target".${quoteIdentifier(pair.targetField)} IS NOT DISTINCT FROM "output".${quoteIdentifier(pair.output)}`
+        `"target".${quotePgIdentifier(pair.targetField)} IS NOT DISTINCT FROM "output".${quotePgIdentifier(pair.output)}`
     )).join("\n    AND ");
 }
 
@@ -579,20 +621,20 @@ function prewriteSql(
     const cardinality = write.whenMissing === "insert" ? "> 1" : "<> 1";
     const clauses = [
         "EXISTS (",
-        `    SELECT "output".${quoteIdentifier(identityColumn)}`,
-        `    FROM ${quoteIdentifier(output)} AS "output"`,
-        `    LEFT JOIN ${qualified(schema, write.entity)} AS "target"`,
+        `    SELECT "output".${quotePgIdentifier(identityColumn)}`,
+        `    FROM ${quotePgIdentifier(output)} AS "output"`,
+        `    LEFT JOIN ${quotePgQualified(schema, write.entity)} AS "target"`,
         `      ON ${matchPredicate(write)}`,
-        `    GROUP BY "output".${quoteIdentifier(identityColumn)}`,
+        `    GROUP BY "output".${quotePgIdentifier(identityColumn)}`,
         `    HAVING count("target".ctid) ${cardinality}`,
         ")",
     ];
     if (write.whenMissing === "insert") {
-        const matchOutputs = write.match.map(pair => `"output".${quoteIdentifier(pair.output)}`).join(", ");
+        const matchOutputs = write.match.map(pair => `"output".${quotePgIdentifier(pair.output)}`).join(", ");
         clauses.push(
             "OR EXISTS (",
             `    SELECT ${matchOutputs}`,
-            `    FROM ${quoteIdentifier(output)} AS "output"`,
+            `    FROM ${quotePgIdentifier(output)} AS "output"`,
             `    GROUP BY ${matchOutputs}`,
             "    HAVING count(*) > 1",
             ")",
@@ -611,12 +653,12 @@ function updateSql(
     output: string,
 ): string {
     const assignments = write.values.map(binding => (
-        `${quoteIdentifier(binding.target.field)} = "output".${quoteIdentifier(binding.output)}`
+        `${quotePgIdentifier(binding.target.field)} = "output".${quotePgIdentifier(binding.output)}`
     )).join(",\n    ");
     return [
-        `UPDATE ${qualified(schema, write.entity)} AS "target"`,
+        `UPDATE ${quotePgQualified(schema, write.entity)} AS "target"`,
         "SET " + assignments,
-        `FROM ${quoteIdentifier(output)} AS "output"`,
+        `FROM ${quotePgIdentifier(output)} AS "output"`,
         `WHERE ${matchPredicate(write)};`,
     ].join("\n");
 }
@@ -650,7 +692,7 @@ function keyMatchPredicate(
     bindings: readonly DestinationOutput[],
 ): string {
     return fields.map(field => (
-        `"target".${quoteIdentifier(field)} IS NOT DISTINCT FROM "output".${quoteIdentifier(destinationOutputForField(bindings, field))}`
+        `"target".${quotePgIdentifier(field)} IS NOT DISTINCT FROM "output".${quotePgIdentifier(destinationOutputForField(bindings, field))}`
     )).join("\n    AND ");
 }
 
@@ -660,18 +702,18 @@ function insertConflictSql(
     output: string,
 ): string {
     const bindings = insertValueBindings(write);
-    const grouped = write.key.map(field => `"output".${quoteIdentifier(destinationOutputForField(bindings, field))}`).join(", ");
+    const grouped = write.key.map(field => `"output".${quotePgIdentifier(destinationOutputForField(bindings, field))}`).join(", ");
     return [
         "SELECT 1 / CASE WHEN (",
         "    EXISTS (",
         `        SELECT ${grouped}`,
-        `        FROM ${quoteIdentifier(output)} AS "output"`,
+        `        FROM ${quotePgIdentifier(output)} AS "output"`,
         `        GROUP BY ${grouped}`,
         "        HAVING count(*) > 1",
         "    )",
         "    OR EXISTS (",
-        `        SELECT 1 FROM ${quoteIdentifier(output)} AS "output"`,
-        `        JOIN ${qualified(schema, write.entity)} AS "target"`,
+        `        SELECT 1 FROM ${quotePgIdentifier(output)} AS "output"`,
+        `        JOIN ${quotePgQualified(schema, write.entity)} AS "target"`,
         `          ON ${keyMatchPredicate(write.key, bindings)}`,
         "    )",
         ` ) THEN 0 ELSE 1 END AS "insert_conflict_ok";`,
@@ -685,17 +727,17 @@ function insertSql(
     bindings: readonly DestinationOutput[],
     missingPredicate: string | null = null,
 ): string {
-    const targets = bindings.map(binding => quoteIdentifier(binding.targetField)).join(", ");
-    const values = bindings.map(binding => `"output".${quoteIdentifier(binding.output)}`).join(", ");
+    const targets = bindings.map(binding => quotePgIdentifier(binding.targetField)).join(", ");
+    const values = bindings.map(binding => `"output".${quotePgIdentifier(binding.output)}`).join(", ");
     const lines = [
-        `INSERT INTO ${qualified(schema, entity)} (${targets})`,
+        `INSERT INTO ${quotePgQualified(schema, entity)} (${targets})`,
         `SELECT ${values}`,
-        `FROM ${quoteIdentifier(output)} AS "output"`,
+        `FROM ${quotePgIdentifier(output)} AS "output"`,
     ];
     if (missingPredicate !== null) {
         lines.push(
             "WHERE NOT EXISTS (",
-            `    SELECT 1 FROM ${qualified(schema, entity)} AS "target"`,
+            `    SELECT 1 FROM ${quotePgQualified(schema, entity)} AS "target"`,
             `    WHERE ${missingPredicate.replaceAll("\n", "\n    ")}`,
             ")",
         );
@@ -768,11 +810,11 @@ function preserveDestinationSql(
     schema: string,
 ): string {
     const fields = Object.keys(preserved.contract.entity.fields).sort(utf16Compare);
-    const projection = fields.map(field => quoteIdentifier(field)).join(", ");
+    const projection = fields.map(field => quotePgIdentifier(field)).join(", ");
     return [
-        `CREATE TEMP TABLE ${quoteIdentifier(preserved.table)} ON COMMIT DROP AS`,
+        `CREATE TEMP TABLE ${quotePgIdentifier(preserved.table)} ON COMMIT DROP AS`,
         `SELECT TRUE AS "__before_present", ${projection}`,
-        `FROM ${qualified(schema, preserved.entity)};`,
+        `FROM ${quotePgQualified(schema, preserved.entity)};`,
     ].join("\n");
 }
 
@@ -782,8 +824,8 @@ function targetOutputPredicate(
     outputAlias: string,
 ): string {
     return pairs.map(pair => (
-        `${quoteIdentifier(targetAlias)}.${quoteIdentifier(pair.targetField)} IS NOT DISTINCT FROM `
-        + `${quoteIdentifier(outputAlias)}.${quoteIdentifier(pair.output)}`
+        `${quotePgIdentifier(targetAlias)}.${quotePgIdentifier(pair.targetField)} IS NOT DISTINCT FROM `
+        + `${quotePgIdentifier(outputAlias)}.${quotePgIdentifier(pair.output)}`
     )).join("\n    AND ");
 }
 
@@ -813,12 +855,12 @@ function writtenValuesVerificationSql(
     const scope = writeScopeBindings(write);
     const bindings = writeBindings(write);
     const mismatch = bindings.map(binding => (
-        `"target".${quoteIdentifier(binding.targetField)} IS DISTINCT FROM "output".${quoteIdentifier(binding.output)}`
+        `"target".${quotePgIdentifier(binding.targetField)} IS DISTINCT FROM "output".${quotePgIdentifier(binding.output)}`
     )).join("\n            OR ");
     return [
         "SELECT 1 / CASE WHEN EXISTS (",
-        `    SELECT 1 FROM ${quoteIdentifier(output)} AS "output"`,
-        `    LEFT JOIN ${qualified(schema, write.entity)} AS "target"`,
+        `    SELECT 1 FROM ${quotePgIdentifier(output)} AS "output"`,
+        `    LEFT JOIN ${quotePgQualified(schema, write.entity)} AS "target"`,
         `      ON ${targetOutputPredicate(scope, "target", "output")}`,
         "    WHERE \"target\".ctid IS NULL",
         mismatch.length === 0 ? "" : `       OR (${mismatch})`,
@@ -832,8 +874,8 @@ function pgRowIdentityPredicate(
     rightAlias: string,
 ): string {
     return fields.map(field => (
-        `${quoteIdentifier(leftAlias)}.${quoteIdentifier(field)} IS NOT DISTINCT FROM `
-        + `${quoteIdentifier(rightAlias)}.${quoteIdentifier(field)}`
+        `${quotePgIdentifier(leftAlias)}.${quotePgIdentifier(field)} IS NOT DISTINCT FROM `
+        + `${quotePgIdentifier(rightAlias)}.${quotePgIdentifier(field)}`
     )).join("\n            AND ");
 }
 
@@ -856,7 +898,7 @@ function allowedChangedFieldExpression(
     for (const write of writes) {
         if (write.kind !== "update") continue;
         if (!write.values.some(binding => binding.target.field === field)) continue;
-        scopes.push(outputScopeForBeforeRow(write).replaceAll("__OUTPUT__", quoteIdentifier(output)));
+        scopes.push(outputScopeForBeforeRow(write).replaceAll("__OUTPUT__", quotePgIdentifier(output)));
     }
     if (scopes.length === 0) return null;
     return scopes.length === 1 ? scopes[0]! : `(${scopes.join("\n            OR ")})`;
@@ -867,7 +909,7 @@ function newRowAllowedExpression(write: WriteInfo, output: string): string | nul
     const scope = writeScopeBindings(write);
     return [
         "EXISTS (",
-        `                SELECT 1 FROM ${quoteIdentifier(output)} AS "output"`,
+        `                SELECT 1 FROM ${quotePgIdentifier(output)} AS "output"`,
         `                WHERE ${targetOutputPredicate(scope, "after", "output").replaceAll("\n", "\n                ")}`,
         "            )",
     ].join("\n");
@@ -883,11 +925,11 @@ function preservationVerificationSql(
     const changedChecks = fields.map(field => {
         const allowance = allowedChangedFieldExpression(field, preserved.writes, output);
         if (allowance === null) {
-            return `"before".${quoteIdentifier(field)} IS DISTINCT FROM "after".${quoteIdentifier(field)}`;
+            return `"before".${quotePgIdentifier(field)} IS DISTINCT FROM "after".${quotePgIdentifier(field)}`;
         }
         return [
             "(",
-            `    "before".${quoteIdentifier(field)} IS DISTINCT FROM "after".${quoteIdentifier(field)}`,
+            `    "before".${quotePgIdentifier(field)} IS DISTINCT FROM "after".${quotePgIdentifier(field)}`,
             `    AND NOT (${allowance.replaceAll("\n", "\n    ")})`,
             ")",
         ].join("\n");
@@ -904,8 +946,8 @@ function preservationVerificationSql(
 
     return [
         "SELECT 1 / CASE WHEN EXISTS (",
-        `    SELECT 1 FROM ${quoteIdentifier(preserved.table)} AS "before"`,
-        `    FULL JOIN ${qualified(schema, preserved.entity)} AS "after"`,
+        `    SELECT 1 FROM ${quotePgIdentifier(preserved.table)} AS "before"`,
+        `    FULL JOIN ${quotePgQualified(schema, preserved.entity)} AS "after"`,
         `      ON ${pgRowIdentityPredicate(identityFields, "before", "after")}`,
         "    WHERE (",
         '        "before"."__before_present" IS NOT NULL AND "after".ctid IS NULL',
