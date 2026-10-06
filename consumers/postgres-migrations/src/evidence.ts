@@ -1,4 +1,9 @@
 import {
+    decodeProblem as decodeProblemInfo,
+    decodeReleaseRefInfo,
+    exactKeys,
+    isPlainObject,
+    isSha256,
     problem,
     type Problem,
     type ReleaseRefInfo,
@@ -6,6 +11,7 @@ import {
 } from "system-definition";
 import {type JournalConfig} from "./journal";
 import {quotePgIdentifier, type PgSession, type SqlParameter} from "./pg-schema";
+import {isPgNonEmptyText} from "./pg-text";
 
 export type DeploymentBindingBase = {
     deploymentId: string;
@@ -49,12 +55,10 @@ export type EvidenceContext = {
     journal: JournalConfig;
 };
 
-type Row = Readonly<Record<string, unknown>>;
 type QueryResult = Awaited<ReturnType<PgSession["query"]>>;
 type VerificationStatus = VerificationRunInfo["status"];
 type VerificationKind = VerificationCheckInfo["kind"];
 
-const HASH_RE = /^[0-9a-f]{64}$/;
 const UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const CHECK_KINDS: readonly VerificationKind[] = [
     "artifacts",
@@ -78,53 +82,30 @@ function queryFailure<T>(error: unknown): ValidationResult<T> {
     });
 }
 
-function isPlainObject(value: unknown): value is Row {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-    const prototype = Object.getPrototypeOf(value);
-    return prototype === Object.prototype || prototype === null;
-}
-
-function hasExactKeys(value: Row, keys: readonly string[]): boolean {
-    const actual = Object.keys(value).sort();
-    const expected = [...keys].sort();
-    return actual.length === expected.length && actual.every((one, index) => one === expected[index]);
-}
-
-function nonEmptyString(value: unknown): value is string {
-    return typeof value === "string" && value.length > 0 && !value.includes("\0");
-}
-
-function hashString(value: unknown): value is string {
-    return typeof value === "string" && HASH_RE.test(value);
-}
-
 function positiveInteger(value: unknown): value is number {
     return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
 function validateJournal(config: JournalConfig): ValidationResult<JournalConfig> {
-    if (!isPlainObject(config) || !hasExactKeys(config, ["schema"]) || !nonEmptyString(config.schema)) {
+    if (!isPlainObject(config)) return failure("migration.invalidJournal", {reason: "invalid journal schema"});
+    const shape = exactKeys(config, ["schema"], "$", () => failure("migration.invalidJournal", {reason: "invalid journal schema"}));
+    if (!shape.ok || !isPgNonEmptyText(config.schema)) {
         return failure("migration.invalidJournal", {reason: "invalid journal schema"});
     }
     return {ok: true, value: {schema: config.schema}};
 }
 
 function decodeRelease(value: unknown): ValidationResult<ReleaseRefInfo> {
-    if (!isPlainObject(value)
-        || !hasExactKeys(value, ["systemId", "releaseId", "releaseHash"])
-        || !nonEmptyString(value.systemId)
-        || !nonEmptyString(value.releaseId)
-        || !hashString(value.releaseHash)) {
+    const decoded = decodeReleaseRefInfo(
+        value,
+        "$",
+        () => failure("deployment.evidenceMismatch", {reason: "invalid release reference"}),
+    );
+    if (!decoded.ok) return decoded;
+    if (!isPgNonEmptyText(decoded.value.systemId) || !isPgNonEmptyText(decoded.value.releaseId)) {
         return failure("deployment.evidenceMismatch", {reason: "invalid release reference"});
     }
-    return {
-        ok: true,
-        value: {
-            systemId: value.systemId,
-            releaseId: value.releaseId,
-            releaseHash: value.releaseHash,
-        },
-    };
+    return decoded;
 }
 
 function decodeSchemas(value: unknown): ValidationResult<readonly string[]> {
@@ -134,7 +115,7 @@ function decodeSchemas(value: unknown): ValidationResult<readonly string[]> {
     const schemas: string[] = [];
     const seen = new Set<string>();
     for (const schema of value) {
-        if (!nonEmptyString(schema) || seen.has(schema)) {
+        if (!isPgNonEmptyText(schema) || seen.has(schema)) {
             return failure("deployment.evidenceMismatch", {reason: "invalid deployment schemas"});
         }
         seen.add(schema);
@@ -161,13 +142,14 @@ function decodeBinding(value: unknown): ValidationResult<DeploymentBindingInfo> 
         "maintenanceId",
         "production",
     ] as const;
-    if (!hasExactKeys(value, commonKeys)
-        || !nonEmptyString(value.deploymentId)
-        || !nonEmptyString(value.installationId)
-        || !hashString(value.candidateApplicationHash)
-        || !hashString(value.planHash)
-        || !hashString(value.configurationHash)
-        || !nonEmptyString(value.maintenanceId)
+    const shape = exactKeys(value, commonKeys, "$", () => failure("deployment.evidenceMismatch", {reason: "invalid deployment binding"}));
+    if (!shape.ok
+        || !isPgNonEmptyText(value.deploymentId)
+        || !isPgNonEmptyText(value.installationId)
+        || !isSha256(value.candidateApplicationHash)
+        || !isSha256(value.planHash)
+        || !isSha256(value.configurationHash)
+        || !isPgNonEmptyText(value.maintenanceId)
         || value.engineVersion !== "18.6"
         || typeof value.production !== "boolean"
         || !(value.operation === "install" || value.operation === "upgrade")) {
@@ -225,46 +207,40 @@ function decodeBinding(value: unknown): ValidationResult<DeploymentBindingInfo> 
     };
 }
 
-function decodeProblem(value: unknown): ValidationResult<Problem> {
-    if (!isPlainObject(value)
-        || !hasExactKeys(value, ["field", "messageKey", "severity", "details"])
-        || !(value.field === null || typeof value.field === "string")
-        || !nonEmptyString(value.messageKey)
-        || !(value.severity === "blocking" || value.severity === "regular")
-        || !isPlainObject(value.details)) {
+function decodeVerificationProblem(value: unknown): ValidationResult<Problem> {
+    const decoded = decodeProblemInfo(
+        value,
+        "$",
+        (path, _reason) => path.includes('["details"]["')
+            ? failure("deployment.evidenceMismatch", {reason: "verification problem details must be strings"})
+            : failure("deployment.evidenceMismatch", {reason: "invalid verification problem"}),
+    );
+    if (!decoded.ok) return decoded;
+    if (!isPgNonEmptyText(decoded.value.messageKey)) {
         return failure("deployment.evidenceMismatch", {reason: "invalid verification problem"});
     }
-    const details: Record<string, string> = Object.create(null) as Record<string, string>;
-    for (const [key, detail] of Object.entries(value.details)) {
-        if (typeof detail !== "string") {
-            return failure("deployment.evidenceMismatch", {reason: "verification problem details must be strings"});
-        }
-        details[key] = detail;
-    }
-    return {
-        ok: true,
-        value: {
-            field: value.field,
-            messageKey: value.messageKey,
-            severity: value.severity,
-            details,
-        },
-    };
+    return decoded;
 }
 
 function decodeCheck(value: unknown): ValidationResult<VerificationCheckInfo> {
-    if (!isPlainObject(value)
-        || !hasExactKeys(value, ["id", "kind", "status", "reportId", "problems"])
-        || !nonEmptyString(value.id)
+    if (!isPlainObject(value)) return failure("deployment.evidenceMismatch", {reason: "invalid verification check"});
+    const shape = exactKeys(
+        value,
+        ["id", "kind", "status", "reportId", "problems"],
+        "$",
+        () => failure("deployment.evidenceMismatch", {reason: "invalid verification check"}),
+    );
+    if (!shape.ok
+        || !isPgNonEmptyText(value.id)
         || !CHECK_KINDS.includes(value.kind as VerificationKind)
         || !CHECK_STATUSES.includes(value.status as VerificationStatus)
-        || !nonEmptyString(value.reportId)
+        || !isPgNonEmptyText(value.reportId)
         || !Array.isArray(value.problems)) {
         return failure("deployment.evidenceMismatch", {reason: "invalid verification check"});
     }
     const problems: Problem[] = [];
     for (const one of value.problems) {
-        const decoded = decodeProblem(one);
+        const decoded = decodeVerificationProblem(one);
         if (!decoded.ok) return decoded;
         problems.push(decoded.value);
     }
@@ -299,9 +275,15 @@ function decodeChecks(value: unknown): ValidationResult<readonly VerificationChe
 }
 
 function decodeDraft(value: unknown): ValidationResult<VerificationRunDraft> {
-    if (!isPlainObject(value)
-        || !hasExactKeys(value, ["verificationId", "binding", "checks", "createdAt"])
-        || !nonEmptyString(value.verificationId)
+    if (!isPlainObject(value)) return failure("deployment.evidenceMismatch", {reason: "invalid verification run draft"});
+    const shape = exactKeys(
+        value,
+        ["verificationId", "binding", "checks", "createdAt"],
+        "$",
+        () => failure("deployment.evidenceMismatch", {reason: "invalid verification run draft"}),
+    );
+    if (!shape.ok
+        || !isPgNonEmptyText(value.verificationId)
         || typeof value.createdAt !== "string"
         || !UTC_RE.test(value.createdAt)) {
         return failure("deployment.evidenceMismatch", {reason: "invalid verification run draft"});
@@ -322,11 +304,17 @@ function decodeDraft(value: unknown): ValidationResult<VerificationRunDraft> {
 }
 
 function decodeRunRow(value: unknown): ValidationResult<VerificationRunInfo> {
-    if (!isPlainObject(value)
-        || !hasExactKeys(value, ["verification_id", "ordinal", "deployment_id", "binding", "status", "checks", "created_at"])
-        || !nonEmptyString(value.verification_id)
+    if (!isPlainObject(value)) return failure("deployment.evidenceMismatch", {reason: "invalid verification journal row"});
+    const shape = exactKeys(
+        value,
+        ["verification_id", "ordinal", "deployment_id", "binding", "status", "checks", "created_at"],
+        "$",
+        () => failure("deployment.evidenceMismatch", {reason: "invalid verification journal row"}),
+    );
+    if (!shape.ok
+        || !isPgNonEmptyText(value.verification_id)
         || !positiveInteger(value.ordinal)
-        || !nonEmptyString(value.deployment_id)
+        || !isPgNonEmptyText(value.deployment_id)
         || !CHECK_STATUSES.includes(value.status as VerificationStatus)
         || typeof value.created_at !== "string"
         || !UTC_RE.test(value.created_at)) {
@@ -500,7 +488,7 @@ export async function readLatestVerification(
 ): Promise<ValidationResult<VerificationRunInfo | null>> {
     const checkedJournal = validateJournal(journal);
     if (!checkedJournal.ok) return checkedJournal;
-    if (!nonEmptyString(deploymentId)) {
+    if (!isPgNonEmptyText(deploymentId)) {
         return failure("deployment.evidenceMismatch", {reason: "invalid deployment id"});
     }
     const schema = quotePgIdentifier(checkedJournal.value.schema);
@@ -529,7 +517,14 @@ export async function checkApplyEligibility(
 ): Promise<ValidationResult<VerificationRunInfo>> {
     const requested = decodeBinding(binding);
     if (!requested.ok) return requested;
-    if (!isPlainObject(context) || !hasExactKeys(context, ["session", "journal"])) {
+    if (!isPlainObject(context)) return failure("deployment.evidenceMismatch", {reason: "invalid evidence context"});
+    const contextShape = exactKeys(
+        context,
+        ["session", "journal"],
+        "$",
+        () => failure("deployment.evidenceMismatch", {reason: "invalid evidence context"}),
+    );
+    if (!contextShape.ok) {
         return failure("deployment.evidenceMismatch", {reason: "invalid evidence context"});
     }
     const latest = await readLatestVerification(context.session, context.journal, requested.value.deploymentId);
