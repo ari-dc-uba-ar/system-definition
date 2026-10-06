@@ -101,6 +101,43 @@ function attemptSelect(alias = "a"): string {
     ].join(", ");
 }
 
+export async function readLatestAttempt(
+    session: PgSession,
+    config: JournalConfig,
+    deploymentId: string,
+    installationId: string,
+    planHash: string,
+): Promise<ValidationResult<AttemptInfo | null>> {
+    const checked = validateConfig(config);
+    if (!checked.ok) return checked;
+    if (!isPgNonEmptyText(deploymentId)
+        || !isPgNonEmptyText(installationId)
+        || !isSha256(planHash)) {
+        return failure("migration.invalidJournal", {reason: "invalid attempt lookup"});
+    }
+    const schema = quotePgIdentifier(checked.value.schema);
+    const result = await safeQuery(session, `SELECT ${attemptSelect("a")}
+        FROM ${schema}.execution_attempt a
+        WHERE a.deployment_id = $1
+          AND a.installation_id = $2
+          AND a.plan_hash = $3
+        ORDER BY a.started_at DESC
+        LIMIT 1`, [deploymentId, installationId, planHash]);
+    if (!result.ok) return result;
+    if (result.value.rows.length === 0) return {ok: true, value: null};
+    if (result.value.rows.length !== 1) {
+        return failure("migration.invalidJournal", {reason: "latest execution attempt lookup is not unique"});
+    }
+    const decoded = decodeAttemptRow(result.value.rows[0]);
+    if (!decoded.ok) return decoded;
+    if (decoded.value.deploymentId !== deploymentId
+        || decoded.value.installationId !== installationId
+        || decoded.value.planHash !== planHash) {
+        return failure("migration.invalidJournal", {reason: "execution attempt does not match lookup"});
+    }
+    return decoded;
+}
+
 export async function readAttempt(
     session: PgSession,
     config: JournalConfig,

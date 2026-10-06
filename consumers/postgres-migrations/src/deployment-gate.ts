@@ -11,6 +11,8 @@ import {
 } from "./evidence";
 import {
     readInstallation,
+    readLatestAttempt,
+    type AttemptInfo,
     type JournalConfig,
 } from "./journal";
 import {
@@ -61,19 +63,6 @@ export type DeploymentPipelineRuntime = DeploymentGateRuntime & {
 };
 
 type QueryResult = Awaited<ReturnType<PgSession["query"]>>;
-type Row = Readonly<Record<string, unknown>>;
-
-type AttemptRow = {
-    attemptId: string;
-    deploymentId: string;
-    installationId: string;
-    planHash: string;
-    state: "running" | "failed" | "unknown" | "succeeded";
-    confirmedTarget: ReleaseRefInfo | null;
-    problems: readonly Problem[];
-};
-
-const HASH_RE = /^[0-9a-f]{64}$/;
 
 function failure<T>(
     messageKey: string,
@@ -88,100 +77,10 @@ function queryFailure<T>(error: unknown): ValidationResult<T> {
     });
 }
 
-function isPlainObject(value: unknown): value is Row {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-    const prototype = Object.getPrototypeOf(value);
-    return prototype === Object.prototype || prototype === null;
-}
-
-function nonEmptyString(value: unknown): value is string {
-    return typeof value === "string" && value.length > 0 && !value.includes("\0");
-}
-
-function hashString(value: unknown): value is string {
-    return typeof value === "string" && HASH_RE.test(value);
-}
-
 function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
     return left.systemId === right.systemId
         && left.releaseId === right.releaseId
         && left.releaseHash === right.releaseHash;
-}
-
-function decodeProblem(value: unknown): ValidationResult<Problem> {
-    if (!isPlainObject(value)
-        || !(value.field === null || typeof value.field === "string")
-        || !nonEmptyString(value.messageKey)
-        || !(value.severity === "blocking" || value.severity === "regular")
-        || !isPlainObject(value.details)) {
-        return failure("deployment.blocked", {reason: "invalid attempt problem"});
-    }
-    const details: Record<string, string> = Object.create(null) as Record<string, string>;
-    for (const [key, detail] of Object.entries(value.details)) {
-        if (typeof detail !== "string") {
-            return failure("deployment.blocked", {reason: "invalid attempt problem details"});
-        }
-        details[key] = detail;
-    }
-    return {
-        ok: true,
-        value: {
-            field: value.field,
-            messageKey: value.messageKey,
-            severity: value.severity,
-            details,
-        },
-    };
-}
-
-function decodeReleaseParts(
-    systemId: unknown,
-    releaseId: unknown,
-    releaseHash: unknown,
-): ValidationResult<ReleaseRefInfo | null> {
-    if (systemId === null && releaseId === null && releaseHash === null) {
-        return {ok: true, value: null};
-    }
-    if (!nonEmptyString(systemId) || !nonEmptyString(releaseId) || !hashString(releaseHash)) {
-        return failure("deployment.blocked", {reason: "invalid attempt confirmed target"});
-    }
-    return {ok: true, value: {systemId, releaseId, releaseHash}};
-}
-
-function decodeAttempt(value: unknown): ValidationResult<AttemptRow> {
-    if (!isPlainObject(value)
-        || !nonEmptyString(value.attempt_id)
-        || !nonEmptyString(value.deployment_id)
-        || !nonEmptyString(value.installation_id)
-        || !hashString(value.plan_hash)
-        || !(value.state === "running" || value.state === "failed" || value.state === "unknown" || value.state === "succeeded")
-        || !Array.isArray(value.problems)) {
-        return failure("deployment.blocked", {reason: "invalid execution attempt row"});
-    }
-    const target = decodeReleaseParts(
-        value.confirmed_target_system_id,
-        value.confirmed_target_release_id,
-        value.confirmed_target_release_hash,
-    );
-    if (!target.ok) return target;
-    const problems: Problem[] = [];
-    for (const one of value.problems) {
-        const decoded = decodeProblem(one);
-        if (!decoded.ok) return decoded;
-        problems.push(decoded.value);
-    }
-    return {
-        ok: true,
-        value: {
-            attemptId: value.attempt_id,
-            deploymentId: value.deployment_id,
-            installationId: value.installation_id,
-            planHash: value.plan_hash,
-            state: value.state,
-            confirmedTarget: target.value,
-            problems,
-        },
-    };
 }
 
 async function safeQuery(
@@ -273,40 +172,32 @@ async function maintenanceActive(
 async function latestApplyAttempt(
     binding: DeploymentBindingInfo,
     runtime: DeploymentGateRuntime,
-): Promise<ValidationResult<AttemptRow>> {
-    const table = `${quotePgIdentifier(runtime.journal.schema)}.execution_attempt`;
-    const text = `SELECT
-        a.attempt_id, a.deployment_id, a.installation_id, a.plan_hash, a.state,
-        a.confirmed_target_system_id, a.confirmed_target_release_id, a.confirmed_target_release_hash,
-        a.problems
-    FROM ${table} a
-    WHERE a.deployment_id = $1
-      AND a.installation_id = $2
-      AND a.plan_hash = $3
-    ORDER BY a.started_at DESC
-    LIMIT 1`;
-    const result = await safeQuery(runtime.session, text, [
+): Promise<ValidationResult<AttemptInfo>> {
+    const attempt = await readLatestAttempt(
+        runtime.session,
+        runtime.journal,
         binding.deploymentId,
         binding.installationId,
         binding.planHash,
-    ]);
-    if (!result.ok) return result;
-    if (result.value.rows.length === 0) {
+    );
+    if (!attempt.ok) {
+        const first = attempt.problems[0];
+        if (first?.messageKey === "migration.invalidJournal") {
+            return failure("deployment.blocked", {
+                reason: first.details.reason ?? "invalid execution attempt row",
+            });
+        }
+        return attempt;
+    }
+    if (attempt.value === null) {
         return failure("deployment.targetNotReady", {reason: "no apply attempt confirms the target"});
     }
-    const decoded = decodeAttempt(result.value.rows[0]);
-    if (!decoded.ok) return decoded;
-    if (decoded.value.deploymentId !== binding.deploymentId
-        || decoded.value.installationId !== binding.installationId
-        || decoded.value.planHash !== binding.planHash) {
-        return failure("deployment.blocked", {reason: "apply attempt does not match deployment binding"});
-    }
-    if (decoded.value.state !== "succeeded"
-        || decoded.value.confirmedTarget === null
-        || !sameRelease(decoded.value.confirmedTarget, binding.to)) {
+    if (attempt.value.state !== "succeeded"
+        || attempt.value.confirmedTarget === null
+        || !sameRelease(attempt.value.confirmedTarget, binding.to)) {
         return failure("deployment.targetNotReady", {reason: "latest apply attempt did not confirm the exact target"});
     }
-    return decoded;
+    return {ok: true, value: attempt.value};
 }
 
 async function verifyDurableTarget(
