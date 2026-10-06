@@ -142,3 +142,16 @@ export type DeploymentReadinessState = typeof DEPLOYMENT_READINESS_STATES[number
 export interface PgSessionFactory {
     openTarget(): Promise<PgSession>;
 }
+
+/** Durable verification row owned by the journal package; JSON payload semantics stay with evidence. */
+export type VerificationRecordInfo = {
+    verificationId: string;
+    ordinal: number;
+    deploymentId: string;
+    binding: unknown;
+    status: VerificationStatus;
+    checks: unknown;
+    createdAt: string;
+};
+
+export type VerificationRecordInput = Omit<VerificationRecordInfo, "ordinal">;

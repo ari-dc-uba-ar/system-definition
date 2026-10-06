@@ -17,3 +17,6 @@ export {
     verifyHistory,
 } from "./journal-history";
 export {withMigrationLock} from "./journal-lock";
+
+export {readLatestVerificationRecord, recordVerificationRecord} from "./journal-verification";
+export {validateConfig as validateJournalConfig} from "./journal-internal";

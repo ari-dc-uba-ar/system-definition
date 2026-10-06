@@ -10,14 +10,20 @@ import {
     type ReleaseRefInfo,
     type ValidationResult,
 } from "system-definition";
-import {type JournalConfig} from "./journal";
+import {
+    readLatestVerificationRecord,
+    recordVerificationRecord,
+    validateJournalConfig,
+    type JournalConfig,
+    type VerificationRecordInfo,
+} from "./journal";
 import {
     VERIFICATION_STATUS,
     VERIFICATION_STATUSES,
     type VerificationStatus,
 } from "./journal-contracts";
 import {POSTGRES_SUPPORT} from "./postgres-support";
-import {quotePgIdentifier, type PgSession, type SqlParameter} from "./pg-schema";
+import type {PgSession} from "./pg-schema";
 import {isPgNonEmptyText} from "./pg-text";
 
 export type DeploymentBindingBase = {
@@ -62,7 +68,6 @@ export type EvidenceContext = {
     journal: JournalConfig;
 };
 
-type QueryResult = Awaited<ReturnType<PgSession["query"]>>;
 type VerificationKind = VerificationCheckInfo["kind"];
 
 const UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -79,25 +84,6 @@ function failure<T>(
     details: Readonly<Record<string, string>> = {},
 ): ValidationResult<T> {
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
-}
-
-function queryFailure<T>(error: unknown): ValidationResult<T> {
-    return failure("migration.journalQueryFailed", {
-        reason: error instanceof Error ? error.message : "journal query failed",
-    });
-}
-
-function positiveInteger(value: unknown): value is number {
-    return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
-
-function validateJournal(config: JournalConfig): ValidationResult<JournalConfig> {
-    if (!isPlainObject(config)) return failure("migration.invalidJournal", {reason: "invalid journal schema"});
-    const shape = exactKeys(config, ["schema"], "$", () => failure("migration.invalidJournal", {reason: "invalid journal schema"}));
-    if (!shape.ok || !isPgNonEmptyText(config.schema)) {
-        return failure("migration.invalidJournal", {reason: "invalid journal schema"});
-    }
-    return {ok: true, value: {schema: config.schema}};
 }
 
 function decodeRelease(value: unknown): ValidationResult<ReleaseRefInfo> {
@@ -308,26 +294,10 @@ function decodeDraft(value: unknown): ValidationResult<VerificationRunDraft> {
     };
 }
 
-function decodeRunRow(value: unknown): ValidationResult<VerificationRunInfo> {
-    if (!isPlainObject(value)) return failure("deployment.evidenceMismatch", {reason: "invalid verification journal row"});
-    const shape = exactKeys(
-        value,
-        ["verification_id", "ordinal", "deployment_id", "binding", "status", "checks", "created_at"],
-        "$",
-        () => failure("deployment.evidenceMismatch", {reason: "invalid verification journal row"}),
-    );
-    if (!shape.ok
-        || !isPgNonEmptyText(value.verification_id)
-        || !positiveInteger(value.ordinal)
-        || !isPgNonEmptyText(value.deployment_id)
-        || !VERIFICATION_STATUSES.includes(value.status as VerificationStatus)
-        || typeof value.created_at !== "string"
-        || !UTC_RE.test(value.created_at)) {
-        return failure("deployment.evidenceMismatch", {reason: "invalid verification journal row"});
-    }
+function decodeStoredRun(value: VerificationRecordInfo): ValidationResult<VerificationRunInfo> {
     const binding = decodeBinding(value.binding);
     if (!binding.ok) return binding;
-    if (binding.value.deploymentId !== value.deployment_id) {
+    if (binding.value.deploymentId !== value.deploymentId) {
         return failure("deployment.evidenceMismatch", {reason: "verification deployment id does not match binding"});
     }
     const checks = decodeChecks(value.checks);
@@ -335,14 +305,26 @@ function decodeRunRow(value: unknown): ValidationResult<VerificationRunInfo> {
     return {
         ok: true,
         value: {
-            verificationId: value.verification_id,
+            verificationId: value.verificationId,
             ordinal: value.ordinal,
             binding: binding.value,
-            status: value.status as VerificationStatus,
+            status: value.status,
             checks: checks.value,
-            createdAt: value.created_at,
+            createdAt: value.createdAt,
         },
     };
+}
+
+function verificationStorageFailure<T>(
+    result: ValidationResult<T>,
+    fallbackReason: string,
+): ValidationResult<T> {
+    if (result.ok) return result;
+    const first = result.problems[0];
+    if (first?.messageKey !== "migration.invalidJournal") return result;
+    return failure("deployment.evidenceMismatch", {
+        reason: first.details.reason ?? fallbackReason,
+    });
 }
 
 function requiredKinds(binding: DeploymentBindingInfo): readonly VerificationKind[] {
@@ -410,69 +392,27 @@ function sameChecks(left: readonly VerificationCheckInfo[], right: readonly Veri
     return left.length === right.length && left.every((one, index) => sameCheck(one, right[index]));
 }
 
-async function safeQuery(
-    session: PgSession,
-    text: string,
-    values: readonly SqlParameter[],
-): Promise<ValidationResult<QueryResult>> {
-    try {
-        return {ok: true, value: await session.query(text, values)};
-    } catch (error) {
-        return queryFailure(error);
-    }
-}
-
-function verificationSelect(alias = "v"): string {
-    return [
-        `${alias}.verification_id`,
-        `${alias}.ordinal`,
-        `${alias}.deployment_id`,
-        `${alias}.binding`,
-        `${alias}.status`,
-        `${alias}.checks`,
-        `${alias}.created_at`,
-    ].join(", ");
-}
-
 export async function recordVerification(
     session: PgSession,
     journal: JournalConfig,
     run: VerificationRunDraft,
 ): Promise<ValidationResult<VerificationRunInfo>> {
-    const checkedJournal = validateJournal(journal);
+    const checkedJournal = validateJournalConfig(journal);
     if (!checkedJournal.ok) return checkedJournal;
     const decoded = decodeDraft(run);
     if (!decoded.ok) return decoded;
     const status = deriveVerificationStatus(decoded.value.binding, decoded.value.checks);
-    const schema = quotePgIdentifier(checkedJournal.value.schema);
-    const text = `WITH deployment_lock AS (
-        SELECT pg_advisory_xact_lock(hashtextextended('system-definition:verification:' || $1, 0))
-    ), next_ordinal AS (
-        SELECT COALESCE(MAX(v.ordinal), 0) + 1 AS ordinal
-        FROM ${schema}.verification_run v
-        CROSS JOIN deployment_lock
-        WHERE v.deployment_id = $1
-    )
-    INSERT INTO ${schema}.verification_run (
-        verification_id, deployment_id, ordinal, binding, status, checks, created_at
-    )
-    SELECT $2,$1,n.ordinal,$3::jsonb,$4,$5::jsonb,$6
-    FROM next_ordinal n
-    RETURNING ${verificationSelect("verification_run")}`;
-    const values: readonly SqlParameter[] = [
-        decoded.value.binding.deploymentId,
-        decoded.value.verificationId,
-        JSON.stringify(decoded.value.binding),
+    const storedResult = await recordVerificationRecord(session, checkedJournal.value, {
+        verificationId: decoded.value.verificationId,
+        deploymentId: decoded.value.binding.deploymentId,
+        binding: decoded.value.binding,
         status,
-        JSON.stringify(decoded.value.checks),
-        decoded.value.createdAt,
-    ];
-    const result = await safeQuery(session, text, values);
-    if (!result.ok) return result;
-    if (result.value.rows.length !== 1) {
-        return failure("deployment.evidenceMismatch", {reason: "verification insert did not return exactly one row"});
-    }
-    const stored = decodeRunRow(result.value.rows[0]);
+        checks: decoded.value.checks,
+        createdAt: decoded.value.createdAt,
+    });
+    const storedRecord = verificationStorageFailure(storedResult, "invalid verification journal row");
+    if (!storedRecord.ok) return storedRecord;
+    const stored = decodeStoredRun(storedRecord.value);
     if (!stored.ok) return stored;
     if (stored.value.verificationId !== decoded.value.verificationId
         || !sameBinding(stored.value.binding, decoded.value.binding)
@@ -489,24 +429,16 @@ export async function readLatestVerification(
     journal: JournalConfig,
     deploymentId: string,
 ): Promise<ValidationResult<VerificationRunInfo | null>> {
-    const checkedJournal = validateJournal(journal);
+    const checkedJournal = validateJournalConfig(journal);
     if (!checkedJournal.ok) return checkedJournal;
     if (!isPgNonEmptyText(deploymentId)) {
         return failure("deployment.evidenceMismatch", {reason: "invalid deployment id"});
     }
-    const schema = quotePgIdentifier(checkedJournal.value.schema);
-    const text = `SELECT ${verificationSelect("v")}
-        FROM ${schema}.verification_run v
-        WHERE v.deployment_id = $1
-        ORDER BY v.ordinal DESC
-        LIMIT 1`;
-    const result = await safeQuery(session, text, [deploymentId]);
-    if (!result.ok) return result;
-    if (result.value.rows.length === 0) return {ok: true, value: null};
-    if (result.value.rows.length !== 1) {
-        return failure("deployment.evidenceMismatch", {reason: "latest verification query returned more than one row"});
-    }
-    const decoded = decodeRunRow(result.value.rows[0]);
+    const storedResult = await readLatestVerificationRecord(session, checkedJournal.value, deploymentId);
+    const stored = verificationStorageFailure(storedResult, "invalid verification journal row");
+    if (!stored.ok) return stored;
+    if (stored.value === null) return {ok: true, value: null};
+    const decoded = decodeStoredRun(stored.value);
     if (!decoded.ok) return decoded;
     if (decoded.value.binding.deploymentId !== deploymentId) {
         return failure("deployment.evidenceMismatch", {reason: "verification belongs to another deployment"});
