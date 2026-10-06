@@ -1,5 +1,6 @@
 import {JsonValue, toJsonValue} from "./json-value";
 import {ValidationResult, problem} from "./problem";
+import {childPath, exactKeys, isPlainObject} from "./decode-structure";
 import {AnyEntityDef} from "./ssot-entity";
 import {TypeCollection} from "./ssot-types";
 import {SystemSnapshotInfo} from "./system-snapshot";
@@ -52,25 +53,7 @@ function invalidReference(path: string, reason: string): PersistenceResult<never
 }
 
 function isObject(value: JsonValue): value is JsonObject {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function childPath(path: string, key: string): string {
-    return path + "[" + JSON.stringify(key) + "]";
-}
-
-function exactKeys(value: JsonObject, expected: readonly string[], path: string): PersistenceResult<true> {
-    const actual = Object.keys(value);
-    const expectedSet = new Set(expected);
-    const unexpected = actual.find(key => !expectedSet.has(key));
-    if (unexpected !== undefined) {
-        return invalidPersistence(childPath(path, unexpected), "unexpected property");
-    }
-    const missing = expected.find(key => !Object.prototype.hasOwnProperty.call(value, key));
-    if (missing !== undefined) {
-        return invalidPersistence(childPath(path, missing), "missing property");
-    }
-    return {ok: true, value: true};
+    return isPlainObject(value);
 }
 
 function compareUtf16(left: string, right: string): number {
@@ -163,7 +146,7 @@ function decodeCopiedPersistence(
     fkTargets: (entityName: string) => readonly string[],
 ): PersistenceResult<PersistenceInfo> {
     if (!isObject(value)) return invalidPersistence("$", "expected a persistence object");
-    const shape = exactKeys(value, ["entities", "representations"], "$");
+    const shape = exactKeys(value, ["entities", "representations"], "$", invalidPersistence);
     if (!shape.ok) return shape;
 
     if (new Set(typeNames).size !== typeNames.length) {

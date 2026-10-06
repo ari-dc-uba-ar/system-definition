@@ -1,4 +1,5 @@
 import {ValidationResult, problem} from "./problem";
+import {childPath, isPlainObject} from "./decode-structure";
 
 export type JsonValue =
     | null
@@ -21,17 +22,8 @@ function invalid(path: string, reason: string): CopyResult {
     return {ok: false, error: {path, reason}};
 }
 
-function childPath(path: string, key: string): string {
-    return path + "[" + JSON.stringify(key) + "]";
-}
-
 function arrayPath(path: string, index: number): string {
     return path + "[" + index + "]";
-}
-
-function isPlainObject(value: object): boolean {
-    const prototype = Object.getPrototypeOf(value);
-    return prototype === Object.prototype || prototype === null;
 }
 
 function copyJsonValue(value: unknown, ancestors: Set<object>, path: string): CopyResult {
