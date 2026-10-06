@@ -1,4 +1,6 @@
 import {
+    decodeMigrationPathInfo,
+    decodeReleaseRefInfo,
     problem,
     sameReleaseRef,
     type MigrationPathInfo,
@@ -97,16 +99,12 @@ function nonEmpty(value: unknown): value is string {
     return typeof value === "string" && value.length > 0;
 }
 
-function hash(value: unknown): value is string {
-    return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
-}
-
 function validRelease(value: unknown): value is ReleaseRefInfo {
-    return isObject(value)
-        && exactKeys(value, ["systemId", "releaseId", "releaseHash"])
-        && nonEmpty(value.systemId)
-        && nonEmpty(value.releaseId)
-        && hash(value.releaseHash);
+    return decodeReleaseRefInfo(
+        value,
+        "$",
+        () => fail<never>("migration.invalidReference", {reason: "invalid release reference"}),
+    ).ok;
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
@@ -166,24 +164,11 @@ function validProvider(value: unknown): value is RehearsalProvider {
 }
 
 function validPath(value: unknown): value is MigrationPathInfo {
-    if (!isObject(value) || !exactKeys(value, ["from", "to", "migrations"])
-        || !validRelease(value.from) || !validRelease(value.to) || !Array.isArray(value.migrations)) {
-        return false;
-    }
-    let expected = value.from;
-    for (const entry of value.migrations) {
-        if (!isObject(entry) || !exactKeys(entry, ["migration", "migrationHash"])
-            || !hash(entry.migrationHash) || !isObject(entry.migration)) {
-            return false;
-        }
-        const migration = entry.migration;
-        if (!nonEmpty(migration.id) || !validRelease(migration.from) || !validRelease(migration.to)
-            || !sameReleaseRef(migration.from, expected)) {
-            return false;
-        }
-        expected = migration.to;
-    }
-    return sameReleaseRef(expected, value.to);
+    return decodeMigrationPathInfo(
+        value,
+        "$",
+        () => fail<never>("migration.invalidReference", {reason: "invalid migration path"}),
+    ).ok;
 }
 
 function validInput(value: unknown): value is RehearsalInput {

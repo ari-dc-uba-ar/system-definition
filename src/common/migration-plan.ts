@@ -1,7 +1,7 @@
 import {JsonValue, toJsonValue} from "./json-value";
-import {decodeReleaseRefInfo, decodeResourceRefInfo, type MigrationInfo, type ReleaseRefInfo, type ResourceRefInfo} from "./migration";
+import {decodeReleaseRefInfo, decodeResourceRefInfo, sameReleaseRef, type MigrationInfo, type ReleaseRefInfo, type ResourceRefInfo} from "./migration";
 import {ValidationResult, problem} from "./problem";
-import {childPath, exactKeys, isNonBlankString, isPlainObject, isSha256} from "./decode-structure";
+import {childPath, exactKeys, isNonBlankString, isPlainObject, isSha256, type StructuralFailure} from "./decode-structure";
 
 export type PublishedMigrationInfo = {
     migration: MigrationInfo;
@@ -55,73 +55,73 @@ function isObject(value: JsonValue): value is JsonObject {
     return isPlainObject(value);
 }
 
-function nonEmptyString(value: JsonValue, path: string, label: string): ValidationResult<string> {
+function nonEmptyString(value: JsonValue, path: string, label: string, invalid: StructuralFailure = invalidCatalog): ValidationResult<string> {
     if (!isNonBlankString(value)) {
-        return invalidCatalog(path, label + " must be a non-empty string");
+        return invalid(path, label + " must be a non-empty string");
     }
     return {ok: true, value};
 }
 
-function sha256(value: JsonValue, path: string, label: string): ValidationResult<string> {
+function sha256(value: JsonValue, path: string, label: string, invalid: StructuralFailure = invalidCatalog): ValidationResult<string> {
     if (!isSha256(value)) {
-        return invalidCatalog(path, label + " must be a lowercase SHA-256 hex digest");
+        return invalid(path, label + " must be a lowercase SHA-256 hex digest");
     }
     return {ok: true, value};
 }
 
-function releaseRef(value: JsonValue, path: string): ValidationResult<ReleaseRefInfo> {
-    return decodeReleaseRefInfo(value, path, invalidCatalog);
+function releaseRef(value: JsonValue, path: string, invalid: StructuralFailure = invalidCatalog): ValidationResult<ReleaseRefInfo> {
+    return decodeReleaseRefInfo(value, path, invalid);
 }
 
-function resourceRef(value: JsonValue, path: string, expectedKind?: ResourceRefInfo["kind"]): ValidationResult<ResourceRefInfo> {
-    const decoded = decodeResourceRefInfo(value, path, invalidCatalog);
+function resourceRef(value: JsonValue, path: string, expectedKind?: ResourceRefInfo["kind"], invalid: StructuralFailure = invalidCatalog): ValidationResult<ResourceRefInfo> {
+    const decoded = decodeResourceRefInfo(value, path, invalid);
     if (!decoded.ok) return decoded;
     if (expectedKind !== undefined && decoded.value.kind !== expectedKind) {
-        return invalidCatalog(childPath(path, "kind"), "resource kind does not match position");
+        return invalid(childPath(path, "kind"), "resource kind does not match position");
     }
     return decoded;
 }
 
-function resourceRefs(value: JsonValue, path: string, expectedKind: ResourceRefInfo["kind"]): ValidationResult<readonly ResourceRefInfo[]> {
-    if (!Array.isArray(value)) return invalidCatalog(path, "expected an array");
+function resourceRefs(value: JsonValue, path: string, expectedKind: ResourceRefInfo["kind"], invalid: StructuralFailure = invalidCatalog): ValidationResult<readonly ResourceRefInfo[]> {
+    if (!Array.isArray(value)) return invalid(path, "expected an array");
     const result: ResourceRefInfo[] = [];
     for (let index = 0; index < value.length; index++) {
-        const decoded = resourceRef(value[index], path + "[" + index + "]", expectedKind);
+        const decoded = resourceRef(value[index], path + "[" + index + "]", expectedKind, invalid);
         if (!decoded.ok) return decoded;
         result.push(decoded.value);
     }
     return {ok: true, value: result};
 }
 
-function migrationInfo(value: JsonValue, path: string): ValidationResult<MigrationInfo> {
-    if (!isObject(value)) return invalidCatalog(path, "expected a migration object");
-    const shape = exactKeys(value, ["id", "from", "to", "description", "before", "steps", "after"], path, invalidCatalog);
+function migrationInfo(value: JsonValue, path: string, invalid: StructuralFailure = invalidCatalog): ValidationResult<MigrationInfo> {
+    if (!isObject(value)) return invalid(path, "expected a migration object");
+    const shape = exactKeys(value, ["id", "from", "to", "description", "before", "steps", "after"], path, invalid);
     if (!shape.ok) return shape;
-    const id = nonEmptyString(value.id, childPath(path, "id"), "migration id");
+    const id = nonEmptyString(value.id, childPath(path, "id"), "migration id", invalid);
     if (!id.ok) return id;
-    const from = releaseRef(value.from, childPath(path, "from"));
+    const from = releaseRef(value.from, childPath(path, "from"), invalid);
     if (!from.ok) return from;
-    const to = releaseRef(value.to, childPath(path, "to"));
+    const to = releaseRef(value.to, childPath(path, "to"), invalid);
     if (!to.ok) return to;
-    if (typeof value.description !== "string") return invalidCatalog(childPath(path, "description"), "expected a string");
-    const before = resourceRefs(value.before, childPath(path, "before"), "check");
+    if (typeof value.description !== "string") return invalid(childPath(path, "description"), "expected a string");
+    const before = resourceRefs(value.before, childPath(path, "before"), "check", invalid);
     if (!before.ok) return before;
-    const after = resourceRefs(value.after, childPath(path, "after"), "check");
+    const after = resourceRefs(value.after, childPath(path, "after"), "check", invalid);
     if (!after.ok) return after;
-    if (!Array.isArray(value.steps)) return invalidCatalog(childPath(path, "steps"), "expected an array");
+    if (!Array.isArray(value.steps)) return invalid(childPath(path, "steps"), "expected an array");
     const steps: {id: string, run: ResourceRefInfo}[] = [];
     const ids = new Set<string>();
     for (let index = 0; index < value.steps.length; index++) {
         const stepPath = path + '["steps"][' + index + "]";
         const rawStep = value.steps[index];
-        if (!isObject(rawStep)) return invalidCatalog(stepPath, "expected a step object");
-        const stepShape = exactKeys(rawStep, ["id", "run"], stepPath, invalidCatalog);
+        if (!isObject(rawStep)) return invalid(stepPath, "expected a step object");
+        const stepShape = exactKeys(rawStep, ["id", "run"], stepPath, invalid);
         if (!stepShape.ok) return stepShape;
-        const stepId = nonEmptyString(rawStep.id, childPath(stepPath, "id"), "step id");
+        const stepId = nonEmptyString(rawStep.id, childPath(stepPath, "id"), "step id", invalid);
         if (!stepId.ok) return stepId;
-        if (ids.has(stepId.value)) return invalidCatalog(childPath(stepPath, "id"), "step ids must not repeat");
+        if (ids.has(stepId.value)) return invalid(childPath(stepPath, "id"), "step ids must not repeat");
         ids.add(stepId.value);
-        const run = resourceRef(rawStep.run, childPath(stepPath, "run"), "sql");
+        const run = resourceRef(rawStep.run, childPath(stepPath, "run"), "sql", invalid);
         if (!run.ok) return run;
         steps.push({id: stepId.value, run: run.value});
     }
@@ -139,15 +139,58 @@ function migrationInfo(value: JsonValue, path: string): ValidationResult<Migrati
     };
 }
 
-function publishedMigration(value: JsonValue, path: string): ValidationResult<PublishedMigrationInfo> {
-    if (!isObject(value)) return invalidCatalog(path, "expected a published migration");
-    const shape = exactKeys(value, ["migration", "migrationHash"], path, invalidCatalog);
+function publishedMigration(value: JsonValue, path: string, invalid: StructuralFailure = invalidCatalog): ValidationResult<PublishedMigrationInfo> {
+    if (!isObject(value)) return invalid(path, "expected a published migration");
+    const shape = exactKeys(value, ["migration", "migrationHash"], path, invalid);
     if (!shape.ok) return shape;
-    const migration = migrationInfo(value.migration, childPath(path, "migration"));
+    const migration = migrationInfo(value.migration, childPath(path, "migration"), invalid);
     if (!migration.ok) return migration;
-    const migrationHash = sha256(value.migrationHash, childPath(path, "migrationHash"), "migrationHash");
+    const migrationHash = sha256(value.migrationHash, childPath(path, "migrationHash"), "migrationHash", invalid);
     if (!migrationHash.ok) return migrationHash;
     return {ok: true, value: {migration: migration.value, migrationHash: migrationHash.value}};
+}
+
+export function decodePublishedMigrationInfo(
+    value: unknown,
+    path: string,
+    invalid: StructuralFailure,
+): ValidationResult<PublishedMigrationInfo> {
+    const converted = toJsonValue(value);
+    if (!converted.ok) return invalid(path, "published migration must be strict JSON");
+    return publishedMigration(converted.value, path, invalid);
+}
+
+export function decodeMigrationPathInfo(
+    value: unknown,
+    path: string,
+    invalid: StructuralFailure,
+): ValidationResult<MigrationPathInfo> {
+    const converted = toJsonValue(value);
+    if (!converted.ok || !isObject(converted.value)) return invalid(path, "expected a migration path");
+    const raw = converted.value;
+    const shape = exactKeys(raw, ["from", "to", "migrations"], path, invalid);
+    if (!shape.ok) return shape;
+    const from = releaseRef(raw.from, childPath(path, "from"), invalid);
+    if (!from.ok) return from;
+    const to = releaseRef(raw.to, childPath(path, "to"), invalid);
+    if (!to.ok) return to;
+    if (!Array.isArray(raw.migrations)) return invalid(childPath(path, "migrations"), "expected an array");
+    const migrations: PublishedMigrationInfo[] = [];
+    let expected = from.value;
+    for (let index = 0; index < raw.migrations.length; index++) {
+        const itemPath = childPath(path, "migrations") + "[" + index + "]";
+        const decoded = publishedMigration(raw.migrations[index]!, itemPath, invalid);
+        if (!decoded.ok) return decoded;
+        if (!sameReleaseRef(decoded.value.migration.from, expected)) {
+            return invalid(itemPath, "migration path is not contiguous");
+        }
+        expected = decoded.value.migration.to;
+        migrations.push(decoded.value);
+    }
+    if (!sameReleaseRef(expected, to.value)) {
+        return invalid(path, "migration path does not end at target");
+    }
+    return {ok: true, value: {from: from.value, to: to.value, migrations}};
 }
 
 export function completeMigrationCatalog(

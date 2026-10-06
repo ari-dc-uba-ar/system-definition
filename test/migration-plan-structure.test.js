@@ -44,3 +44,29 @@ assert.deepEqual(badStep.problems[0].details, {
 });
 
 console.log("migration-plan structural reuse tests passed");
+
+const {decodeMigrationPathInfo} = require("../.verify-dist/migration-plan.js");
+const invalid = (path, reason) => ({ok: false, problems: [{path, reason}]});
+const path = {from: releases[0], to: releases[1], migrations: [{migration, migrationHash: mh}]};
+const decodedPath = decodeMigrationPathInfo(path, "$", invalid);
+assert.equal(decodedPath.ok, true);
+assert.deepEqual(decodedPath.value, path);
+
+const brokenPath = {
+    from: releases[0],
+    to: releases[1],
+    migrations: [{migration: {...migration, from: releases[1]}, migrationHash: mh}],
+};
+const broken = decodeMigrationPathInfo(brokenPath, "$", invalid);
+assert.equal(broken.ok, false);
+assert.equal(broken.problems[0].reason, "migration path is not contiguous");
+
+const incompleteMigration = {
+    from: releases[0],
+    to: releases[1],
+    migrations: [{migration: {id: "m1", from: releases[0], to: releases[1]}, migrationHash: mh}],
+};
+assert.equal(decodeMigrationPathInfo(incompleteMigration, "$", invalid).ok, false);
+
+const blankTarget = {...path, to: {...releases[1], releaseId: "   "}};
+assert.equal(decodeMigrationPathInfo(blankTarget, "$", invalid).ok, false);
