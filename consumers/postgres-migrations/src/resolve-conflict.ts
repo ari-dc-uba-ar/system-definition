@@ -2,6 +2,7 @@ import {createHash} from "node:crypto";
 import {
     canonicalJson,
     problem,
+    sameReleaseRef,
     toJsonValue,
     type Problem,
     type ReleaseRefInfo,
@@ -96,11 +97,9 @@ function nonEmptyString(value: unknown): value is string {
     return typeof value === "string" && value.length > 0;
 }
 
-function releaseEquals(left: ReleaseRefInfo | null, right: ReleaseRefInfo | null): boolean {
+function sameOptionalRelease(left: ReleaseRefInfo | null, right: ReleaseRefInfo | null): boolean {
     if (left === null || right === null) return left === right;
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
+    return sameReleaseRef(left, right);
 }
 
 function schemaHash(schema: PgSchemaInfo): ValidationResult<string> {
@@ -319,7 +318,7 @@ async function validateInstallationFreshness(
     if (current.value.installationId !== report.installationId) {
         return failure("installation id changed while resolving conflict");
     }
-    if (!releaseEquals(current.value.confirmedHead, report.confirmedHead)) {
+    if (!sameOptionalRelease(current.value.confirmedHead, report.confirmedHead)) {
         return failure("confirmed head changed since conflict report");
     }
     if (report.historyHash === null || current.value.historyHash !== report.historyHash) {

@@ -5,6 +5,7 @@ import {
     isPlainObject,
     isSha256,
     problem,
+    sameReleaseRef,
     type Problem,
     type ReleaseRefInfo,
     type ValidationResult,
@@ -360,11 +361,9 @@ export function deriveVerificationStatus(
     return "passed";
 }
 
-function sameRelease(left: ReleaseRefInfo | null, right: ReleaseRefInfo | null): boolean {
+function sameOptionalRelease(left: ReleaseRefInfo | null, right: ReleaseRefInfo | null): boolean {
     if (left === null || right === null) return left === right;
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
+    return sameReleaseRef(left, right);
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
@@ -377,8 +376,8 @@ function sameBinding(left: DeploymentBindingInfo, right: DeploymentBindingInfo):
         && left.candidateApplicationHash === right.candidateApplicationHash
         && left.planHash === right.planHash
         && left.operation === right.operation
-        && sameRelease(left.from, right.from)
-        && sameRelease(left.to, right.to)
+        && sameOptionalRelease(left.from, right.from)
+        && sameOptionalRelease(left.to, right.to)
         && left.engineVersion === right.engineVersion
         && sameStrings(left.schemas, right.schemas)
         && left.configurationHash === right.configurationHash

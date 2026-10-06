@@ -93,12 +93,6 @@ export function validateRelease(value: ReleaseRefInfo): ValidationResult<Release
     return decodeReleaseParts(value.systemId, value.releaseId, value.releaseHash);
 }
 
-export function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
-}
-
 export function canonicalSchemas(schemas: readonly string[]): ValidationResult<readonly string[]> {
     if (!Array.isArray(schemas) || schemas.length === 0) {
         return failure("migration.invalidJournal", {reason: "installation scope must contain at least one schema"});

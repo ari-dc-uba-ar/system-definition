@@ -1,6 +1,7 @@
 import {
     isPlainObject,
     isSha256,
+    sameReleaseRef,
     type ReleaseRefInfo,
     type ValidationResult,
 } from "system-definition";
@@ -24,7 +25,6 @@ import {
     sqlAttemptState,
     validateConfig,
     validateRelease,
-    sameRelease,
     type Row,
 } from "./journal-internal";
 
@@ -226,7 +226,7 @@ export async function settleAttempt(
     if (resultInput.state === ATTEMPT_STATE.succeeded
         && (current.value.confirmedTarget === null
             || confirmedTarget === null
-            || !sameRelease(current.value.confirmedTarget, confirmedTarget))) {
+            || !sameReleaseRef(current.value.confirmedTarget, confirmedTarget))) {
         return failure("migration.invalidJournal", {reason: "attempt terminal target disagrees with durable migration outcome"});
     }
     return current;

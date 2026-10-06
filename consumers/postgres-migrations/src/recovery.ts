@@ -1,5 +1,6 @@
 import {
     problem,
+    sameReleaseRef,
     type Problem,
     type PublishedMigrationInfo,
     type ReleaseRefInfo,
@@ -54,12 +55,6 @@ function hashString(value: unknown): value is string {
     return typeof value === "string" && HASH_RE.test(value);
 }
 
-function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
-}
-
 function decodeReleaseParts(
     systemId: unknown,
     releaseId: unknown,
@@ -92,7 +87,7 @@ function validateMigration(migration: PublishedMigrationInfo): ValidationResult<
         migration.migration.to.releaseHash,
     );
     if (!to.ok) return fail("migration.invalidCatalog", {reason: "invalid migration target"});
-    if (from.value.systemId !== to.value.systemId || sameRelease(from.value, to.value)) {
+    if (from.value.systemId !== to.value.systemId || sameReleaseRef(from.value, to.value)) {
         return fail("migration.invalidCatalog", {reason: "migration must connect two releases of one system"});
     }
     return {ok: true, value: migration};
@@ -104,8 +99,8 @@ function historyConfirmsMigration(
 ): boolean {
     return history.some(one => one.migrationId === migration.migration.id
         && one.migrationHash === migration.migrationHash
-        && sameRelease(one.from, migration.migration.from)
-        && sameRelease(one.to, migration.migration.to));
+        && sameReleaseRef(one.from, migration.migration.from)
+        && sameReleaseRef(one.to, migration.migration.to));
 }
 
 function unknownProblem(migration: PublishedMigrationInfo, head: ReleaseRefInfo | null): Problem {
@@ -189,7 +184,7 @@ export async function reconcileCommitOutcome(
         };
     }
 
-    if (sameRelease(confirmedHead, checkedMigration.value.migration.from)) {
+    if (sameReleaseRef(confirmedHead, checkedMigration.value.migration.from)) {
         const persisted = await settleAttempt(session, context.journal, attemptId, {
             state: "failed",
             confirmedTarget: null,

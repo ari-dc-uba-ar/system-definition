@@ -1,6 +1,7 @@
 import {
     isPlainObject,
     isSha256,
+    sameReleaseRef,
     type ReleaseRefInfo,
     type ValidationResult,
 } from "system-definition";
@@ -21,7 +22,6 @@ import {
     journalShape,
     positiveInteger,
     safeQuery,
-    sameRelease,
     validateConfig,
     validateConfigForScope,
     validateRelease,
@@ -294,14 +294,14 @@ export function verifyHistory(
         if (!decoded.ok) return decoded;
         if (decoded.value.installationId !== decodedInstallation.value.installationId
             || decoded.value.ordinal !== index + 1
-            || !sameRelease(decoded.value.from, expectedFrom)
+            || !sameReleaseRef(decoded.value.from, expectedFrom)
             || decoded.value.from.systemId !== decodedInstallation.value.systemId) {
             return failure("migration.invalidJournal", {reason: "migration history is not contiguous from baseline"});
         }
         expectedFrom = decoded.value.to;
         result.push(decoded.value);
     }
-    if (!sameRelease(expectedFrom, decodedInstallation.value.current)) {
+    if (!sameReleaseRef(expectedFrom, decodedInstallation.value.current)) {
         return failure("migration.invalidJournal", {reason: "migration history does not end at installation head"});
     }
     return {ok: true, value: result};
@@ -331,7 +331,7 @@ export async function appendCommittedMigration(
         committed_at: history.committedAt,
     });
     if (!decodedHistory.ok) return decodedHistory;
-    if (!sameRelease(decodedHistory.value.from, expected.value)) {
+    if (!sameReleaseRef(decodedHistory.value.from, expected.value)) {
         return failure("migration.invalidJournal", {reason: "migration origin does not match expected head"});
     }
 
@@ -384,7 +384,7 @@ export async function appendCommittedMigration(
     }
     const installation = decodeInstallationRow(result.value.rows[0]);
     if (!installation.ok) return installation;
-    if (!sameRelease(installation.value.current, decodedHistory.value.to)) {
+    if (!sameReleaseRef(installation.value.current, decodedHistory.value.to)) {
         return failure("migration.invalidJournal", {reason: "journal head does not match committed migration target"});
     }
     return installation;

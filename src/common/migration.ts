@@ -14,6 +14,12 @@ export type ReleaseRefInfo = {
     releaseHash: string;
 };
 
+export function sameReleaseRef(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
+    return left.systemId === right.systemId
+        && left.releaseId === right.releaseId
+        && left.releaseHash === right.releaseHash;
+}
+
 export type ResourceInfo = {
     kind: "sql" | "check";
     file: FileInfo;

@@ -1,5 +1,6 @@
 import {
     problem,
+    sameReleaseRef,
     type MigrationPathInfo,
     type PublishedMigrationInfo,
     type ReleaseRefInfo,
@@ -109,12 +110,6 @@ function validRelease(value: unknown): value is ReleaseRefInfo {
         && hash(value.releaseHash);
 }
 
-function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
-}
-
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
     return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -134,7 +129,7 @@ function sameCopy(left: RehearsalCopyRef, right: RehearsalCopyRef): boolean {
     return left.copyId === right.copyId
         && left.provenance === right.provenance
         && left.installationId === right.installationId
-        && sameRelease(left.source, right.source)
+        && sameReleaseRef(left.source, right.source)
         && sameStrings(left.schemas, right.schemas);
 }
 
@@ -194,12 +189,12 @@ function validPath(value: unknown): value is MigrationPathInfo {
         }
         const migration = entry.migration;
         if (!nonEmpty(migration.id) || !validRelease(migration.from) || !validRelease(migration.to)
-            || !sameRelease(migration.from, expected)) {
+            || !sameReleaseRef(migration.from, expected)) {
             return false;
         }
         expected = migration.to;
     }
-    return sameRelease(expected, value.to);
+    return sameReleaseRef(expected, value.to);
 }
 
 function validInput(value: unknown): value is RehearsalInput {
@@ -379,7 +374,7 @@ export async function rehearseUpgrade(
     if (!validInput(input) || !validProvider(provider)) {
         return fail("migration.invalidReference", {reason: "invalid rehearsal input or provider"});
     }
-    if (!sameRelease(input.copy.source, input.path.from)
+    if (!sameReleaseRef(input.copy.source, input.path.from)
         || input.copy.source.systemId !== input.scope.systemId
         || !sameStrings(input.copy.schemas, input.scope.schemas)) {
         return fail("deployment.evidenceMismatch", {
@@ -393,7 +388,7 @@ export async function rehearseUpgrade(
         if (!installation.ok) return installation;
         if (installation.value === null
             || installation.value.installationId !== input.copy.installationId
-            || !sameRelease(installation.value.current, input.copy.source)) {
+            || !sameReleaseRef(installation.value.current, input.copy.source)) {
             return fail("deployment.evidenceMismatch", {
                 copyId: input.copy.copyId,
                 reason: "durable copy head does not match the declared source",
@@ -425,7 +420,7 @@ export async function rehearseUpgrade(
             return normalized;
         });
         if (!executed.ok) return executed;
-        if (!sameRelease(executed.value.from, input.copy.source) || !sameRelease(executed.value.to, input.path.to)) {
+        if (!sameReleaseRef(executed.value.from, input.copy.source) || !sameReleaseRef(executed.value.to, input.path.to)) {
             return fail("deployment.evidenceMismatch", {
                 copyId: input.copy.copyId,
                 reason: "executed segment does not match rehearsal declaration",
@@ -498,9 +493,9 @@ function reportCoversPath(report: RehearsalReportInfo, path: MigrationPathInfo):
 
 function reportMatchesRequirement(report: RehearsalReportInfo, requirement: RehearsalRequirement): boolean {
     if (requirement.operation !== "upgrade" || requirement.from === null || requirement.path === null) return false;
-    return sameRelease(report.from, requirement.from)
-        && sameRelease(report.to, requirement.to)
-        && sameRelease(report.copy.source, requirement.from)
+    return sameReleaseRef(report.from, requirement.from)
+        && sameReleaseRef(report.to, requirement.to)
+        && sameReleaseRef(report.copy.source, requirement.from)
         && sameScope(report.scope, requirement.scope)
         && sameStrings(report.copy.schemas, requirement.scope.schemas)
         && report.targetChecksRequired === true
@@ -519,8 +514,8 @@ export function checkRehearsalRequirement(
         return {ok: true, value: null};
     }
     if (requirement.from === null || requirement.path === null
-        || !sameRelease(requirement.path.from, requirement.from)
-        || !sameRelease(requirement.path.to, requirement.to)
+        || !sameReleaseRef(requirement.path.from, requirement.from)
+        || !sameReleaseRef(requirement.path.to, requirement.to)
         || requirement.scope.systemId !== requirement.from.systemId) {
         return fail("deployment.evidenceMismatch", {reason: "upgrade requirement references do not agree"});
     }

@@ -1,5 +1,6 @@
 import {
     problem,
+    sameReleaseRef,
     type Problem,
     type ReleaseRefInfo,
     type ValidationResult,
@@ -75,12 +76,6 @@ function queryFailure<T>(error: unknown): ValidationResult<T> {
     return failure("migration.journalQueryFailed", {
         reason: error instanceof Error ? error.message : "journal query failed",
     });
-}
-
-function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
 }
 
 async function safeQuery(
@@ -194,7 +189,7 @@ async function latestApplyAttempt(
     }
     if (attempt.value.state !== "succeeded"
         || attempt.value.confirmedTarget === null
-        || !sameRelease(attempt.value.confirmedTarget, binding.to)) {
+        || !sameReleaseRef(attempt.value.confirmedTarget, binding.to)) {
         return failure("deployment.targetNotReady", {reason: "latest apply attempt did not confirm the exact target"});
     }
     return {ok: true, value: attempt.value};
@@ -211,7 +206,7 @@ async function verifyDurableTarget(
     if (!installation.ok) return installation;
     if (installation.value === null
         || installation.value.installationId !== binding.installationId
-        || !sameRelease(installation.value.current, binding.to)) {
+        || !sameReleaseRef(installation.value.current, binding.to)) {
         return failure("deployment.targetNotReady", {reason: "journal head is not the exact deployment target"});
     }
     return {ok: true, value: installation.value.current};

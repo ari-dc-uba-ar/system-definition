@@ -2,6 +2,7 @@ import {createHash} from "node:crypto";
 import {
     canonicalJson,
     problem,
+    sameReleaseRef,
     toJsonValue,
     type FileInfo,
     type JsonValue,
@@ -444,12 +445,6 @@ function decodeCheckpoints(value: JsonValue): ValidationResult<CompiledAuthoring
     return {ok: true, value: value.map(one => one) as CompiledAuthoringInfo["checkpoints"]};
 }
 
-function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
-}
-
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
     return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -458,7 +453,7 @@ function sameCopy(left: RehearsalCopyRef, right: RehearsalCopyRef): boolean {
     return left.copyId === right.copyId
         && left.provenance === right.provenance
         && left.installationId === right.installationId
-        && sameRelease(left.source, right.source)
+        && sameReleaseRef(left.source, right.source)
         && sameStrings(left.schemas, right.schemas);
 }
 
@@ -711,8 +706,8 @@ export function checkPreparationPreconditions(
     if (!validCopy(state.copy)) return fail("invalid identified copy");
     if (artifact.installationId !== state.installationId
         || state.copy.installationId !== artifact.installationId
-        || !sameRelease(state.copy.source, artifact.head)
-        || !sameRelease(state.head, artifact.head)
+        || !sameReleaseRef(state.copy.source, artifact.head)
+        || !sameReleaseRef(state.head, artifact.head)
         || artifact.historyHash !== state.historyHash
         || artifact.observedSchemaHash !== state.observedSchemaHash
         || artifact.inputFingerprint !== state.inputFingerprint
@@ -727,7 +722,7 @@ function checkCurrentPreparationPreconditions(
     state: PreparationCurrentStateInfo,
 ): ValidationResult<true> {
     if (artifact.installationId !== state.installationId
-        || !sameRelease(state.head, artifact.head)
+        || !sameReleaseRef(state.head, artifact.head)
         || artifact.historyHash !== state.historyHash
         || artifact.observedSchemaHash !== state.observedSchemaHash
         || artifact.inputFingerprint !== state.inputFingerprint
@@ -742,7 +737,7 @@ function validReceipt(artifact: PreparationArtifactInfo, receipt: PreparationRec
         && receipt.preparationId === artifact.id
         && receipt.artifactHash === artifact.artifactHash
         && receipt.installationId === artifact.installationId
-        && sameRelease(receipt.head, artifact.head)
+        && sameReleaseRef(receipt.head, artifact.head)
         && receipt.inputFingerprint === artifact.inputFingerprint
         && receipt.status === "passed"
         && Array.isArray(receipt.checks)
