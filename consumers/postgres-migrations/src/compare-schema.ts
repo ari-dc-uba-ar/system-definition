@@ -6,6 +6,7 @@ import {
 } from "system-definition";
 import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo} from "./pg-schema";
 import type {InspectionInfo} from "./inspect-schema";
+import {POSTGRES_SUPPORT} from "./postgres-support";
 
 export type SchemaDifferenceInfo = {
     path: readonly string[];
@@ -132,7 +133,7 @@ export function compareSchemas(
         });
     }
     if (expected.formatVersion !== 1 || actual.schema.formatVersion !== 1
-        || expected.engineVersion !== "18.6" || actual.schema.engineVersion !== "18.6") {
+        || expected.engineVersion !== POSTGRES_SUPPORT.version || actual.schema.engineVersion !== POSTGRES_SUPPORT.version) {
         return fail("migration.unsupportedFormat", {reason: "schema format or PostgreSQL engine version mismatch"});
     }
 

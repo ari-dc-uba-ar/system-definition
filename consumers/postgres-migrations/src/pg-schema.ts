@@ -8,6 +8,7 @@ import {
     type ValidationResult,
 } from "system-definition";
 import type {EnvironmentInfo, ManagedDataInfo} from "./artifact";
+import {matchesPostgresSupport, POSTGRES_SUPPORT} from "./postgres-support";
 import {quotePgIdentifier, quotePgQualified} from "./pg-sql";
 export {quotePgIdentifier, quotePgQualified} from "./pg-sql";
 
@@ -91,7 +92,7 @@ export type PgObjectInfo =
 
 export type PgSchemaInfo = {
     formatVersion: 1;
-    engineVersion: "18.6";
+    engineVersion: typeof POSTGRES_SUPPORT.version;
     schemas: readonly string[];
     objects: readonly PgObjectInfo[];
 };
@@ -217,11 +218,9 @@ function fkDefinition(
 
 function environmentProblem(storage: StorageContext): Problem | null {
     const environment = storage.environment;
-    if (environment.engine !== "postgresql"
-        || environment.version !== "18.6"
-        || environment.serverVersionNum !== 180006) {
+    if (!matchesPostgresSupport(environment)) {
         return problem(null, "migration.environmentMismatch", "blocking", {
-            expected: "postgresql 18.6 / 180006",
+            expected: `${POSTGRES_SUPPORT.engine} ${POSTGRES_SUPPORT.version} / ${POSTGRES_SUPPORT.serverVersionNum}`,
             actual: environment.engine + " " + environment.version + " / " + String(environment.serverVersionNum),
         });
     }
@@ -448,7 +447,7 @@ export function projectSchema(
         ok: true,
         value: {
             formatVersion: 1,
-            engineVersion: "18.6",
+            engineVersion: POSTGRES_SUPPORT.version,
             schemas: [storage.schema],
             objects,
             tables,
@@ -458,27 +457,27 @@ export function projectSchema(
 
 export async function checkPostgres18_6(
     session: PgSession,
-): Promise<ValidationResult<{serverVersionNum: 180006}>> {
+): Promise<ValidationResult<{serverVersionNum: typeof POSTGRES_SUPPORT.serverVersionNum}>> {
     let queryResult: Awaited<ReturnType<PgSession["query"]>>;
     try {
         queryResult = await session.query("SHOW server_version_num", []);
     } catch (error) {
         return fail("migration.environmentMismatch", {
-            expected: "180006",
+            expected: String(POSTGRES_SUPPORT.serverVersionNum),
             actual: error instanceof Error ? error.message : String(error),
         });
     }
 
     if (queryResult.rows.length !== 1) {
         return fail("migration.environmentMismatch", {
-            expected: "180006",
+            expected: String(POSTGRES_SUPPORT.serverVersionNum),
             actual: "query returned " + queryResult.rows.length + " rows",
         });
     }
     const raw = queryResult.rows[0]?.server_version_num;
     const numeric = typeof raw === "number" ? raw : typeof raw === "string" && /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
-    if (numeric !== 180006) {
-        return fail("migration.environmentMismatch", {expected: "180006", actual: String(raw)});
+    if (numeric !== POSTGRES_SUPPORT.serverVersionNum) {
+        return fail("migration.environmentMismatch", {expected: String(POSTGRES_SUPPORT.serverVersionNum), actual: String(raw)});
     }
-    return {ok: true, value: {serverVersionNum: 180006}};
+    return {ok: true, value: {serverVersionNum: POSTGRES_SUPPORT.serverVersionNum}};
 }

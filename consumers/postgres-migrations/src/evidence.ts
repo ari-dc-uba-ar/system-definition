@@ -11,6 +11,7 @@ import {
     type ValidationResult,
 } from "system-definition";
 import {type JournalConfig} from "./journal";
+import {POSTGRES_SUPPORT} from "./postgres-support";
 import {quotePgIdentifier, type PgSession, type SqlParameter} from "./pg-schema";
 import {isPgNonEmptyText} from "./pg-text";
 
@@ -20,7 +21,7 @@ export type DeploymentBindingBase = {
     candidateApplicationHash: string;
     planHash: string;
     to: ReleaseRefInfo;
-    engineVersion: "18.6";
+    engineVersion: typeof POSTGRES_SUPPORT.version;
     schemas: readonly string[];
     configurationHash: string;
     maintenanceId: string;
@@ -151,7 +152,7 @@ function decodeBinding(value: unknown): ValidationResult<DeploymentBindingInfo> 
         || !isSha256(value.planHash)
         || !isSha256(value.configurationHash)
         || !isPgNonEmptyText(value.maintenanceId)
-        || value.engineVersion !== "18.6"
+        || value.engineVersion !== POSTGRES_SUPPORT.version
         || typeof value.production !== "boolean"
         || !(value.operation === "install" || value.operation === "upgrade")) {
         return failure("deployment.evidenceMismatch", {reason: "invalid deployment binding"});
@@ -175,7 +176,7 @@ function decodeBinding(value: unknown): ValidationResult<DeploymentBindingInfo> 
                 operation: "install",
                 from: null,
                 to: to.value,
-                engineVersion: "18.6",
+                engineVersion: POSTGRES_SUPPORT.version,
                 schemas: schemas.value,
                 configurationHash: value.configurationHash,
                 maintenanceId: value.maintenanceId,
@@ -199,7 +200,7 @@ function decodeBinding(value: unknown): ValidationResult<DeploymentBindingInfo> 
             operation: "upgrade",
             from: from.value,
             to: to.value,
-            engineVersion: "18.6",
+            engineVersion: POSTGRES_SUPPORT.version,
             schemas: schemas.value,
             configurationHash: value.configurationHash,
             maintenanceId: value.maintenanceId,

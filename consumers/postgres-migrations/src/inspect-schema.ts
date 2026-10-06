@@ -6,6 +6,7 @@ import type {
     PgSession,
     SqlParameter,
 } from "./pg-schema";
+import {POSTGRES_SUPPORT} from "./postgres-support";
 
 export type InspectionScope = {
     schemas: readonly string[];
@@ -517,7 +518,7 @@ export async function inspectSchema(
         value: {
             schema: {
                 formatVersion: 1,
-                engineVersion: "18.6",
+                engineVersion: POSTGRES_SUPPORT.version,
                 schemas: [...scope.schemas].sort(compareUtf16),
                 objects,
             },

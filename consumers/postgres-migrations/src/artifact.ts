@@ -26,11 +26,12 @@ import {
     type ResourceRefInfo,
     type SystemSnapshotInfo,
 } from "system-definition";
+import {matchesPostgresSupport, POSTGRES_SUPPORT} from "./postgres-support";
 
 export type EnvironmentInfo = {
-    engine: "postgresql";
-    version: "18.6";
-    serverVersionNum: 180006;
+    engine: typeof POSTGRES_SUPPORT.engine;
+    version: typeof POSTGRES_SUPPORT.version;
+    serverVersionNum: typeof POSTGRES_SUPPORT.serverVersionNum;
     encoding: string;
     collations: Readonly<Record<string, string>>;
     externalDependencies: Readonly<Record<string, string>>;
@@ -273,7 +274,7 @@ function prepareJsonFile(path: string, value: unknown): ArtifactResult<PreparedF
 }
 
 function checkEnvironment(environment: EnvironmentInfo): ArtifactResult<true> {
-    if (environment.engine !== "postgresql" || environment.version !== "18.6" || environment.serverVersionNum !== 180006) {
+    if (!matchesPostgresSupport(environment)) {
         return failure("migration.environmentMismatch", {
             engine: String(environment.engine),
             version: String(environment.version),
@@ -664,7 +665,7 @@ function decodeEnvironment(value: JsonValue): ArtifactResult<EnvironmentInfo> {
     if (Object.keys(value).sort().join(",") !== expected.join(",")) {
         return failure("migration.unsupportedFormat", {reason: "invalid environment shape"});
     }
-    if (value.engine !== "postgresql" || value.version !== "18.6" || value.serverVersionNum !== 180006) {
+    if (!matchesPostgresSupport(value)) {
         return failure("migration.environmentMismatch");
     }
     if (typeof value.encoding !== "string" || !isObject(value.collations) || !isObject(value.externalDependencies)) {
