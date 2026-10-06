@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const {
     finishAttempt,
     installBaseline,
+    startAttempt,
     readConfirmedPreparation,
     readHistory,
 } = require("../.verify-dist/consumers/postgres-migrations/src/journal.js");
@@ -38,7 +39,29 @@ const validBaseline = {systemId: "system", releaseId: "r1", releaseHash: hash};
 (async () => {
     // PostgreSQL-owned text refinement survives package-codec delegation.
     let db = noQuerySession();
-    let result = await readHistory(db, {schema: "bad\0schema"}, "installation-1");
+    let result;
+
+    // Exact-key mechanics come from the shared path-aware structural owner;
+    // journal only maps those failures to its existing boundary reasons.
+    db = noQuerySession();
+    result = await readHistory(db, {schema: "journal", extra: true}, "installation-1");
+    assert.equal(result.ok, false);
+    assert.equal(result.problems[0].details.reason, "invalid journal schema");
+    assert.equal(db.state.calls, 0);
+
+    db = noQuerySession();
+    result = await installBaseline(db, {schema: "journal"}, {
+        installationId: "installation-1",
+        scope: validScope,
+        baseline: validBaseline,
+        extra: true,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.problems[0].details.reason, "invalid baseline installation input");
+    assert.equal(db.state.calls, 0);
+
+    db = noQuerySession();
+    result = await readHistory(db, {schema: "bad\0schema"}, "installation-1");
     assert.equal(result.ok, false);
     assert.equal(result.problems[0].messageKey, "migration.invalidJournal");
     assert.equal(result.problems[0].details.reason, "invalid journal schema");
@@ -72,6 +95,28 @@ const validBaseline = {systemId: "system", releaseId: "r1", releaseHash: hash};
     assert.equal(result.ok, false);
     assert.equal(result.problems[0].details.reason, "invalid release reference");
     assert.equal(db.state.calls, 0);
+
+    db = rowSession({
+        attempt_id: "attempt-1",
+        deployment_id: "deployment-1",
+        installation_id: "installation-1",
+        plan_hash: hash,
+        state: "running",
+        confirmed_target_system_id: null,
+        confirmed_target_release_id: null,
+        confirmed_target_release_hash: null,
+        problems: [],
+        extra: true,
+    });
+    result = await startAttempt(db, {schema: "journal"}, {
+        attemptId: "attempt-1",
+        deploymentId: "deployment-1",
+        installationId: "installation-1",
+        planHash: hash,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.problems[0].details.reason, "invalid execution attempt row");
+    assert.equal(db.state.calls, 1);
 
     // Problem decoding delegates intrinsic shape/details to the package codec,
     // while journal keeps its existing outward reason buckets and NUL refinement.

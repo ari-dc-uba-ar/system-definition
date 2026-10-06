@@ -1,6 +1,7 @@
 import {
     decodeProblem as decodeContractProblem,
     decodeReleaseRefInfo,
+    exactKeys,
     isPlainObject,
     isSha256,
     problem,
@@ -160,10 +161,17 @@ function queryFailure<T>(error: unknown): ValidationResult<T> {
     });
 }
 
-function hasExactKeys(row: Row, expected: readonly string[]): boolean {
-    const actual = Object.keys(row).sort();
-    const wanted = [...expected].sort();
-    return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
+function journalShape(
+    row: Row,
+    expected: readonly string[],
+    reason: string,
+): ValidationResult<true> {
+    return exactKeys(
+        row,
+        expected,
+        "$",
+        () => failure("migration.invalidJournal", {reason}),
+    );
 }
 
 function positiveInteger(value: unknown): value is number {
@@ -218,9 +226,9 @@ function canonicalSchemas(schemas: readonly string[]): ValidationResult<readonly
 }
 
 function validateScope(scope: InstallationScope): ValidationResult<InstallationScope> {
-    if (!isPlainObject(scope) || !hasExactKeys(scope, ["systemId", "schemas"])) {
-        return failure("migration.invalidJournal", {reason: "invalid installation scope"});
-    }
+    if (!isPlainObject(scope)) return failure("migration.invalidJournal", {reason: "invalid installation scope"});
+    const shape = journalShape(scope, ["systemId", "schemas"], "invalid installation scope");
+    if (!shape.ok) return shape;
     if (!isPgNonEmptyText(scope.systemId)) {
         return failure("migration.invalidJournal", {reason: "invalid system id"});
     }
@@ -230,9 +238,10 @@ function validateScope(scope: InstallationScope): ValidationResult<InstallationS
 }
 
 function validateConfig(config: JournalConfig): ValidationResult<JournalConfig> {
-    if (!isPlainObject(config) || !hasExactKeys(config, ["schema"]) || !isPgNonEmptyText(config.schema)) {
-        return failure("migration.invalidJournal", {reason: "invalid journal schema"});
-    }
+    if (!isPlainObject(config)) return failure("migration.invalidJournal", {reason: "invalid journal schema"});
+    const shape = journalShape(config, ["schema"], "invalid journal schema");
+    if (!shape.ok) return shape;
+    if (!isPgNonEmptyText(config.schema)) return failure("migration.invalidJournal", {reason: "invalid journal schema"});
     return {ok: true, value: {schema: config.schema}};
 }
 
@@ -289,9 +298,9 @@ function decodeInstallationRow(value: unknown): ValidationResult<InstallationInf
         "current_release_hash",
         "journal_format_version",
     ] as const;
-    if (!isPlainObject(value) || !hasExactKeys(value, keys)) {
-        return failure("migration.invalidJournal", {reason: "invalid installation row"});
-    }
+    if (!isPlainObject(value)) return failure("migration.invalidJournal", {reason: "invalid installation row"});
+    const shape = journalShape(value, keys, "invalid installation row");
+    if (!shape.ok) return shape;
     if (!isPgNonEmptyText(value.installation_id)
         || !isPgNonEmptyText(value.system_id)
         || value.journal_format_version !== JOURNAL_FORMAT_VERSION
@@ -342,8 +351,10 @@ function decodeHistoryRow(value: unknown): ValidationResult<MigrationHistoryInfo
         "to_release_hash",
         "committed_at",
     ] as const;
-    if (!isPlainObject(value) || !hasExactKeys(value, keys)
-        || !isPgNonEmptyText(value.installation_id)
+    if (!isPlainObject(value)) return failure("migration.invalidJournal", {reason: "invalid migration history row"});
+    const shape = journalShape(value, keys, "invalid migration history row");
+    if (!shape.ok) return shape;
+    if (!isPgNonEmptyText(value.installation_id)
         || !positiveInteger(value.ordinal)
         || !isPgNonEmptyText(value.migration_id)
         || !isSha256(value.migration_hash)
@@ -384,8 +395,10 @@ function decodeAttemptRow(value: unknown): ValidationResult<AttemptInfo> {
         "confirmed_target_release_hash",
         "problems",
     ] as const;
-    if (!isPlainObject(value) || !hasExactKeys(value, keys)
-        || !isPgNonEmptyText(value.attempt_id)
+    if (!isPlainObject(value)) return failure("migration.invalidJournal", {reason: "invalid execution attempt row"});
+    const shape = journalShape(value, keys, "invalid execution attempt row");
+    if (!shape.ok) return shape;
+    if (!isPgNonEmptyText(value.attempt_id)
         || !isPgNonEmptyText(value.deployment_id)
         || !isPgNonEmptyText(value.installation_id)
         || !isSha256(value.plan_hash)
@@ -604,8 +617,10 @@ export async function installBaseline(
     config: JournalConfig,
     input: {installationId: string; scope: InstallationScope; baseline: ReleaseRefInfo},
 ): Promise<ValidationResult<InstallationInfo>> {
-    if (!isPlainObject(input) || !hasExactKeys(input, ["installationId", "scope", "baseline"])
-        || !isPgNonEmptyText(input.installationId)) {
+    if (!isPlainObject(input)) return failure("migration.invalidJournal", {reason: "invalid baseline installation input"});
+    const inputShape = journalShape(input, ["installationId", "scope", "baseline"], "invalid baseline installation input");
+    if (!inputShape.ok) return inputShape;
+    if (!isPgNonEmptyText(input.installationId)) {
         return failure("migration.invalidJournal", {reason: "invalid baseline installation input"});
     }
     const checked = validateConfigForScope(config, input.scope);
@@ -837,9 +852,10 @@ export async function startAttempt(
 ): Promise<ValidationResult<AttemptInfo>> {
     const checked = validateConfig(config);
     if (!checked.ok) return checked;
-    if (!isPlainObject(input)
-        || !hasExactKeys(input, ["attemptId", "deploymentId", "installationId", "planHash"])
-        || !isPgNonEmptyText(input.attemptId)
+    if (!isPlainObject(input)) return failure("migration.invalidJournal", {reason: "invalid attempt start input"});
+    const inputShape = journalShape(input, ["attemptId", "deploymentId", "installationId", "planHash"], "invalid attempt start input");
+    if (!inputShape.ok) return inputShape;
+    if (!isPgNonEmptyText(input.attemptId)
         || !isPgNonEmptyText(input.deploymentId)
         || !isPgNonEmptyText(input.installationId)
         || !isSha256(input.planHash)) {
@@ -867,10 +883,12 @@ export async function finishAttempt(
 ): Promise<ValidationResult<AttemptInfo>> {
     const checked = validateConfig(config);
     if (!checked.ok) return checked;
-    if (!isPgNonEmptyText(attemptId)
-        || !isPlainObject(resultInput)
-        || !hasExactKeys(resultInput, ["state", "confirmedTarget", "problems"])
-        || !isFinishedAttemptState(resultInput.state)) {
+    if (!isPgNonEmptyText(attemptId) || !isPlainObject(resultInput)) {
+        return failure("migration.invalidJournal", {reason: "invalid attempt finish input"});
+    }
+    const inputShape = journalShape(resultInput, ["state", "confirmedTarget", "problems"], "invalid attempt finish input");
+    if (!inputShape.ok) return inputShape;
+    if (!isFinishedAttemptState(resultInput.state)) {
         return failure("migration.invalidJournal", {reason: "invalid attempt finish input"});
     }
     const problems = decodeProblems(resultInput.problems);
