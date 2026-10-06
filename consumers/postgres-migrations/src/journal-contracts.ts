@@ -155,3 +155,23 @@ export type VerificationRecordInfo = {
 };
 
 export type VerificationRecordInput = Omit<VerificationRecordInfo, "ordinal">;
+
+/** Durable readiness write contract; binding/problem payload semantics stay with deployment. */
+export type DeploymentReadinessRecordInput = {
+    deploymentId: string;
+    installationId: string;
+    binding: unknown;
+    state: DeploymentReadinessState;
+    verificationId: string | null;
+    applyAttemptId: string | null;
+    confirmedTarget: ReleaseRefInfo | null;
+    problems: unknown;
+};
+
+export type DeploymentReadinessConsumeInput = {
+    deploymentId: string;
+    installationId: string;
+    verificationId: string;
+    applyAttemptId: string;
+    binding: unknown;
+};

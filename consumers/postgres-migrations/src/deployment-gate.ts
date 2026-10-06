@@ -11,8 +11,10 @@ import {
     type VerificationRunInfo,
 } from "./evidence";
 import {
+    consumeDeploymentReadiness,
     readInstallation,
     readLatestAttempt,
+    upsertDeploymentReadiness,
     type AttemptInfo,
     type JournalConfig,
 } from "./journal";
@@ -20,11 +22,7 @@ import {
     DEPLOYMENT_READINESS_STATE,
     type DeploymentReadinessState,
 } from "./journal-contracts";
-import {
-    quotePgIdentifier,
-    type PgSession,
-    type SqlParameter,
-} from "./pg-schema";
+import type {PgSession} from "./pg-schema";
 
 export type DeploymentReadinessInfo = {
     binding: DeploymentBindingInfo;
@@ -67,8 +65,6 @@ export type DeploymentPipelineRuntime = DeploymentGateRuntime & {
     completeMaintenance(maintenanceId: string): Promise<ValidationResult<true>>;
 };
 
-type QueryResult = Awaited<ReturnType<PgSession["query"]>>;
-
 function failure<T>(
     messageKey: string,
     details: Readonly<Record<string, string>> = {},
@@ -76,63 +72,31 @@ function failure<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function queryFailure<T>(error: unknown): ValidationResult<T> {
-    return failure("migration.journalQueryFailed", {
-        reason: error instanceof Error ? error.message : "journal query failed",
-    });
-}
-
-async function safeQuery(
-    session: PgSession,
-    text: string,
-    values: readonly SqlParameter[],
-): Promise<ValidationResult<QueryResult>> {
-    try {
-        return {ok: true, value: await session.query(text, values)};
-    } catch (error) {
-        return queryFailure(error);
-    }
-}
-
-function readinessTable(journal: JournalConfig): string {
-    return `${quotePgIdentifier(journal.schema)}.deployment_readiness`;
+function readinessStorageFailure<T>(
+    result: ValidationResult<T>,
+    fallbackReason: string,
+): ValidationResult<T> {
+    if (result.ok) return result;
+    const first = result.problems[0];
+    if (first?.messageKey !== "migration.invalidJournal") return result;
+    return failure("deployment.blocked", {reason: first.details.reason ?? fallbackReason});
 }
 
 async function writeReadiness(
     runtime: DeploymentGateRuntime,
     info: DeploymentReadinessInfo,
 ): Promise<ValidationResult<true>> {
-    const table = readinessTable(runtime.journal);
-    const text = `INSERT INTO ${table} (
-        deployment_id, installation_id, binding, state, verification_id, apply_attempt_id,
-        confirmed_target_system_id, confirmed_target_release_id, confirmed_target_release_hash,
-        problems, updated_at
-    ) VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9,$10::jsonb,clock_timestamp())
-    ON CONFLICT (deployment_id) DO UPDATE SET
-        installation_id = EXCLUDED.installation_id,
-        binding = EXCLUDED.binding,
-        state = EXCLUDED.state,
-        verification_id = EXCLUDED.verification_id,
-        apply_attempt_id = EXCLUDED.apply_attempt_id,
-        confirmed_target_system_id = EXCLUDED.confirmed_target_system_id,
-        confirmed_target_release_id = EXCLUDED.confirmed_target_release_id,
-        confirmed_target_release_hash = EXCLUDED.confirmed_target_release_hash,
-        problems = EXCLUDED.problems,
-        updated_at = clock_timestamp()`;
-    const result = await safeQuery(runtime.session, text, [
-        info.binding.deploymentId,
-        info.binding.installationId,
-        JSON.stringify(info.binding),
-        info.state,
-        info.verificationId,
-        info.applyAttemptId,
-        info.confirmedTarget?.systemId ?? null,
-        info.confirmedTarget?.releaseId ?? null,
-        info.confirmedTarget?.releaseHash ?? null,
-        JSON.stringify(info.problems),
-    ]);
-    if (!result.ok) return result;
-    return {ok: true, value: true};
+    const stored = await upsertDeploymentReadiness(runtime.session, runtime.journal, {
+        deploymentId: info.binding.deploymentId,
+        installationId: info.binding.installationId,
+        binding: info.binding,
+        state: info.state,
+        verificationId: info.verificationId,
+        applyAttemptId: info.applyAttemptId,
+        confirmedTarget: info.confirmedTarget,
+        problems: info.problems,
+    });
+    return readinessStorageFailure(stored, "deployment readiness could not be stored");
 }
 
 async function writeBlocked(
@@ -318,29 +282,14 @@ async function consumeReady(
     ready: DeploymentReadyInfo,
     runtime: DeploymentGateRuntime,
 ): Promise<ValidationResult<true>> {
-    const table = readinessTable(runtime.journal);
-    const text = `UPDATE ${table}
-        SET state = $6, updated_at = clock_timestamp()
-        WHERE deployment_id = $1
-          AND installation_id = $2
-          AND state = $7
-          AND verification_id = $3
-          AND apply_attempt_id = $4
-          AND binding = $5::jsonb`;
-    const result = await safeQuery(runtime.session, text, [
-        ready.binding.deploymentId,
-        ready.binding.installationId,
-        ready.verificationId,
-        ready.applyAttemptId,
-        JSON.stringify(ready.binding),
-        DEPLOYMENT_READINESS_STATE.consumed,
-        DEPLOYMENT_READINESS_STATE.ready,
-    ]);
-    if (!result.ok) return result;
-    if (result.value.rowCount !== null && result.value.rowCount !== 1) {
-        return failure("deployment.blocked", {reason: "ready deployment could not be consumed exactly once"});
-    }
-    return {ok: true, value: true};
+    const consumed = await consumeDeploymentReadiness(runtime.session, runtime.journal, {
+        deploymentId: ready.binding.deploymentId,
+        installationId: ready.binding.installationId,
+        verificationId: ready.verificationId,
+        applyAttemptId: ready.applyAttemptId,
+        binding: ready.binding,
+    });
+    return readinessStorageFailure(consumed, "ready deployment could not be consumed exactly once");
 }
 
 export async function runDeploymentPipeline(
