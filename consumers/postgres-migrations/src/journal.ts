@@ -34,7 +34,21 @@ export type MigrationHistoryInfo = {
     committedAt: string;
 };
 
-export type AttemptState = "running" | "failed" | "unknown" | "succeeded";
+export const ATTEMPT_STATE = {
+    running: "running",
+    failed: "failed",
+    unknown: "unknown",
+    succeeded: "succeeded",
+} as const;
+
+export const ATTEMPT_STATES = [
+    ATTEMPT_STATE.running,
+    ATTEMPT_STATE.failed,
+    ATTEMPT_STATE.unknown,
+    ATTEMPT_STATE.succeeded,
+] as const;
+
+export type AttemptState = typeof ATTEMPT_STATES[number];
 
 export type AttemptInfo = {
     attemptId: string;
@@ -59,7 +73,7 @@ export type AttemptFinishInput = {
     problems: readonly Problem[];
 };
 
-export type PreparationAttemptState = "running" | "failed" | "unknown" | "succeeded";
+export type PreparationAttemptState = AttemptState;
 
 export type PreparationAttemptInfo = {
     attemptId: string;
@@ -110,6 +124,24 @@ type Row = Readonly<Record<string, unknown>>;
 const JOURNAL_FORMAT_VERSION = 1 as const;
 const HASH_RE = /^[0-9a-f]{64}$/;
 const UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+
+const ATTEMPT_STATE_SET = new Set<string>(ATTEMPT_STATES);
+
+function isAttemptState(value: unknown): value is AttemptState {
+    return typeof value === "string" && ATTEMPT_STATE_SET.has(value);
+}
+
+function isFinishedAttemptState(value: unknown): value is Exclude<AttemptState, "running"> {
+    return isAttemptState(value) && value !== ATTEMPT_STATE.running;
+}
+
+function sqlAttemptState(state: AttemptState): string {
+    return "'" + state.replaceAll("'", "''") + "'";
+}
+
+function sqlAttemptStates(states: readonly AttemptState[]): string {
+    return states.map(sqlAttemptState).join(",");
+}
 
 function failure<T>(
     messageKey: string,
@@ -376,7 +408,7 @@ function decodeAttemptRow(value: unknown): ValidationResult<AttemptInfo> {
         || !nonEmptyString(value.deployment_id)
         || !nonEmptyString(value.installation_id)
         || !hashString(value.plan_hash)
-        || !(value.state === "running" || value.state === "failed" || value.state === "unknown" || value.state === "succeeded")) {
+        || !isAttemptState(value.state)) {
         return failure("migration.invalidJournal", {reason: "invalid execution attempt row"});
     }
     const problems = decodeProblems(value.problems);
@@ -396,10 +428,10 @@ function decodeAttemptRow(value: unknown): ValidationResult<AttemptInfo> {
         if (!decoded.ok) return decoded;
         confirmedTarget = decoded.value;
     }
-    if (value.state === "running" && (confirmedTarget !== null || problems.value.length > 0)) {
+    if (value.state === ATTEMPT_STATE.running && (confirmedTarget !== null || problems.value.length > 0)) {
         return failure("migration.invalidJournal", {reason: "running attempt cannot have a result"});
     }
-    if (value.state === "succeeded" && confirmedTarget === null) {
+    if (value.state === ATTEMPT_STATE.succeeded && confirmedTarget === null) {
         return failure("migration.invalidJournal", {reason: "succeeded attempt requires a confirmed target"});
     }
     return {
@@ -481,6 +513,7 @@ export async function bootstrapJournal(
     if (!checked.ok) return checked;
     const schema = quotePgIdentifier(checked.value.schema);
 
+    const attemptStatesSql = sqlAttemptStates(ATTEMPT_STATES);
     const statements = [
         `CREATE SCHEMA IF NOT EXISTS ${schema}`,
         `CREATE TABLE IF NOT EXISTS ${schema}.installation (
@@ -516,7 +549,7 @@ export async function bootstrapJournal(
             deployment_id text NOT NULL,
             installation_id text NOT NULL REFERENCES ${schema}.installation(installation_id),
             plan_hash text NOT NULL,
-            state text NOT NULL CHECK (state IN ('running','failed','unknown','succeeded')),
+            state text NOT NULL CHECK (state IN (${attemptStatesSql})),
             confirmed_target_system_id text NULL,
             confirmed_target_release_id text NULL,
             confirmed_target_release_hash text NULL,
@@ -529,7 +562,7 @@ export async function bootstrapJournal(
             installation_id text NOT NULL REFERENCES ${schema}.installation(installation_id),
             preparation_id text NOT NULL,
             artifact_hash text NOT NULL,
-            state text NOT NULL CHECK (state IN ('running','failed','unknown','succeeded')),
+            state text NOT NULL CHECK (state IN (${attemptStatesSql})),
             before_fingerprint text NOT NULL,
             after_fingerprint text NULL,
             report_hash text NOT NULL,
@@ -835,7 +868,7 @@ export async function startAttempt(
     const text = `INSERT INTO ${schema}.execution_attempt (
         attempt_id, deployment_id, installation_id, plan_hash, state,
         confirmed_target_system_id, confirmed_target_release_id, confirmed_target_release_hash, problems
-    ) VALUES ($1,$2,$3,$4,'running',NULL,NULL,NULL,'[]'::jsonb)
+    ) VALUES ($1,$2,$3,$4,${sqlAttemptState(ATTEMPT_STATE.running)},NULL,NULL,NULL,'[]'::jsonb)
     RETURNING ${attemptSelect("execution_attempt")}`;
     const result = await safeQuery(session, text, [input.attemptId, input.deploymentId, input.installationId, input.planHash]);
     if (!result.ok) return result;
@@ -856,7 +889,7 @@ export async function finishAttempt(
     if (!nonEmptyString(attemptId)
         || !isPlainObject(resultInput)
         || !hasExactKeys(resultInput, ["state", "confirmedTarget", "problems"])
-        || !(resultInput.state === "failed" || resultInput.state === "unknown" || resultInput.state === "succeeded")) {
+        || !isFinishedAttemptState(resultInput.state)) {
         return failure("migration.invalidJournal", {reason: "invalid attempt finish input"});
     }
     const problems = decodeProblems(resultInput.problems);
@@ -867,7 +900,7 @@ export async function finishAttempt(
         if (!target.ok) return target;
         confirmedTarget = target.value;
     }
-    if (resultInput.state === "succeeded" && confirmedTarget === null) {
+    if (resultInput.state === ATTEMPT_STATE.succeeded && confirmedTarget === null) {
         return failure("migration.invalidJournal", {reason: "succeeded attempt requires a confirmed target"});
     }
     const schema = quotePgIdentifier(checked.value.schema);
@@ -878,7 +911,7 @@ export async function finishAttempt(
             confirmed_target_release_hash = $5,
             problems = $6::jsonb,
             finished_at = clock_timestamp()
-        WHERE attempt_id = $1 AND state = 'running'
+        WHERE attempt_id = $1 AND state = ${sqlAttemptState(ATTEMPT_STATE.running)}
         RETURNING ${attemptSelect("execution_attempt")}`;
     const values: readonly SqlParameter[] = [
         attemptId,
@@ -925,7 +958,7 @@ function decodePreparationAttemptRow(value: unknown): ValidationResult<Preparati
         || !nonEmptyString(value.installation_id)
         || !nonEmptyString(value.preparation_id)
         || !validPreparationHash(value.artifact_hash)
-        || !(value.state === "running" || value.state === "failed" || value.state === "unknown" || value.state === "succeeded")
+        || !isAttemptState(value.state)
         || !validPreparationHash(value.before_fingerprint)
         || !(value.after_fingerprint === null || validPreparationHash(value.after_fingerprint))
         || !validPreparationHash(value.report_hash)) {
@@ -1010,7 +1043,7 @@ export async function startPreparationAttempt(
     const result = await safeQuery(session, `INSERT INTO ${table} (
         attempt_id, installation_id, preparation_id, artifact_hash, state,
         before_fingerprint, after_fingerprint, report_hash, problems
-    ) VALUES ($1,$2,$3,$4,'running',$5,NULL,$6,'[]'::jsonb)
+    ) VALUES ($1,$2,$3,$4,${sqlAttemptState(ATTEMPT_STATE.running)},$5,NULL,$6,'[]'::jsonb)
     RETURNING ${preparationAttemptSelect("preparation_attempts")}`, [
         input.attemptId,
         input.installationId,
@@ -1034,7 +1067,7 @@ export async function finishPreparationAttempt(
     if (!checked.ok) return checked;
     if (!nonEmptyString(attemptId)
         || !isPlainObject(input)
-        || !(input.state === "failed" || input.state === "unknown" || input.state === "succeeded")
+        || !isFinishedAttemptState(input.state)
         || !(input.afterFingerprint === null || validPreparationHash(input.afterFingerprint))
         || !Array.isArray(input.problems)) {
         return failure("migration.invalidJournal", {reason: "invalid preparation attempt finish input"});
@@ -1042,7 +1075,7 @@ export async function finishPreparationAttempt(
     const table = `${quotePgIdentifier(checked.value.schema)}.preparation_attempts`;
     const result = await safeQuery(session, `UPDATE ${table}
         SET state=$2, after_fingerprint=$3, problems=$4::jsonb, finished_at=clock_timestamp()
-        WHERE attempt_id=$1 AND state IN ('running','unknown')
+        WHERE attempt_id=$1 AND state IN (${sqlAttemptStates([ATTEMPT_STATE.running, ATTEMPT_STATE.unknown])})
         RETURNING ${preparationAttemptSelect("preparation_attempts")}`, [
         attemptId,
         input.state,
