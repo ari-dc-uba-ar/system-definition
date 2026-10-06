@@ -24,6 +24,7 @@ import {
     sqlAttemptState,
     validateConfig,
     validateRelease,
+    sameRelease,
     type Row,
 } from "./journal-internal";
 
@@ -98,6 +99,100 @@ function attemptSelect(alias = "a"): string {
         `${alias}.confirmed_target_release_hash`,
         `${alias}.problems`,
     ].join(", ");
+}
+
+export async function readAttempt(
+    session: PgSession,
+    config: JournalConfig,
+    attemptId: string,
+): Promise<ValidationResult<AttemptInfo>> {
+    const checked = validateConfig(config);
+    if (!checked.ok) return checked;
+    if (!isPgNonEmptyText(attemptId)) {
+        return failure("migration.invalidJournal", {reason: "invalid attempt id"});
+    }
+    const schema = quotePgIdentifier(checked.value.schema);
+    const result = await safeQuery(
+        session,
+        `SELECT ${attemptSelect("a")} FROM ${schema}.execution_attempt a WHERE a.attempt_id = $1`,
+        [attemptId],
+    );
+    if (!result.ok) return result;
+    if (result.value.rows.length !== 1) {
+        return failure("migration.invalidJournal", {reason: "execution attempt is missing or not unique"});
+    }
+    const decoded = decodeAttemptRow(result.value.rows[0]);
+    if (!decoded.ok) return decoded;
+    if (decoded.value.attemptId !== attemptId) {
+        return failure("migration.invalidJournal", {reason: "execution attempt id mismatch"});
+    }
+    return decoded;
+}
+
+export async function settleAttempt(
+    session: PgSession,
+    config: JournalConfig,
+    attemptId: string,
+    resultInput: AttemptFinishInput,
+): Promise<ValidationResult<AttemptInfo>> {
+    const checked = validateConfig(config);
+    if (!checked.ok) return checked;
+    if (!isPgNonEmptyText(attemptId) || !isPlainObject(resultInput)) {
+        return failure("migration.invalidJournal", {reason: "invalid attempt settlement input"});
+    }
+    const inputShape = journalShape(resultInput, ["state", "confirmedTarget", "problems"], "invalid attempt settlement input");
+    if (!inputShape.ok) return inputShape;
+    if (!isFinishedAttemptState(resultInput.state)) {
+        return failure("migration.invalidJournal", {reason: "invalid attempt settlement input"});
+    }
+    const problems = decodeProblems(resultInput.problems);
+    if (!problems.ok) return problems;
+    let confirmedTarget: ReleaseRefInfo | null = null;
+    if (resultInput.confirmedTarget !== null) {
+        const target = validateRelease(resultInput.confirmedTarget);
+        if (!target.ok) return target;
+        confirmedTarget = target.value;
+    }
+    if (resultInput.state === ATTEMPT_STATE.succeeded && confirmedTarget === null) {
+        return failure("migration.invalidJournal", {reason: "succeeded attempt requires a confirmed target"});
+    }
+
+    const schema = quotePgIdentifier(checked.value.schema);
+    const result = await safeQuery(session, `UPDATE ${schema}.execution_attempt
+        SET state = $2,
+            confirmed_target_system_id = $3,
+            confirmed_target_release_id = $4,
+            confirmed_target_release_hash = $5,
+            problems = $6::jsonb,
+            finished_at = clock_timestamp()
+        WHERE attempt_id = $1
+          AND state IN (${sqlAttemptState(ATTEMPT_STATE.running)},${sqlAttemptState(ATTEMPT_STATE.unknown)})
+        RETURNING ${attemptSelect("execution_attempt")}`, [
+        attemptId,
+        resultInput.state,
+        confirmedTarget?.systemId ?? null,
+        confirmedTarget?.releaseId ?? null,
+        confirmedTarget?.releaseHash ?? null,
+        JSON.stringify(problems.value),
+    ]);
+    if (!result.ok) return result;
+    if (result.value.rows.length === 1) return decodeAttemptRow(result.value.rows[0]);
+    if (result.value.rows.length > 1) {
+        return failure("migration.invalidJournal", {reason: "attempt settlement affected more than one row"});
+    }
+
+    const current = await readAttempt(session, checked.value, attemptId);
+    if (!current.ok) return current;
+    if (current.value.state !== resultInput.state) {
+        return failure("migration.invalidJournal", {reason: "attempt terminal state disagrees with durable migration outcome"});
+    }
+    if (resultInput.state === ATTEMPT_STATE.succeeded
+        && (current.value.confirmedTarget === null
+            || confirmedTarget === null
+            || !sameRelease(current.value.confirmedTarget, confirmedTarget))) {
+        return failure("migration.invalidJournal", {reason: "attempt terminal target disagrees with durable migration outcome"});
+    }
+    return current;
 }
 
 export async function startAttempt(

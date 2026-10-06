@@ -1,7 +1,7 @@
 export * from "./journal-contracts";
 
 export {bootstrapJournal} from "./journal-schema";
-export {finishAttempt, startAttempt} from "./journal-attempts";
+export {finishAttempt, readAttempt, settleAttempt, startAttempt} from "./journal-attempts";
 export {
     finishPreparationAttempt,
     readConfirmedPreparation,
