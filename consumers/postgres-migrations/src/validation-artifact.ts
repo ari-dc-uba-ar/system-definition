@@ -1,6 +1,10 @@
 import {createHash} from "node:crypto";
 import {
     canonicalJson,
+    decodeFileInfo,
+    exactKeys,
+    isPlainObject,
+    isSha256,
     problem,
     toJsonValue,
     type FileInfo,
@@ -44,7 +48,6 @@ export type ValidationArtifactHost = {
 
 type JsonObject = Readonly<Record<string, JsonValue>>;
 
-const HASH_RE = /^[0-9a-f]{64}$/;
 const encoder = new TextEncoder();
 
 function invalid<T>(reason: string, details: Readonly<Record<string, string>> = {}): ValidationResult<T> {
@@ -55,43 +58,21 @@ function invalid<T>(reason: string, details: Readonly<Record<string, string>> = 
 }
 
 function isObject(value: JsonValue): value is JsonObject {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
+    return isPlainObject(value);
 }
 
-function hasExactKeys(value: JsonObject, expected: readonly string[]): boolean {
-    const actual = Object.keys(value).sort();
-    const wanted = [...expected].sort();
-    return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
-}
-
-function isHash(value: JsonValue): value is string {
-    return typeof value === "string" && HASH_RE.test(value);
-}
-
-function decodeFileInfo(value: JsonValue): ValidationResult<FileInfo> {
-    if (!isObject(value) || !hasExactKeys(value, ["path", "contentHash", "byteLength"])) {
-        return invalid("invalid entry shape");
-    }
-    if (typeof value.path !== "string" || value.path.length === 0) return invalid("invalid entry path");
-    if (!isHash(value.contentHash)) return invalid("invalid entry content hash");
-    if (typeof value.byteLength !== "number" || !Number.isSafeInteger(value.byteLength) || value.byteLength < 0) {
-        return invalid("invalid entry byte length");
-    }
-    return {
-        ok: true,
-        value: {
-            path: value.path,
-            contentHash: value.contentHash,
-            byteLength: value.byteLength,
-        },
-    };
+function invalidEntry(path: string, _reason: string): ValidationResult<never> {
+    if (path.endsWith('["path"]')) return invalid("invalid entry path");
+    if (path.endsWith('["contentHash"]')) return invalid("invalid entry content hash");
+    if (path.endsWith('["byteLength"]')) return invalid("invalid entry byte length");
+    return invalid("invalid entry shape");
 }
 
 function decodeHashMap(value: JsonValue, label: string): ValidationResult<Readonly<Record<string, string>>> {
     if (!isObject(value)) return invalid(`invalid ${label} shape`);
     const decoded: Record<string, string> = Object.create(null) as Record<string, string>;
     for (const [name, rawHash] of Object.entries(value)) {
-        if (name.length === 0 || !isHash(rawHash)) return invalid(`invalid ${label} entry`, {name});
+        if (name.length === 0 || !isSha256(rawHash)) return invalid(`invalid ${label} entry`, {name});
         decoded[name] = rawHash;
     }
     return {ok: true, value: decoded};
@@ -118,7 +99,8 @@ export function decodeValidationArtifact(value: unknown): ValidationResult<Valid
     const copied = toJsonValue(value);
     if (!copied.ok) return {ok: false, problems: copied.problems};
     const raw = copied.value;
-    if (!isObject(raw) || !hasExactKeys(raw, [
+    if (!isObject(raw)) return invalid("invalid artifact shape");
+    const artifactShape = exactKeys(raw, [
         "formatVersion",
         "side",
         "snapshotHash",
@@ -126,19 +108,18 @@ export function decodeValidationArtifact(value: unknown): ValidationResult<Valid
         "runtime",
         "domainContractHashes",
         "entityValidatorNames",
-    ])) {
-        return invalid("invalid artifact shape");
-    }
+    ], "$", () => invalid("invalid artifact shape"));
+    if (!artifactShape.ok) return artifactShape;
     if (raw.formatVersion !== 1) return invalid("unsupported format version");
     if (raw.side !== "from" && raw.side !== "to") return invalid("invalid snapshot side");
-    if (!isHash(raw.snapshotHash)) return invalid("invalid snapshot hash");
+    if (!isSha256(raw.snapshotHash)) return invalid("invalid snapshot hash");
 
-    const entry = decodeFileInfo(raw.entry);
+    const entry = decodeFileInfo(raw.entry, '$["entry"]', invalidEntry);
     if (!entry.ok) return entry;
 
-    if (!isObject(raw.runtime) || !hasExactKeys(raw.runtime, ["nodeVersion", "abi"])) {
-        return invalid("invalid runtime shape");
-    }
+    if (!isObject(raw.runtime)) return invalid("invalid runtime shape");
+    const runtimeShape = exactKeys(raw.runtime, ["nodeVersion", "abi"], '$["runtime"]', () => invalid("invalid runtime shape"));
+    if (!runtimeShape.ok) return runtimeShape;
     if (typeof raw.runtime.nodeVersion !== "string" || raw.runtime.nodeVersion.length === 0) {
         return invalid("invalid node runtime");
     }
