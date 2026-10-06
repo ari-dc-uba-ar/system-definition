@@ -1,4 +1,5 @@
 import {
+    compareUtf16,
     problem,
     type PersistenceInfo,
     type Problem,
@@ -169,10 +170,6 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function utf16Compare(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
-}
-
 function validName(value: string): boolean {
     return value.length > 0 && !value.includes("\0");
 }
@@ -301,7 +298,7 @@ export function projectSchema(
     if (new Set(selected).size !== selected.length) {
         return fail("migration.unsupportedFormat", {reason: "persistence entities must not repeat"});
     }
-    selected.sort(utf16Compare);
+    selected.sort(compareUtf16);
 
     const objects: PgObjectInfo[] = [];
     const tables: PgTableProjection[] = [];
@@ -324,7 +321,7 @@ export function projectSchema(
         });
 
         const columns: PgColumnProjection[] = [];
-        const fieldNames = Object.keys(entity.fields).sort(utf16Compare);
+        const fieldNames = Object.keys(entity.fields).sort(compareUtf16);
         for (const fieldName of fieldNames) {
             const field = entity.fields[fieldName];
             const pgType = physicalTypes.value[field.type];
@@ -377,7 +374,7 @@ export function projectSchema(
         });
 
         const uniqueKeys: PgKeyProjection[] = [];
-        for (const ukName of Object.keys(entity.uks).sort(utf16Compare)) {
+        for (const ukName of Object.keys(entity.uks).sort(compareUtf16)) {
             const columns = entity.uks[ukName];
             const name = constraintName(entityName, ukName + "_key");
             if (!name.ok) return name;
@@ -402,7 +399,7 @@ export function projectSchema(
         }
 
         const foreignKeys: PgForeignKeyProjection[] = [];
-        for (const fkName of Object.keys(entity.fks).sort(utf16Compare)) {
+        for (const fkName of Object.keys(entity.fks).sort(compareUtf16)) {
             const fk = entity.fks[fkName];
             if (snapshot.entities[fk.entity] === undefined) {
                 return fail("migration.invalidReference", {entity: entityName, fk: fkName, target: fk.entity, reason: "unknown FK target"});

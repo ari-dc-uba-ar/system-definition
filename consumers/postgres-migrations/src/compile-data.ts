@@ -1,5 +1,5 @@
 import {createHash} from "node:crypto";
-import {problem, type PersistenceInfo, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
+import {compareUtf16, problem, type PersistenceInfo, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
 import type {
     DataMigrationInfo,
     QueryRefInfo,
@@ -395,10 +395,6 @@ type CompiledParameters = {
     values: readonly (string | null)[];
 };
 
-function utf16Compare(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
-}
-
 function sameDomain(
     left: {side: string; type: string; nullable: boolean},
     right: {side: string; type: string; nullable: boolean},
@@ -444,8 +440,8 @@ function compileParameters(
     context: CompileDataContext,
     parameters: string,
 ): ValidationResult<CompiledParameters> {
-    const parameterNames = Object.keys(context.transformation.parameters).sort(utf16Compare);
-    const argumentNames = Object.keys(migration.arguments).sort(utf16Compare);
+    const parameterNames = Object.keys(context.transformation.parameters).sort(compareUtf16);
+    const argumentNames = Object.keys(migration.arguments).sort(compareUtf16);
 
     if (parameterNames.length === 0 && argumentNames.length === 0) {
         // Parameter-free transformations still receive a one-row logical relation so every
@@ -809,7 +805,7 @@ function preserveDestinationSql(
     preserved: PreservedEntity,
     schema: string,
 ): string {
-    const fields = Object.keys(preserved.contract.entity.fields).sort(utf16Compare);
+    const fields = Object.keys(preserved.contract.entity.fields).sort(compareUtf16);
     const projection = fields.map(field => quotePgIdentifier(field)).join(", ");
     return [
         `CREATE TEMP TABLE ${quotePgIdentifier(preserved.table)} ON COMMIT DROP AS`,
@@ -920,7 +916,7 @@ function preservationVerificationSql(
     schema: string,
     output: string,
 ): string {
-    const fields = Object.keys(preserved.contract.entity.fields).sort(utf16Compare);
+    const fields = Object.keys(preserved.contract.entity.fields).sort(compareUtf16);
     const identityFields = preserved.identityFields;
     const changedChecks = fields.map(field => {
         const allowance = allowedChangedFieldExpression(field, preserved.writes, output);

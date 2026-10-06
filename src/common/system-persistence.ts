@@ -1,4 +1,5 @@
 import {JsonValue, toJsonValue} from "./json-value";
+import {compareUtf16} from "./order";
 import {ValidationResult, problem} from "./problem";
 import {childPath, exactKeys, isPlainObject} from "./decode-structure";
 import {AnyEntityDef} from "./ssot-entity";
@@ -54,10 +55,6 @@ function invalidReference(path: string, reason: string): PersistenceResult<never
 
 function isObject(value: JsonValue): value is JsonObject {
     return isPlainObject(value);
-}
-
-function compareUtf16(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function decodeEntities(

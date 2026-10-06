@@ -1,4 +1,4 @@
-import {problem, type ValidationResult} from "system-definition";
+import {compareUtf16, problem, type ValidationResult} from "system-definition";
 import type {
     PgObjectIdentity,
     PgObjectInfo,
@@ -27,10 +27,6 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function utf16Compare(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
-}
-
 function identityKey(identity: PgObjectIdentity): string {
     return JSON.stringify([
         identity.schema,
@@ -42,7 +38,7 @@ function identityKey(identity: PgObjectIdentity): string {
 }
 
 function compareIdentity(left: PgObjectIdentity, right: PgObjectIdentity): number {
-    return utf16Compare(identityKey(left), identityKey(right));
+    return compareUtf16(identityKey(left), identityKey(right));
 }
 
 function sameIdentity(left: PgObjectIdentity, right: PgObjectIdentity): boolean {
@@ -522,7 +518,7 @@ export async function inspectSchema(
             schema: {
                 formatVersion: 1,
                 engineVersion: "18.6",
-                schemas: [...scope.schemas].sort(utf16Compare),
+                schemas: [...scope.schemas].sort(compareUtf16),
                 objects,
             },
             unknown,
