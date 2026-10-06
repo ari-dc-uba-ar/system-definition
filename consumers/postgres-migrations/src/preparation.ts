@@ -1,8 +1,5 @@
-import {createHash} from "node:crypto";
 import {
-    canonicalJson,
     sameReleaseRef,
-    toJsonValue,
     type FileInfo,
     type ReleaseRefInfo,
     type ValidationResult,
@@ -15,14 +12,12 @@ import {
 import {
     finishPreparationAttempt,
     readConfirmedPreparation,
-    readPreparationHistory,
     recordConfirmedPreparation,
     startPreparationAttempt,
     withMigrationLock,
     type InstallationScope,
     type JournalConfig,
     type PgSessionFactory,
-    type PreparationHistoryInfo,
 } from "./journal";
 import type {PgSession} from "./pg-schema";
 import {
@@ -43,7 +38,7 @@ export {
     type PreparationCurrentStateInfo,
     type PreparationPreflightStateInfo,
 } from "./preparation-preflight";
-
+export * from "./preparation-history";
 
 export type PreparationReceiptInfo = {
     preparationId: string;
@@ -53,15 +48,6 @@ export type PreparationReceiptInfo = {
     inputFingerprint: string;
     status: "passed" | "failed" | "incomplete";
     checks: readonly {id: string; report: FileInfo; passed: boolean}[];
-};
-
-export type PreparationHistoryEntryInfo = {
-    ordinal: number;
-    preparationId: string;
-    artifactHash: string;
-    headReleaseHash: string;
-    beforeFingerprint: string;
-    afterFingerprint: string;
 };
 
 export type PreparationExecutionTarget =
@@ -158,37 +144,6 @@ function incompleteReceipt(artifact: PreparationArtifactInfo): PreparationReceip
         status: "incomplete",
         checks: [],
     };
-}
-
-export function computePreparationHistoryHash(
-    history: readonly PreparationHistoryEntryInfo[],
-): string {
-    const converted = toJsonValue(history);
-    if (!converted.ok) throw new TypeError("preparation history is not strict JSON");
-    return createHash("sha256").update(canonicalJson(converted.value), "utf8").digest("hex");
-}
-
-export function preparationHistoryEntries(
-    history: readonly PreparationHistoryInfo[],
-): readonly PreparationHistoryEntryInfo[] {
-    return history.map(one => ({
-        ordinal: one.ordinal,
-        preparationId: one.preparationId,
-        artifactHash: one.artifactHash,
-        headReleaseHash: one.head.releaseHash,
-        beforeFingerprint: one.beforeFingerprint,
-        afterFingerprint: one.afterFingerprint,
-    }));
-}
-
-export async function readPreparationHistoryHash(
-    session: PgSession,
-    journal: JournalConfig,
-    installationId: string,
-): Promise<ValidationResult<string>> {
-    const history = await readPreparationHistory(session, journal, installationId);
-    if (!history.ok) return history;
-    return {ok: true, value: computePreparationHistoryHash(preparationHistoryEntries(history.value))};
 }
 
 /** Verify a resolution only on an identified copy. It never confirms a preparation in the production journal. */

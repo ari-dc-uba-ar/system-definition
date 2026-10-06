@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const artifact = fs.readFileSync("consumers/postgres-migrations/src/preparation-artifact.ts", "utf8");
 const orchestration = fs.readFileSync("consumers/postgres-migrations/src/preparation.ts", "utf8");
 const preflight = fs.readFileSync("consumers/postgres-migrations/src/preparation-preflight.ts", "utf8");
+const history = fs.readFileSync("consumers/postgres-migrations/src/preparation-history.ts", "utf8");
 const errorOwner = fs.readFileSync("consumers/postgres-migrations/src/preparation-error.ts", "utf8");
 
 assert.match(artifact, /export type PreparationArtifactInfo/);
@@ -17,6 +18,10 @@ assert.match(preflight, /export function checkPreparationPreconditions/);
 assert.match(preflight, /export function checkCurrentPreparationPreconditions/);
 assert.equal(orchestration.includes("function checkPreparationPreconditions("), false);
 assert.equal(orchestration.includes("function checkCurrentPreparationPreconditions("), false);
+assert.match(history, /export function computePreparationHistoryHash/);
+assert.match(history, /export async function readPreparationHistoryHash/);
+assert.equal(orchestration.includes("function computePreparationHistoryHash("), false);
+assert.equal(orchestration.includes("function preparationHistoryEntries("), false);
 assert.match(errorOwner, /migration\.invalidPreparation/);
 assert.equal(artifact.includes("migration.invalidPreparation"), false);
 assert.equal(orchestration.includes("migration.invalidPreparation"), false);
