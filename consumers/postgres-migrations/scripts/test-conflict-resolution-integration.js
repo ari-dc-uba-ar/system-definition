@@ -1,5 +1,3 @@
-const {spawn} = require("node:child_process");
-const {createInterface} = require("node:readline");
 const {createHash} = require("node:crypto");
 const assert = require("node:assert/strict");
 const {canonicalJson} = require("system-definition");
@@ -18,6 +16,7 @@ const {
     recordVerification,
     verifyResolution,
 } = require("../dist/src/index.js");
+const {PsqlSession, parsePgArray} = require("./lib/psql-session.js");
 
 const JOURNAL = {schema: "sd_journal"};
 const SCOPE = {systemId: "t23-conflict", schemas: ["app"]};
@@ -37,51 +36,14 @@ function hashJson(value) {
     return hashText(canonicalJson(value));
 }
 
-function sqlLiteral(value) {
-    if (value === null) return "NULL";
-    if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-    if (typeof value === "number") return String(value);
-    if (value instanceof Uint8Array) return `decode('${Buffer.from(value).toString("hex")}', 'hex')`;
-    if (typeof value !== "string") throw new TypeError(`unsupported PostgreSQL parameter ${typeof value}`);
-    return `'${value.replaceAll("'", "''")}'`;
-}
-
-function bindSql(text, values) {
-    return text.replace(/\$(\d+)/gu, (_whole, raw) => sqlLiteral(values[Number(raw) - 1]));
-}
-
-function parseCsvLine(line) {
-    const out = [];
-    let value = "";
-    let quoted = false;
-    for (let i = 0; i < line.length; i += 1) {
-        const char = line[i];
-        if (quoted) {
-            if (char === '"' && line[i + 1] === '"') { value += '"'; i += 1; }
-            else if (char === '"') quoted = false;
-            else value += char;
-        } else if (char === '"') quoted = true;
-        else if (char === ",") { out.push(value); value = ""; }
-        else value += char;
-    }
-    out.push(value);
-    return out;
-}
-
 const ARRAY_COLUMNS = new Set(["schemas", "signature", "type_modifiers", "columns"]);
 const JSON_COLUMNS = new Set(["binding", "checks", "problems", "pairs", "options"]);
-const BOOLEAN_COLUMNS = new Set(["nullable", "deferrable", "initially_deferred", "validated", "enforced", "valid", "ready", "ok", "locked", "unlocked"]);
+const BOOLEAN_COLUMNS = new Set([
+    "nullable", "deferrable", "initially_deferred", "validated", "enforced", "valid", "ready", "ok", "locked", "unlocked",
+]);
 const NUMBER_COLUMNS = new Set(["ordinal", "array_dimensions", "journal_format_version"]);
 
-function parsePgArray(value) {
-    if (value === "{}") return [];
-    if (!value.startsWith("{") || !value.endsWith("}")) return value;
-    const body = value.slice(1, -1);
-    return body === "" ? [] : parseCsvLine(body).map(one => one === "NULL" ? null : one);
-}
-
 function typedValue(column, value) {
-    if (value === "__SD_NULL__") return null;
     if (ARRAY_COLUMNS.has(column)) return parsePgArray(value);
     if (JSON_COLUMNS.has(column)) return JSON.parse(value);
     if (BOOLEAN_COLUMNS.has(column) && (value === "t" || value === "f")) return value === "t";
@@ -89,93 +51,28 @@ function typedValue(column, value) {
     return value;
 }
 
-function isCommandStatus(line) {
-    return /^(?:BEGIN|COMMIT|ROLLBACK|SET|CREATE|ALTER|DROP|UPDATE \d+|DELETE \d+|INSERT \d+ \d+)$/u.test(line.trim());
-}
+function createSession({ambiguousCommit = false} = {}) {
+    const session = new PsqlSession({decodeValue: typedValue});
+    if (!ambiguousCommit) return session;
 
-function rowsFromCsv(lines) {
-    const data = lines.filter(line => line.trim() !== "" && !isCommandStatus(line));
-    if (data.length < 2) return [];
-    const header = parseCsvLine(data[0]);
-    return data.slice(1).map(line => {
-        const values = parseCsvLine(line);
-        const row = Object.create(null);
-        for (let i = 0; i < header.length; i += 1) row[header[i]] = typedValue(header[i], values[i]);
-        return row;
-    });
-}
-
-class PsqlSession {
-    constructor({ambiguousCommit = false} = {}) {
-        this.sequence = 0;
-        this.pending = null;
-        this.stderr = "";
-        this.ambiguousCommit = ambiguousCommit;
-        this.ambiguousDelivered = false;
-        this.child = spawn("psql", ["--no-psqlrc", "--quiet"], {env: process.env, stdio: ["pipe", "pipe", "pipe"]});
-        this.child.stderr.setEncoding("utf8");
-        this.child.stderr.on("data", chunk => { this.stderr += chunk; });
-        this.child.on("error", error => this.rejectPending(error));
-        this.child.on("exit", code => { if (code !== 0) this.rejectPending(new Error((this.stderr || `psql exited ${code}`).trim())); });
-        createInterface({input: this.child.stdout}).on("line", line => this.onLine(line));
-        this.child.stdin.write("\\pset format csv\n\\pset footer off\n\\pset null __SD_NULL__\n");
-    }
-
-    rejectPending(error) { if (this.pending !== null) { const p = this.pending; this.pending = null; p.reject(error); } }
-    onLine(line) {
-        const p = this.pending;
-        if (p === null) return;
-        if (line === p.start) { p.started = true; return; }
-        if (!p.started) return;
-        if (line.startsWith(p.sqlStatePrefix)) { p.sqlState = line.slice(p.sqlStatePrefix.length).trim(); return; }
-        if (line.startsWith(p.rowCountPrefix)) { const raw = line.slice(p.rowCountPrefix.length).trim(); p.rowCount = /^\d+$/u.test(raw) ? Number(raw) : null; return; }
-        if (line === p.end) {
-            this.pending = null;
-            if (p.sqlState !== "00000") {
-                const stderr = this.stderr.trim();
-                p.reject(new Error(stderr || `PostgreSQL query failed with SQLSTATE ${p.sqlState ?? "unknown"}`));
-                return;
+    let ambiguousDelivered = false;
+    return {
+        async query(text, values) {
+            const result = await session.query(text, values);
+            if (!ambiguousDelivered && text.trim().toUpperCase() === "COMMIT") {
+                ambiguousDelivered = true;
+                throw new Error("simulated ambiguous commit after server COMMIT");
             }
-            try { p.resolve({rows: rowsFromCsv(p.lines), rowCount: p.rowCount}); } catch (error) { p.reject(error); }
-            return;
-        }
-        p.lines.push(line);
-    }
-
-    async rawQuery(text, values) {
-        if (this.pending !== null) throw new Error("psql integration session does not support concurrent queries");
-        const id = ++this.sequence;
-        const start = `__SD_START_${id}__`;
-        const end = `__SD_END_${id}__`;
-        const sqlStatePrefix = `__SD_SQLSTATE_${id}__ `;
-        const rowCountPrefix = `__SD_ROWCOUNT_${id}__ `;
-        const sql = bindSql(text.trim().replace(/;+\s*$/u, ""), values);
-        this.stderr = "";
-        return new Promise((resolve, reject) => {
-            this.pending = {start, end, sqlStatePrefix, rowCountPrefix, started: false, lines: [], sqlState: null, rowCount: null, resolve, reject};
-            this.child.stdin.write(`\\echo ${start}\n${sql};\n\\echo ${sqlStatePrefix}:SQLSTATE\n\\echo ${rowCountPrefix}:ROW_COUNT\n\\echo ${end}\n`);
-        });
-    }
-
-    async query(text, values) {
-        const result = await this.rawQuery(text, values);
-        if (this.ambiguousCommit && !this.ambiguousDelivered && text.trim().toUpperCase() === "COMMIT") {
-            this.ambiguousDelivered = true;
-            throw new Error("simulated ambiguous commit after server COMMIT");
-        }
-        return result;
-    }
-
-    async close() {
-        if (this.child.exitCode === null) {
-            this.child.stdin.end("\\q\n");
-            await new Promise(resolve => this.child.once("exit", resolve));
-        }
-    }
+            return result;
+        },
+        close() {
+            return session.close();
+        },
+    };
 }
 
 function sessionFactory(options = {}) {
-    return {async openTarget() { return new PsqlSession(options); }};
+    return {async openTarget() { return createSession(options); }};
 }
 
 function file(path, text) {
@@ -310,7 +207,7 @@ async function assertHeadAndHistoryUnchanged(session) {
 }
 
 async function successfulPreparationAndEvidenceInvalidation() {
-    const setup = new PsqlSession();
+    const setup = createSession();
     await resetDatabase(setup);
     const beforeFingerprint = await fingerprint(setup);
     const migrationHistoryHash = await historyHash(setup);
@@ -329,14 +226,14 @@ async function successfulPreparationAndEvidenceInvalidation() {
     assert.equal(receipt.ok, true, JSON.stringify(receipt));
 
     // Recreate the failed-state drift after copy verification; verify-resolution never authorizes production writes.
-    const restore = new PsqlSession();
+    const restore = createSession();
     await restore.query('ALTER TABLE "app"."prep_items" ADD COLUMN "legacy" text NULL', []);
     await restore.close();
 
     const applied = await applyResolution(artifact, receipt.value, runtime);
     assert.equal(applied.ok, true, JSON.stringify(applied));
 
-    const inspect = new PsqlSession();
+    const inspect = createSession();
     const columns = await inspect.query("SELECT column_name FROM information_schema.columns WHERE table_schema='app' AND table_name='prep_items' ORDER BY ordinal_position", []);
     assert.equal(columns.rows.some(row => row.column_name === "legacy"), false, "drift restore removes the explicit extra column");
     await assertHeadAndHistoryUnchanged(inspect);
@@ -358,7 +255,7 @@ async function successfulPreparationAndEvidenceInvalidation() {
 }
 
 async function rollbackAndFingerprintAndIncompleteReceipt() {
-    const session = new PsqlSession();
+    const session = createSession();
     await resetDatabase(session);
     const fp = await fingerprint(session);
     const h = await historyHash(session);
@@ -369,13 +266,13 @@ async function rollbackAndFingerprintAndIncompleteReceipt() {
     await session.close();
     const failed = await applyResolution(artifact, passedReceipt(artifact), runtimeFor(resourcesText));
     assert.equal(failed.ok, false, "failed after-check must rollback preparation");
-    const inspect = new PsqlSession();
+    const inspect = createSession();
     const row = await inspect.query('SELECT value FROM "app"."prep_items" WHERE id=1', []);
     assert.equal(row.rows[0].value, "one", "rollback preserves data");
     await assertHeadAndHistoryUnchanged(inspect);
     await inspect.close();
 
-    const driftSetup = new PsqlSession();
+    const driftSetup = createSession();
     const currentFp = await fingerprint(driftSetup);
     const currentH = await historyHash(driftSetup);
     const drift = makeArtifact(currentFp, {id: "prep-fingerprint-changed", historyHash: currentH, resourceTexts: {prep_step: updateSql, prep_before: CHECK_TRUE, prep_after: CHECK_TRUE}});
@@ -390,7 +287,7 @@ async function rollbackAndFingerprintAndIncompleteReceipt() {
 }
 
 async function ambiguousCommitIsReconciledAndIdempotent() {
-    const setup = new PsqlSession();
+    const setup = createSession();
     await resetDatabase(setup);
     const fp = await fingerprint(setup);
     const h = await historyHash(setup);
@@ -403,7 +300,7 @@ async function ambiguousCommitIsReconciledAndIdempotent() {
     const duplicate = await applyResolution(made.artifact, passedReceipt(made.artifact), runtimeFor(made.resourcesText));
     assert.equal(duplicate.ok, true, "duplicate preparation is an idempotent verified no-op");
 
-    const inspect = new PsqlSession();
+    const inspect = createSession();
     const row = await inspect.query('SELECT counter FROM "app"."prep_items" WHERE id=1', []);
     assert.equal(Number(row.rows[0].counter), 1, "ambiguous commit reconciliation must not duplicate transformations");
     const attempts = await inspect.query('SELECT state FROM "sd_journal".preparation_attempts ORDER BY started_at', []);
@@ -415,7 +312,7 @@ async function ambiguousCommitIsReconciledAndIdempotent() {
 }
 
 async function irreparablePublishedSqlRemainsBlocked() {
-    const setup = new PsqlSession();
+    const setup = createSession();
     await resetDatabase(setup);
     const badText = 'UPDATE "app"."prep_items" SET "published_missing" = 1 WHERE id=1';
     const badRef = ref("published-bad", "sql", badText);
@@ -429,7 +326,7 @@ async function irreparablePublishedSqlRemainsBlocked() {
 }
 
 async function main() {
-    const version = new PsqlSession();
+    const version = createSession();
     const server = await version.query("SHOW server_version_num", []);
     assert.equal(String(server.rows[0].server_version_num), "180006", "PostgreSQL 18.6 / 180006 required");
     await version.close();

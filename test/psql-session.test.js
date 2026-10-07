@@ -46,5 +46,15 @@ assert.match(authoringSource, /require\("\.\/lib\/psql-session\.js"\)/);
 assert.doesNotMatch(authoringSource, /class PsqlSession/);
 assert.doesNotMatch(authoringSource, /require\("node:child_process"\)/);
 assert.match(authoringSource, /new PsqlSession\(\{decodeValue: typedValue\}\)/);
+assert.equal(authoringSource.includes('"locked"'), false, "authoring coercion must not inherit conflict-only columns");
+
+const conflictSource = fs.readFileSync("consumers/postgres-migrations/scripts/test-conflict-resolution-integration.js", "utf8");
+assert.match(conflictSource, /require\("\.\/lib\/psql-session\.js"\)/);
+assert.doesNotMatch(conflictSource, /class PsqlSession/);
+assert.doesNotMatch(conflictSource, /require\("node:child_process"\)/);
+assert.match(conflictSource, /new PsqlSession\(\{decodeValue: typedValue\}\)/);
+assert.match(conflictSource, /"locked", "unlocked"/);
+assert.match(conflictSource, /simulated ambiguous commit after server COMMIT/);
+assert.equal(librarySource.includes("simulated ambiguous commit"), false, "scenario failure injection stays outside transport");
 
 console.log("shared psql session transport tests passed");
