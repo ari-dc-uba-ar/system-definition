@@ -1,6 +1,14 @@
 import * as assert from "node:assert/strict";
 import {existsSync, readFileSync} from "node:fs";
 import {resolve} from "node:path";
+import {
+    authoringEmailDataMigration,
+    authoringEmailDecisions,
+    authoringEmailSnapshotA,
+    authoringEmailSnapshotB,
+    authoringEmailSource,
+    compileAuthoringEmailExample,
+} from "../fixtures/authoring-email";
 
 const consumerRoot = resolve(__dirname, "../..");
 const repositoryRoot = resolve(consumerRoot, "../..");
@@ -35,14 +43,22 @@ describe("T22 final CLI/CI and PostgreSQL authoring integration contract", () =>
         assert.doesNotMatch(script, /expectedSchema\s*:\s*observed/i, "the harness must not fake the SSOT oracle");
     });
 
-    it("uses the section-11 fixture with email transfer and explicit legacy-note discard", () => {
-        const path = resolve(consumerRoot, "fixtures/authoring-email/index.ts");
-        assert.ok(existsSync(path), "T22 requires the section-11 authoring fixture");
-        const fixture = readFileSync(path, "utf8");
-        assert.match(fixture, /email_anterior/);
-        assert.match(fixture, /nota_legacy/);
-        assert.match(fixture, /\bemail\b/);
-        assert.match(fixture, /discard/);
+    it("runs the section-11 fixture through the real SSOT and authoring contracts", async () => {
+        assert.ok(authoringEmailSnapshotA.entities.alumnos?.fields.email_anterior);
+        assert.ok(authoringEmailSnapshotA.entities.alumnos?.fields.nota_legacy);
+        assert.ok(authoringEmailSnapshotB.entities.alumnos?.fields.email);
+        assert.equal(authoringEmailSnapshotB.entities.alumnos?.fields.email_anterior, undefined);
+        assert.match(authoringEmailSource.sql, /email_anterior/);
+        assert.equal(authoringEmailDataMigration.transformation, "move-email");
+        assert.ok(authoringEmailDecisions.some(decision => decision.resolution.kind === "migrate"));
+        assert.ok(authoringEmailDecisions.some(decision => decision.resolution.kind === "discard"));
+
+        const compiled = await compileAuthoringEmailExample();
+        assert.equal(compiled.ok, true, compiled.ok ? undefined : JSON.stringify(compiled.problems));
+        if (!compiled.ok) return;
+        assert.equal(compiled.value.migration.from.releaseId, "A");
+        assert.equal(compiled.value.migration.to.releaseId, "B");
+        assert.ok(compiled.value.operations.some(operation => operation.dataMigrationIds.includes("move-email")));
     });
 
     it("executes generated-only, manual and mixed paths plus a blocking rollback case", () => {

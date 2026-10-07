@@ -439,6 +439,8 @@ Forma de salida JSON estable: `{ok, command, draftPath, revisionHash, validation
 
 ## 11. Ejemplo completo: conservar email y retirar origen
 
+La versión ejecutable y comentada de este ejemplo vive en `consumers/postgres-migrations/fixtures/authoring-email/index.ts`. No replica JSON a mano: define ambos SSOT, captura snapshots, proyecta PostgreSQL, infiere cambios, construye la selección de origen, completa transformación/data migration, valida las decisiones destructivas y ejecuta `compileDraft` con un runtime en memoria. El test de integración de autoría importa ese fixture y exige que compile correctamente.
+
 Fixture histórico nuevo, separado de aida-email existente: A.alumnos tiene alumno PK, nombres obligatorio, email_anterior nullable y nota_legacy nullable. B mantiene alumno/nombres y tiene email nullable; elimina email_anterior y nota_legacy. El autor identifica email_anterior→email como transferencia (si lo declara rename, probar ese camino por separado) y acepta descarte de nota_legacy.
 
 Source query devuelve ports alumno y email_anterior, identity=[alumno]. SQL de transformación mode=row:
