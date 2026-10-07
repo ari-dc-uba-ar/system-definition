@@ -20,16 +20,20 @@ export function sameReleaseRef(left: ReleaseRefInfo, right: ReleaseRefInfo): boo
         && left.releaseHash === right.releaseHash;
 }
 
-export type ResourceInfo = {
-    kind: "sql" | "check";
+export type FileResourceInfo<TKind extends string> = {
+    kind: TKind;
     file: FileInfo;
 };
 
-export type ResourceRefInfo = {
+export type ContentRefInfo<TKind extends string> = {
     name: string;
-    kind: "sql" | "check";
+    kind: TKind;
     contentHash: string;
 };
+
+export type ResourceInfo = FileResourceInfo<"sql" | "check">;
+
+export type ResourceRefInfo = ContentRefInfo<"sql" | "check">;
 
 export type MigrationContext = {
     releases: Readonly<Record<string, ReleaseRefInfo>>;
@@ -231,6 +235,23 @@ export function decodeFileInfo(
     };
 }
 
+export function decodeFileResourceInfo<const TKind extends string>(
+    value: unknown,
+    path: string,
+    expectedKind: TKind,
+    invalid: StructuralFailure,
+): ValidationResult<FileResourceInfo<TKind>> {
+    if (!isPlainObject(value)) return invalid(path, "expected a file resource");
+    const shape = exactKeys(value, ["kind", "file"], path, invalid);
+    if (!shape.ok) return shape;
+    if (value.kind !== expectedKind) {
+        return invalid(childPath(path, "kind"), `expected ${expectedKind}`);
+    }
+    const file = decodeFileInfo(value.file, childPath(path, "file"), invalid);
+    if (!file.ok) return file;
+    return {ok: true, value: {kind: expectedKind, file: file.value}};
+}
+
 export function decodeReleaseRefInfo(
     value: unknown,
     path: string,
@@ -246,6 +267,30 @@ export function decodeReleaseRefInfo(
     const releaseHash = sha256String(value.releaseHash, childPath(path, "releaseHash"), "releaseHash", invalid);
     if (!releaseHash.ok) return releaseHash;
     return {ok: true, value: {systemId: systemId.value, releaseId: releaseId.value, releaseHash: releaseHash.value}};
+}
+
+export function decodeContentRefInfo<const TKind extends string>(
+    value: unknown,
+    path: string,
+    expectedKind: TKind,
+    invalid: StructuralFailure,
+): ValidationResult<ContentRefInfo<TKind>> {
+    if (!isPlainObject(value)) return invalid(path, "expected a content reference");
+    const shape = exactKeys(value, ["name", "kind", "contentHash"], path, invalid);
+    if (!shape.ok) return shape;
+    const name = nonEmptyString(value.name, childPath(path, "name"), "content reference name", invalid);
+    if (!name.ok) return name;
+    if (value.kind !== expectedKind) {
+        return invalid(childPath(path, "kind"), `expected ${expectedKind}`);
+    }
+    const contentHash = sha256String(
+        value.contentHash,
+        childPath(path, "contentHash"),
+        "content reference contentHash",
+        invalid,
+    );
+    if (!contentHash.ok) return contentHash;
+    return {ok: true, value: {name: name.value, kind: expectedKind, contentHash: contentHash.value}};
 }
 
 export function decodeResourceRefInfo(

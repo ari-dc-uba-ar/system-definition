@@ -1,9 +1,9 @@
 import {
-    decodeFileInfo as decodePackageFileInfo,
+    decodeContentRefInfo as decodePackageContentRefInfo,
+    decodeFileResourceInfo as decodePackageFileResourceInfo,
     decodeReleaseRefInfo as decodePackageReleaseRefInfo,
     decodeResourceRefInfo as decodePackageResourceRefInfo,
     toJsonValue,
-    type FileInfo,
     type JsonValue,
     type ReleaseRefInfo,
     type ResourceInfo,
@@ -109,14 +109,6 @@ function decodeRelease(value: JsonValue): ValidationResult<ReleaseRefInfo> {
     );
 }
 
-function decodeFileInfo(value: JsonValue, label: string): ValidationResult<FileInfo> {
-    return decodePackageFileInfo(
-        value,
-        "preparation." + label,
-        () => fail<never>(`invalid ${label} file`),
-    );
-}
-
 function decodeResourceRef(
     value: JsonValue,
     expectedKind?: ResourceRefInfo["kind"],
@@ -134,14 +126,12 @@ function decodeResourceRef(
 }
 
 function decodeQueryRef(value: JsonValue): ValidationResult<QueryRefInfo> {
-    if (!isObject(value)
-        || !exactKeys(value, ["name", "kind", "contentHash"])
-        || !nonEmpty(value.name)
-        || value.kind !== "query"
-        || !hash(value.contentHash)) {
-        return fail("invalid query reference");
-    }
-    return {ok: true, value: {name: value.name, kind: "query", contentHash: value.contentHash}};
+    return decodePackageContentRefInfo(
+        value,
+        "preparation.query",
+        "query",
+        () => fail<never>("invalid query reference"),
+    );
 }
 
 function decodeFieldRef(value: JsonValue): ValidationResult<FieldRefInfo | null> {
@@ -222,15 +212,17 @@ function decodeResources(value: JsonValue): ValidationResult<Readonly<Record<str
     if (!isObject(value)) return fail("invalid resources map");
     const resources: Record<string, ResourceInfo> = {};
     for (const [name, rawResource] of Object.entries(value)) {
-        if (name.length === 0
-            || !isObject(rawResource)
-            || !exactKeys(rawResource, ["kind", "file"])
-            || !(rawResource.kind === "sql" || rawResource.kind === "check")) {
+        if (name.length === 0 || !isObject(rawResource) || !(rawResource.kind === "sql" || rawResource.kind === "check")) {
             return fail("invalid resource entry", {name});
         }
-        const file = decodeFileInfo(rawResource.file, "resource");
-        if (!file.ok) return file;
-        resources[name] = {kind: rawResource.kind, file: file.value};
+        const decoded = decodePackageFileResourceInfo(
+            rawResource,
+            `preparation.resources[${JSON.stringify(name)}]`,
+            rawResource.kind,
+            (path, reason) => fail("invalid resource entry", {name, path, reason}),
+        );
+        if (!decoded.ok) return decoded;
+        resources[name] = decoded.value;
     }
     return {ok: true, value: resources};
 }
@@ -239,19 +231,18 @@ function decodeQueryResources(value: JsonValue): ValidationResult<Readonly<Recor
     if (!isObject(value)) return fail("invalid query resources map");
     const queries: Record<string, QueryResourceInfo> = {};
     for (const [name, rawQuery] of Object.entries(value)) {
-        if (name.length === 0
-            || !isObject(rawQuery)
-            || !exactKeys(rawQuery, ["kind", "file"])
-            || rawQuery.kind !== "query") {
-            return fail("invalid query resource entry", {name});
-        }
-        const file = decodeFileInfo(rawQuery.file, "query resource");
-        if (!file.ok) return file;
-        queries[name] = {kind: "query", file: file.value};
+        if (name.length === 0) return fail("invalid query resource entry", {name});
+        const decoded = decodePackageFileResourceInfo(
+            rawQuery,
+            `preparation.queryResources[${JSON.stringify(name)}]`,
+            "query",
+            (path, reason) => fail("invalid query resource entry", {name, path, reason}),
+        );
+        if (!decoded.ok) return decoded;
+        queries[name] = decoded.value;
     }
     return {ok: true, value: queries};
 }
-
 function decodeSteps(value: JsonValue): ValidationResult<readonly {id: string; run: ResourceRefInfo}[]> {
     if (!Array.isArray(value)) return fail("invalid preparation steps");
     const steps: {id: string; run: ResourceRefInfo}[] = [];

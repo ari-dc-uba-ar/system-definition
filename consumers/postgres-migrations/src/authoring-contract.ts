@@ -4,7 +4,7 @@ import {
     exactKeys,
     isNonEmptyString,
     isPlainObject,
-    type FileInfo,
+    type FileResourceInfo,
     type JsonValue,
     type MigrationInfo,
     type ReleaseRefInfo,
@@ -17,10 +17,7 @@ import type {DataMigrationInfo, FieldRefInfo, QueryRefInfo} from "./migration-au
 
 export type {FieldRefInfo, QueryRefInfo, SnapshotSide} from "./migration-authoring";
 
-export type QueryResourceInfo = {
-    kind: "query";
-    file: FileInfo;
-};
+export type QueryResourceInfo = FileResourceInfo<"query">;
 
 export type AuthoringBaseInfo = {
     from: ReleaseRefInfo;

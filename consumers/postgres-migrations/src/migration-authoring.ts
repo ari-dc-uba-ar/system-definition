@@ -1,4 +1,6 @@
 import {
+    decodeContentRefInfo,
+    type ContentRefInfo,
     type JsonValue,
     type ResourceRefInfo,
     type SystemSnapshotInfo,
@@ -31,11 +33,7 @@ export type MachineValueInfo = {
     value: string | null;
 };
 
-export type QueryRefInfo = {
-    name: string;
-    kind: "query";
-    contentHash: string;
-};
+export type QueryRefInfo = ContentRefInfo<"query">;
 
 export type SourceSelectionInfo = {
     query: QueryRefInfo;
@@ -614,34 +612,11 @@ function decodeDomainMap(
 }
 
 function decodeQueryRef(value: JsonValue | undefined, path: string): DecodeResult<QueryRefInfo> {
-    if (!isObject(value as JsonValue)) return invalid(path, "expected a query reference");
-    const object = value as JsonObject;
-    const keys = exactKeys(object, ["name", "kind", "contentHash"], [], path);
-    if (!keys.ok) return keys;
-    const name = nonEmptyString(object.name, childPath(path, "name"));
-    if (!name.ok) return name;
-    if (object.kind !== "query") return invalid(childPath(path, "kind"), "expected query");
-    const contentHash = nonEmptyString(object.contentHash, childPath(path, "contentHash"));
-    if (!contentHash.ok) return contentHash;
-    if (!/^[0-9a-f]{64}$/.test(contentHash.value)) {
-        return invalid(childPath(path, "contentHash"), "expected lowercase SHA-256");
-    }
-    return {ok: true, value: {name: name.value, kind: "query", contentHash: contentHash.value}};
+    return decodeContentRefInfo(value, path, "query", invalid);
 }
 
 function decodeCheckRef(value: JsonValue, path: string): DecodeResult<ResourceRefInfo> {
-    if (!isObject(value)) return invalid(path, "expected a check reference");
-    const keys = exactKeys(value, ["name", "kind", "contentHash"], [], path);
-    if (!keys.ok) return keys;
-    const name = nonEmptyString(value.name, childPath(path, "name"));
-    if (!name.ok) return name;
-    if (value.kind !== "check") return invalid(childPath(path, "kind"), "expected check");
-    const contentHash = nonEmptyString(value.contentHash, childPath(path, "contentHash"));
-    if (!contentHash.ok) return contentHash;
-    if (!/^[0-9a-f]{64}$/.test(contentHash.value)) {
-        return invalid(childPath(path, "contentHash"), "expected lowercase SHA-256");
-    }
-    return {ok: true, value: {name: name.value, kind: "check", contentHash: contentHash.value}};
+    return decodeContentRefInfo(value, path, "check", invalid);
 }
 
 function decodeCheckArray(value: JsonValue | undefined, path: string): DecodeResult<readonly ResourceRefInfo[]> {
