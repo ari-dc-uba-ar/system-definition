@@ -20,6 +20,7 @@ import {
 } from "./journal";
 import {checkManagedData} from "./managed-data";
 import {inspectSchema, type InspectionInfo, type InspectionScope} from "./inspect-schema";
+import {pgIdentityKey} from "./pg-identity";
 import {
     projectSchema,
     type CreateResourceInfo,
@@ -129,20 +130,11 @@ function validUpgradeInput(value: unknown): value is UpgradeVerificationInput {
         && typeof input.resolveContext === "function";
 }
 
-function identityKey(identity: PgObjectIdentity): string {
-    return JSON.stringify([
-        identity.schema,
-        identity.kind,
-        identity.parentName,
-        identity.name,
-        [...identity.signature],
-    ]);
-}
 
 function authoredObjectKeys(resources: readonly CreateResourceInfo[]): ReadonlySet<string> {
     const result = new Set<string>();
     for (const resource of resources) {
-        for (const object of resource.expectedObjects) result.add(identityKey(object));
+        for (const object of resource.expectedObjects) result.add(pgIdentityKey(object));
     }
     return result;
 }
@@ -153,7 +145,7 @@ function projectionRelevantInspection(
 ): InspectionInfo {
     const authored = authoredObjectKeys(createResources);
     const objects = inspection.schema.objects.filter((object): boolean => {
-        if (authored.has(identityKey(object.identity))) return false;
+        if (authored.has(pgIdentityKey(object.identity))) return false;
         if (object.kind === "index" && object.ownerConstraint !== null) return false;
         return true;
     });

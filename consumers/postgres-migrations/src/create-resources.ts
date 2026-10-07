@@ -3,6 +3,7 @@ import {
     type ValidationResult,
 } from "system-definition";
 import type {InspectionInfo} from "./inspect-schema";
+import {pgIdentityKey} from "./pg-identity";
 import type {
     CreateResourceInfo,
     PgObjectIdentity,
@@ -20,15 +21,6 @@ function utf16Compare(left: string, right: string): number {
     return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function identityKey(identity: PgObjectIdentity): string {
-    return JSON.stringify([
-        identity.schema,
-        identity.kind,
-        identity.parentName,
-        identity.name,
-        [...identity.signature],
-    ]);
-}
 
 function validIdentity(identity: PgObjectIdentity): boolean {
     return identity.schema.length > 0
@@ -80,7 +72,7 @@ export function prepareCreateResources(
             if (!validIdentity(object)) {
                 return fail("migration.unsupportedFormat", {id: resource.id, reason: "invalid expected object identity"});
             }
-            const key = identityKey(object);
+            const key = pgIdentityKey(object);
             if (authoredObjects.has(key)) {
                 return fail("migration.invalidReference", {id: resource.id, object: key, reason: "expected object is authored more than once"});
             }
@@ -154,13 +146,13 @@ export function validateExpectedObjects(
         const first = inspection.unknown[0];
         return fail("migration.unsupportedSchemaFeature", {
             feature: first?.feature ?? "unknown",
-            object: first === undefined ? "unknown" : identityKey(first.object),
+            object: first === undefined ? "unknown" : pgIdentityKey(first.object),
         });
     }
 
     const actual = new Map<string, string>();
     for (const object of inspection.schema.objects) {
-        const key = identityKey(object.identity);
+        const key = pgIdentityKey(object.identity);
         if (actual.has(key)) {
             return fail("migration.unsupportedSchemaFeature", {object: key, reason: "duplicate inspected object identity"});
         }
@@ -170,7 +162,7 @@ export function validateExpectedObjects(
     const expected = new Set<string>();
     for (const resource of resources) {
         for (const object of resource.expectedObjects) {
-            const key = identityKey(object);
+            const key = pgIdentityKey(object);
             if (expected.has(key)) {
                 return fail("migration.invalidReference", {id: resource.id, object: key, reason: "expected object is declared more than once"});
             }

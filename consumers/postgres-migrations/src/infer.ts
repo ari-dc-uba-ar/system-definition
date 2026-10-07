@@ -14,6 +14,7 @@ import type {
     StructureChangeInfo,
     StructureDifferenceInfo,
 } from "./authoring-contract";
+import {pgIdentityKey} from "./pg-identity";
 import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo} from "./pg-schema";
 
 type ObjectMap = ReadonlyMap<string, PgObjectInfo>;
@@ -37,15 +38,6 @@ function utf16Compare(left: string, right: string): number {
     return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function identityKey(identity: PgObjectIdentity): string {
-    return JSON.stringify([
-        identity.schema,
-        identity.kind,
-        identity.parentName,
-        identity.name,
-        [...identity.signature],
-    ]);
-}
 
 function cloneIdentity(identity: PgObjectIdentity): PgObjectIdentity {
     return {
@@ -66,11 +58,11 @@ function objectMap(schema: PgSchemaInfo): ValidationResult<Map<string, PgObjectI
     for (const object of schema.objects) {
         if (object.kind !== object.identity.kind) {
             return fail("migration.unsupportedSchemaFeature", {
-                object: identityKey(object.identity),
+                object: pgIdentityKey(object.identity),
                 reason: "object identity kind does not match its descriptor kind",
             });
         }
-        const key = identityKey(object.identity);
+        const key = pgIdentityKey(object.identity);
         if (result.has(key)) {
             return fail("migration.unsupportedSchemaFeature", {
                 object: key,
@@ -179,8 +171,8 @@ function buildCorrespondences(
             const added = addCorrespondence(
                 result,
                 destinations,
-                identityKey(before.value.identity),
-                identityKey(after.value.identity),
+                pgIdentityKey(before.value.identity),
+                pgIdentityKey(after.value.identity),
                 true,
             );
             if (!added.ok) return added;
@@ -194,8 +186,8 @@ function buildCorrespondences(
         const afterTable = findEntity(to, afterEntity, "to");
         if (!afterTable.ok) return afterTable;
 
-        const beforeTableKey = identityKey(beforeTable.value.identity);
-        const afterTableKey = identityKey(afterTable.value.identity);
+        const beforeTableKey = pgIdentityKey(beforeTable.value.identity);
+        const afterTableKey = pgIdentityKey(afterTable.value.identity);
         const tableAdded = addCorrespondence(result, destinations, beforeTableKey, afterTableKey, true);
         if (!tableAdded.ok) return tableAdded;
 
@@ -206,12 +198,12 @@ function buildCorrespondences(
                 beforeTable.value.identity,
                 afterTable.value.identity,
             );
-            const afterKey = identityKey(expectedAfterIdentity);
+            const afterKey = pgIdentityKey(expectedAfterIdentity);
             if (!to.has(afterKey)) continue;
             const childAdded = addCorrespondence(
                 result,
                 destinations,
-                identityKey(object.identity),
+                pgIdentityKey(object.identity),
                 afterKey,
                 false,
             );

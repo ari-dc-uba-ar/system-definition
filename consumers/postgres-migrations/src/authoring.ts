@@ -19,6 +19,7 @@ import type {
 } from "./authoring-contract";
 import {inferStructureChanges} from "./infer";
 import type {DataMigrationInfo} from "./migration-authoring";
+import {pgIdentityKey, samePgIdentity} from "./pg-identity";
 import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo} from "./pg-schema";
 import {prepareManualSqlResource} from "./sql-resource";
 
@@ -96,17 +97,9 @@ function decisionKey(changeId: string, source: FieldRefInfo | null): string {
         : `${changeId}\0${source.side}\0${source.entity}\0${source.field}`;
 }
 
-function sameIdentity(left: PgObjectIdentity, right: PgObjectIdentity): boolean {
-    return left.schema === right.schema
-        && left.kind === right.kind
-        && left.name === right.name
-        && left.parentName === right.parentName
-        && left.signature.length === right.signature.length
-        && left.signature.every((part, index) => part === right.signature[index]);
-}
 
 function hasIdentity(schema: PgSchemaInfo, identity: PgObjectIdentity): boolean {
-    return schema.objects.some(object => sameIdentity(object.identity, identity));
+    return schema.objects.some(object => samePgIdentity(object.identity, identity));
 }
 
 type ValidatedManualInfo = {
@@ -118,23 +111,14 @@ type ValidatedManualInfo = {
 
 function manualEffectCoversChange(step: ManualStepInfo, change: StructureChangeInfo): boolean {
     if (change.action === "add" && change.after !== null) {
-        return step.writes.some(identity => sameIdentity(identity, change.after as PgObjectIdentity));
+        return step.writes.some(identity => samePgIdentity(identity, change.after as PgObjectIdentity));
     }
     if (change.action === "remove" && change.before !== null) {
-        return step.destroys.some(identity => sameIdentity(identity, change.before as PgObjectIdentity));
+        return step.destroys.some(identity => samePgIdentity(identity, change.before as PgObjectIdentity));
     }
     return true;
 }
 
-function identityKey(identity: PgObjectIdentity): string {
-    return [
-        identity.schema,
-        identity.kind,
-        identity.parentName ?? "",
-        identity.name,
-        ...identity.signature,
-    ].join("\0");
-}
 
 function orderedManualSteps(manual: readonly ManualStepInfo[]): ValidationResult<readonly ManualStepInfo[]> {
     const byId = new Map(manual.map(step => [step.id, step] as const));
@@ -221,11 +205,11 @@ function validateManualWriterOrder(steps: readonly ManualStepInfo[]): Validation
     const memo = new Map<string, ReadonlySet<string>>();
     for (let leftIndex = 0; leftIndex < steps.length; leftIndex++) {
         const left = steps[leftIndex] as ManualStepInfo;
-        const leftMutations = new Set([...left.writes, ...left.destroys].map(identityKey));
+        const leftMutations = new Set([...left.writes, ...left.destroys].map(pgIdentityKey));
         if (leftMutations.size === 0) continue;
         for (let rightIndex = leftIndex + 1; rightIndex < steps.length; rightIndex++) {
             const right = steps[rightIndex] as ManualStepInfo;
-            const overlaps = [...right.writes, ...right.destroys].some(identity => leftMutations.has(identityKey(identity)));
+            const overlaps = [...right.writes, ...right.destroys].some(identity => leftMutations.has(pgIdentityKey(identity)));
             if (!overlaps) continue;
             const ordered = transitivelyDependsOn(left.id, right.id, byId, memo)
                 || transitivelyDependsOn(right.id, left.id, byId, memo);
