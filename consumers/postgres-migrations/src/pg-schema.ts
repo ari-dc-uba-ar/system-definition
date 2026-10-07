@@ -11,6 +11,7 @@ import type {EnvironmentInfo, ManagedDataInfo} from "./artifact";
 import type {PgObjectIdentity} from "./pg-identity";
 export type {PgObjectIdentity} from "./pg-identity";
 import {matchesPostgresSupport, POSTGRES_SUPPORT} from "./postgres-support";
+import {isPgNonEmptyText} from "./pg-text";
 import {quotePgIdentifier, quotePgQualified} from "./pg-sql";
 export {quotePgIdentifier, quotePgQualified} from "./pg-sql";
 
@@ -165,10 +166,6 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function validName(value: string): boolean {
-    return value.length > 0 && !value.includes("\0");
-}
-
 function identifierBytes(value: string): number {
     return encoder.encode(value).byteLength;
 }
@@ -255,7 +252,7 @@ function resolvePhysicalTypes(
                 reason: "unknown PostgreSQL physical type",
             });
         }
-        if (!validName(physical.schema) || !validName(physical.name)
+        if (!isPgNonEmptyText(physical.schema) || !isPgNonEmptyText(physical.name)
             || physical.modifiers.some(modifier => modifier.includes("\0"))) {
             return fail("migration.unsupportedFormat", {
                 physicalType: physicalName,
@@ -280,7 +277,7 @@ export function projectSchema(
 ): ValidationResult<ProjectedPgSchemaInfo> {
     const mismatch = environmentProblem(storage);
     if (mismatch !== null) return {ok: false, problems: [mismatch]};
-    if (!validName(storage.schema)) {
+    if (!isPgNonEmptyText(storage.schema)) {
         return fail("migration.unsupportedFormat", {schema: storage.schema, reason: "invalid PostgreSQL schema name"});
     }
 
@@ -302,7 +299,7 @@ export function projectSchema(
         if (entity === undefined) {
             return fail("migration.invalidReference", {entity: entityName, reason: "selected entity does not exist in snapshot"});
         }
-        if (!validName(entityName)) {
+        if (!isPgNonEmptyText(entityName)) {
             return fail("migration.unsupportedFormat", {entity: entityName, reason: "invalid PostgreSQL table name"});
         }
 
@@ -326,7 +323,7 @@ export function projectSchema(
                     reason: "field type is not mapped",
                 });
             }
-            if (!validName(fieldName)) {
+            if (!isPgNonEmptyText(fieldName)) {
                 return fail("migration.unsupportedFormat", {entity: entityName, field: fieldName, reason: "invalid PostgreSQL column name"});
             }
             const typeCopy: PgTypeInfo = {...pgType, modifiers: [...pgType.modifiers]};

@@ -4,6 +4,7 @@ import {
 } from "system-definition";
 import type {ManagedDataInfo} from "./artifact";
 import {quotePgIdentifier, type PgSession, type SqlParameter} from "./pg-schema";
+import {isPgNonEmptyText} from "./pg-text";
 
 function fail<T>(
     messageKey: string,
@@ -12,20 +13,16 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function safeName(value: string): boolean {
-    return value.length > 0 && !value.includes("\0");
-}
-
 function rowKey(row: Readonly<Record<string, string | null>>, key: readonly string[]): string {
     return JSON.stringify(key.map(column => row[column] ?? null));
 }
 
 function validateDeclaration(managed: ManagedDataInfo): ValidationResult<true> {
-    if (!safeName(managed.table.schema) || !safeName(managed.table.name)) {
+    if (!isPgNonEmptyText(managed.table.schema) || !isPgNonEmptyText(managed.table.name)) {
         return fail("migration.unsupportedFormat", {reason: "managed data table identity is invalid"});
     }
     if (managed.key.length === 0 || managed.columns.length === 0
-        || managed.key.some(column => !safeName(column)) || managed.columns.some(column => !safeName(column))) {
+        || managed.key.some(column => !isPgNonEmptyText(column)) || managed.columns.some(column => !isPgNonEmptyText(column))) {
         return fail("migration.unsupportedFormat", {reason: "managed data requires non-empty safe key/column names"});
     }
     if (new Set(managed.key).size !== managed.key.length || new Set(managed.columns).size !== managed.columns.length) {
