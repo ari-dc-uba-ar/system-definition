@@ -1,4 +1,5 @@
 import {
+    decodePublishedMigrationInfo,
     problem,
     sameReleaseRef,
     type Problem,
@@ -18,6 +19,7 @@ import {
     type MigrationHistoryInfo,
 } from "./journal";
 import type {PgSession} from "./pg-schema";
+import {isPgNonEmptyText} from "./pg-text";
 
 export type CommitOutcomeState = Exclude<AttemptState, "running">;
 
@@ -38,8 +40,6 @@ export type CommitOutcomeInfo = {
     problems: readonly Problem[];
 };
 
-const HASH_RE = /^[0-9a-f]{64}$/;
-
 function fail<T>(
     messageKey: string,
     details: Readonly<Record<string, string>> = {},
@@ -47,50 +47,34 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function nonEmptyString(value: unknown): value is string {
-    return typeof value === "string" && value.length > 0 && !value.includes("\0");
-}
-
-function hashString(value: unknown): value is string {
-    return typeof value === "string" && HASH_RE.test(value);
-}
-
-function decodeReleaseParts(
-    systemId: unknown,
-    releaseId: unknown,
-    releaseHash: unknown,
-): ValidationResult<ReleaseRefInfo> {
-    if (!nonEmptyString(systemId) || !nonEmptyString(releaseId) || !hashString(releaseHash)) {
-        return fail("migration.invalidJournal", {reason: "invalid release reference in execution attempt"});
-    }
-    return {ok: true, value: {systemId, releaseId, releaseHash}};
-}
-
 function validateMigration(migration: PublishedMigrationInfo): ValidationResult<PublishedMigrationInfo> {
-    if (migration === null || typeof migration !== "object"
-        || !hashString(migration.migrationHash)
-        || migration.migration === null || typeof migration.migration !== "object"
-        || !nonEmptyString(migration.migration.id)
-        || migration.migration.from === null || typeof migration.migration.from !== "object"
-        || migration.migration.to === null || typeof migration.migration.to !== "object") {
+    const decoded = decodePublishedMigrationInfo(
+        migration,
+        "$",
+        (path) => {
+            if (path.startsWith('$["migration"]["from"]')) {
+                return fail("migration.invalidCatalog", {reason: "invalid migration origin"});
+            }
+            if (path.startsWith('$["migration"]["to"]')) {
+                return fail("migration.invalidCatalog", {reason: "invalid migration target"});
+            }
+            return fail("migration.invalidCatalog", {reason: "invalid published migration"});
+        },
+    );
+    if (!decoded.ok) return decoded;
+
+    const {id, from, to} = decoded.value.migration;
+    if (!isPgNonEmptyText(id)
+        || !isPgNonEmptyText(from.systemId)
+        || !isPgNonEmptyText(from.releaseId)
+        || !isPgNonEmptyText(to.systemId)
+        || !isPgNonEmptyText(to.releaseId)) {
         return fail("migration.invalidCatalog", {reason: "invalid published migration"});
     }
-    const from = decodeReleaseParts(
-        migration.migration.from.systemId,
-        migration.migration.from.releaseId,
-        migration.migration.from.releaseHash,
-    );
-    if (!from.ok) return fail("migration.invalidCatalog", {reason: "invalid migration origin"});
-    const to = decodeReleaseParts(
-        migration.migration.to.systemId,
-        migration.migration.to.releaseId,
-        migration.migration.to.releaseHash,
-    );
-    if (!to.ok) return fail("migration.invalidCatalog", {reason: "invalid migration target"});
-    if (from.value.systemId !== to.value.systemId || sameReleaseRef(from.value, to.value)) {
+    if (from.systemId !== to.systemId || sameReleaseRef(from, to)) {
         return fail("migration.invalidCatalog", {reason: "migration must connect two releases of one system"});
     }
-    return {ok: true, value: migration};
+    return decoded;
 }
 
 function historyConfirmsMigration(
@@ -140,7 +124,7 @@ export async function reconcileCommitOutcome(
     if (session === null || typeof session !== "object" || typeof session.query !== "function") {
         return fail("migration.invalidJournal", {reason: "invalid recovery session"});
     }
-    if (!nonEmptyString(attemptId)
+    if (!isPgNonEmptyText(attemptId)
         || context === null || typeof context !== "object"
         || context.journal === null || typeof context.journal !== "object"
         || context.scope === null || typeof context.scope !== "object") {
