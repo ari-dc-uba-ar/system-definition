@@ -1,5 +1,6 @@
 import {
     problem,
+    sameReleaseRef,
     type MigrationPathInfo,
     type PublishedMigrationInfo,
     type ReleaseRefInfo,
@@ -30,11 +31,6 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
-}
 
 function validatePath(path: MigrationPathInfo): ValidationResult<MigrationPathInfo> {
     if (path === null || typeof path !== "object" || !Array.isArray(path.migrations)) {
@@ -42,7 +38,7 @@ function validatePath(path: MigrationPathInfo): ValidationResult<MigrationPathIn
     }
     let expected = path.from;
     for (const published of path.migrations) {
-        if (!sameRelease(published.migration.from, expected)) {
+        if (!sameReleaseRef(published.migration.from, expected)) {
             return fail("migration.invalidCatalog", {
                 migrationId: published.migration.id,
                 reason: "migration path is not contiguous",
@@ -50,7 +46,7 @@ function validatePath(path: MigrationPathInfo): ValidationResult<MigrationPathIn
         }
         expected = published.migration.to;
     }
-    if (!sameRelease(expected, path.to)) {
+    if (!sameReleaseRef(expected, path.to)) {
         return fail("migration.invalidCatalog", {reason: "migration path does not end at its declared target"});
     }
     return {ok: true, value: path};

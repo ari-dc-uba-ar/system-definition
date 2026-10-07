@@ -1,5 +1,6 @@
 import {
     problem,
+    sameReleaseRef,
     type MigrationInfo,
     type ReleaseRefInfo,
     type ResourceRefInfo,
@@ -30,11 +31,6 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
-}
 
 function hasField(schema: PgSchemaInfo, entity: string, field: string): boolean {
     return schema.objects.some((object: PgObjectInfo): boolean => object.kind === "column"
@@ -601,7 +597,7 @@ export async function compileDraft(
 
     const loadedDesired = await runtime.loadRelease(draft.base.to);
     if (!loadedDesired.ok) return loadedDesired;
-    if (!sameRelease(loadedDesired.value.ref, draft.base.to)) {
+    if (!sameReleaseRef(loadedDesired.value.ref, draft.base.to)) {
         return fail("migration.invalidReference", {
             expectedReleaseId: draft.base.to.releaseId,
             actualReleaseId: loadedDesired.value.ref.releaseId,

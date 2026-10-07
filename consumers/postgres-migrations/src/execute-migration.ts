@@ -1,6 +1,7 @@
 import {createHash} from "node:crypto";
 import {
     problem,
+    sameReleaseRef,
     type MigrationInfo,
     type PublishedMigrationInfo,
     type ReleaseRefInfo,
@@ -119,11 +120,6 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
-}
 
 function sameResourceRef(left: ResourceRefInfo, right: ResourceRefInfo): boolean {
     return left.name === right.name && left.kind === right.kind && left.contentHash === right.contentHash;
@@ -471,7 +467,7 @@ function validatePublishedMigration(migration: PublishedMigrationInfo): Validati
         || migration.migration === null || typeof migration.migration !== "object"
         || typeof migration.migration.id !== "string" || migration.migration.id.length === 0
         || migration.migration.from.systemId !== migration.migration.to.systemId
-        || sameRelease(migration.migration.from, migration.migration.to)) {
+        || sameReleaseRef(migration.migration.from, migration.migration.to)) {
         return fail("migration.invalidCatalog", {reason: "invalid published migration"});
     }
     return {ok: true, value: migration};
@@ -503,7 +499,7 @@ export async function executeMigrationPreparation(
         || typeof migration.id !== "string" || migration.id.length === 0
         || migration.from === null || typeof migration.from !== "object"
         || migration.to === null || typeof migration.to !== "object"
-        || !sameRelease(migration.from, migration.to)) {
+        || !sameReleaseRef(migration.from, migration.to)) {
         return fail("migration.invalidPreparation", {reason: "preparation must remain on the confirmed head"});
     }
     const prepared = prepareExecution(migration, context);
@@ -536,7 +532,7 @@ export async function executeMigrationPreparation(
         if (installation.value === null) {
             return await failInside(fail("migration.headMismatch", {reason: "installation is missing"}));
         }
-        if (!sameRelease(installation.value.current, migration.from)) {
+        if (!sameReleaseRef(installation.value.current, migration.from)) {
             return await failInside(fail("migration.headMismatch", {
                 expected: migration.from.releaseId,
                 actual: installation.value.current.releaseId,
@@ -654,7 +650,7 @@ export async function executeMigration(
         if (installation.value === null) {
             return await failInside(fail("migration.headMismatch", {reason: "installation is missing"}));
         }
-        if (!sameRelease(installation.value.current, migration.migration.from)) {
+        if (!sameReleaseRef(installation.value.current, migration.migration.from)) {
             return await failInside(fail("migration.headMismatch", {
                 expected: migration.migration.from.releaseId,
                 actual: installation.value.current.releaseId,

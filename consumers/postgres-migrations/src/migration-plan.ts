@@ -1,5 +1,6 @@
 import {
     canonicalJson,
+    sameReleaseRef,
     toJsonValue,
     type FileInfo,
     type JsonValue,
@@ -47,11 +48,6 @@ function isObject(value: JsonValue): value is JsonObject {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
-}
 
 function jsonOf(value: unknown): JsonValue {
     const converted = toJsonValue(value);
@@ -203,7 +199,7 @@ function parseCanonicalJson(bytes: Uint8Array, file: FileInfo): ArtifactResult<J
 
 function validatePathEndpoints(path: MigrationPathInfo): ArtifactResult<true> {
     if (path.migrations.length === 0) {
-        if (!sameRelease(path.from, path.to)) {
+        if (!sameReleaseRef(path.from, path.to)) {
             return failure("migration.invalidReference", {reason: "empty migration path must preserve its endpoint"});
         }
         return {ok: true, value: true};
@@ -211,12 +207,12 @@ function validatePathEndpoints(path: MigrationPathInfo): ArtifactResult<true> {
 
     let expectedFrom = path.from;
     for (const published of path.migrations) {
-        if (!sameRelease(published.migration.from, expectedFrom)) {
+        if (!sameReleaseRef(published.migration.from, expectedFrom)) {
             return failure("migration.invalidReference", {migrationId: published.migration.id, reason: "migration path is not contiguous"});
         }
         expectedFrom = published.migration.to;
     }
-    if (!sameRelease(expectedFrom, path.to)) {
+    if (!sameReleaseRef(expectedFrom, path.to)) {
         return failure("migration.invalidReference", {reason: "migration path destination mismatch"});
     }
     return {ok: true, value: true};
@@ -256,8 +252,8 @@ export async function loadVerifiedMigrationAuthoring(
     const authoring = decodeAuthoring(parsed.value);
     if (!authoring.ok) return authoring;
 
-    if (!sameRelease(authoring.value.base.from, decoded.value.migration.from)
-        || !sameRelease(authoring.value.base.to, decoded.value.migration.to)) {
+    if (!sameReleaseRef(authoring.value.base.from, decoded.value.migration.from)
+        || !sameReleaseRef(authoring.value.base.to, decoded.value.migration.to)) {
         return failure("migration.invalidReference", {
             migrationId: published.migration.id,
             reason: "authoring base does not match migration endpoints",

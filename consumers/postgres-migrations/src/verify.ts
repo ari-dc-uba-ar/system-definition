@@ -1,5 +1,6 @@
 import {
     problem,
+    sameReleaseRef,
     type MigrationPathInfo,
     type PersistenceInfo,
     type PublishedMigrationInfo,
@@ -82,11 +83,6 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function sameRelease(left: ReleaseRefInfo, right: ReleaseRefInfo): boolean {
-    return left.systemId === right.systemId
-        && left.releaseId === right.releaseId
-        && left.releaseHash === right.releaseHash;
-}
 
 function sameResourceRef(
     left: {name: string; kind: "sql" | "check"; contentHash: string},
@@ -420,8 +416,8 @@ function validateUpgradeReferences(input: UpgradeVerificationInput): ValidationR
     if (input.source.snapshot.systemId !== input.source.ref.systemId
         || input.target.snapshot.systemId !== input.target.ref.systemId
         || input.source.ref.systemId !== input.target.ref.systemId
-        || !sameRelease(input.path.from, input.source.ref)
-        || !sameRelease(input.path.to, input.target.ref)
+        || !sameReleaseRef(input.path.from, input.source.ref)
+        || !sameReleaseRef(input.path.to, input.target.ref)
         || input.scope.systemId !== input.source.ref.systemId) {
         return fail("migration.invalidReference", {reason: "upgrade source/target/path/scope references do not agree"});
     }
