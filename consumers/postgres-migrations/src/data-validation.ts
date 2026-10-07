@@ -1,4 +1,5 @@
 import {
+    compareUtf16,
     problem,
     type PersistenceInfo,
     type Problem,
@@ -179,9 +180,6 @@ export type MachineReadProjector = {
     project(request: MachineReadProjectionRequest): ValidationResult<string>;
 };
 
-function utf16Compare(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
-}
 
 export function compileMachineEntityReadQuery(
     snapshot: SystemSnapshotInfo,
@@ -200,7 +198,7 @@ export function compileMachineEntityReadQuery(
     }
 
     const fields: MachineReadProjectionField[] = [];
-    for (const fieldName of Object.keys(entityInfo.fields).sort(utf16Compare)) {
+    for (const fieldName of Object.keys(entityInfo.fields).sort(compareUtf16)) {
         const field = entityInfo.fields[fieldName]!;
         const physicalName = representation[field.type];
         if (physicalName === undefined || physicalName.length === 0) {

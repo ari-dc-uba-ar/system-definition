@@ -1,6 +1,7 @@
 import {createHash} from "node:crypto";
 import {
     canonicalJson,
+    compareUtf16,
     problem,
     toJsonValue,
     type JsonValue,
@@ -34,9 +35,6 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function utf16Compare(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
-}
 
 
 function cloneIdentity(identity: PgObjectIdentity): PgObjectIdentity {
@@ -251,8 +249,8 @@ function sameJson(left: JsonValue, right: JsonValue): boolean {
         return left.length === right.length && left.every((value, index) => sameJson(value, right[index] as JsonValue));
     }
     if (plainRecord(left) && plainRecord(right)) {
-        const leftKeys = Object.keys(left).sort(utf16Compare);
-        const rightKeys = Object.keys(right).sort(utf16Compare);
+        const leftKeys = Object.keys(left).sort(compareUtf16);
+        const rightKeys = Object.keys(right).sort(compareUtf16);
         return leftKeys.length === rightKeys.length
             && leftKeys.every((key, index) => key === rightKeys[index]
                 && sameJson(left[key] as JsonValue, right[key] as JsonValue));
@@ -268,7 +266,7 @@ function compareJson(
 ): void {
     if (sameJson(before, after)) return;
     if (plainRecord(before) && plainRecord(after)) {
-        const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort(utf16Compare);
+        const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort(compareUtf16);
         for (const key of keys) {
             const hasBefore = Object.prototype.hasOwnProperty.call(before, key);
             const hasAfter = Object.prototype.hasOwnProperty.call(after, key);
@@ -382,7 +380,7 @@ function affectedFields(
         }
     }
 
-    result.sort((left, right) => utf16Compare(
+    result.sort((left, right) => compareUtf16(
         `${left.side}\0${left.entity}\0${left.field}`,
         `${right.side}\0${right.entity}\0${right.field}`,
     ));
@@ -482,7 +480,7 @@ export function inferStructureChanges(
 
     const commonKeys = [...fromMap.value.keys()]
         .filter(key => toMap.value.has(key) && !pairedBefore.has(key) && !pairedAfter.has(key))
-        .sort(utf16Compare);
+        .sort(compareUtf16);
     for (const key of commonKeys) {
         const before = fromMap.value.get(key) as PgObjectInfo;
         const after = toMap.value.get(key) as PgObjectInfo;
@@ -502,7 +500,7 @@ export function inferStructureChanges(
         ));
     }
 
-    for (const key of [...fromMap.value.keys()].filter(one => !pairedBefore.has(one)).sort(utf16Compare)) {
+    for (const key of [...fromMap.value.keys()].filter(one => !pairedBefore.has(one)).sort(compareUtf16)) {
         const before = fromMap.value.get(key) as PgObjectInfo;
         changes.push(makeChange(
             "remove",
@@ -515,7 +513,7 @@ export function inferStructureChanges(
             toMap.value,
         ));
     }
-    for (const key of [...toMap.value.keys()].filter(one => !pairedAfter.has(one)).sort(utf16Compare)) {
+    for (const key of [...toMap.value.keys()].filter(one => !pairedAfter.has(one)).sort(compareUtf16)) {
         const after = toMap.value.get(key) as PgObjectInfo;
         changes.push(makeChange(
             "add",
@@ -529,7 +527,7 @@ export function inferStructureChanges(
         ));
     }
 
-    changes.sort((left, right) => utf16Compare(changeSortKey(left), changeSortKey(right)));
+    changes.sort((left, right) => compareUtf16(changeSortKey(left), changeSortKey(right)));
     return {
         ok: true,
         value: changes.map(change => ({id: changeId(base, change), ...change})),

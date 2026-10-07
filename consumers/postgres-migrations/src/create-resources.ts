@@ -1,4 +1,5 @@
 import {
+    compareUtf16,
     problem,
     type ValidationResult,
 } from "system-definition";
@@ -17,9 +18,6 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function utf16Compare(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
-}
 
 
 function validIdentity(identity: PgObjectIdentity): boolean {
@@ -103,12 +101,12 @@ export function prepareCreateResources(
             dependents.get(dependency)?.push(resource.id);
         }
     }
-    for (const values of dependents.values()) values.sort(utf16Compare);
+    for (const values of dependents.values()) values.sort(compareUtf16);
 
     const ready = [...indegree.entries()]
         .filter(([, count]) => count === 0)
         .map(([id]) => id)
-        .sort(utf16Compare);
+        .sort(compareUtf16);
     const ordered: CreateResourceInfo[] = [];
 
     while (ready.length > 0) {
@@ -127,7 +125,7 @@ export function prepareCreateResources(
             indegree.set(dependent, next);
             if (next === 0) {
                 ready.push(dependent);
-                ready.sort(utf16Compare);
+                ready.sort(compareUtf16);
             }
         }
     }
