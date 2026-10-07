@@ -1,5 +1,9 @@
 import {
+    childPath,
     decodeContentRefInfo,
+    exactOptionalKeys,
+    isNonEmptyString,
+    isPlainObject,
     type ContentRefInfo,
     type JsonValue,
     type ResourceRefInfo,
@@ -402,11 +406,7 @@ function invalid(path: string, reason: string): DecodeResult<never> {
 }
 
 function isObject(value: JsonValue): value is JsonObject {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function childPath(path: string, key: string): string {
-    return path + "[" + JSON.stringify(key) + "]";
+    return isPlainObject(value);
 }
 
 function exactKeys(
@@ -415,20 +415,11 @@ function exactKeys(
     optional: readonly string[],
     path: string,
 ): DecodeResult<true> {
-    const allowed = new Set([...required, ...optional]);
-    for (const key of Object.keys(value)) {
-        if (!allowed.has(key)) return invalid(childPath(path, key), "unexpected property");
-    }
-    for (const key of required) {
-        if (!Object.prototype.hasOwnProperty.call(value, key)) {
-            return invalid(childPath(path, key), "missing property");
-        }
-    }
-    return {ok: true, value: true};
+    return exactOptionalKeys(value, required, optional, path, invalid);
 }
 
 function nonEmptyString(value: JsonValue | undefined, path: string): DecodeResult<string> {
-    if (typeof value !== "string" || value.length === 0) {
+    if (!isNonEmptyString(value)) {
         return invalid(path, "expected a non-empty string");
     }
     return {ok: true, value};
