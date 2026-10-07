@@ -1,9 +1,5 @@
-const {spawn} = require("node:child_process");
-const {createInterface} = require("node:readline");
 const assert = require("node:assert/strict");
-const {
-    canonicalJson,
-} = require("system-definition");
+const {canonicalJson} = require("system-definition");
 const {
     bootstrapJournal,
     installBaseline,
@@ -14,6 +10,7 @@ const {
     resolveMigrationExecutionContext,
     sha256Hex,
 } = require("../dist/src/index.js");
+const {PsqlSession, parsePgArray} = require("./lib/psql-session.js");
 
 const encoder = new TextEncoder();
 const ZERO_HASH = "0".repeat(64);
@@ -32,54 +29,6 @@ function release(releaseId) {
     };
 }
 
-function sqlLiteral(value) {
-    if (value === null) return "NULL";
-    if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-    if (typeof value === "number") {
-        if (!Number.isFinite(value)) throw new TypeError("non-finite PostgreSQL integration parameter");
-        return String(value);
-    }
-    if (value instanceof Uint8Array) return `decode('${Buffer.from(value).toString("hex")}', 'hex')`;
-    if (typeof value !== "string") throw new TypeError(`unsupported PostgreSQL integration parameter: ${typeof value}`);
-    return `'${value.replaceAll("'", "''")}'`;
-}
-
-function bindSql(text, values) {
-    return text.replace(/\$(\d+)/gu, (_whole, rawIndex) => {
-        const index = Number(rawIndex) - 1;
-        if (index < 0 || index >= values.length) throw new Error(`missing SQL parameter $${rawIndex}`);
-        return sqlLiteral(values[index]);
-    });
-}
-
-function parseCsvLine(line) {
-    const result = [];
-    let value = "";
-    let quoted = false;
-    for (let index = 0; index < line.length; index += 1) {
-        const char = line[index];
-        if (quoted) {
-            if (char === '"' && line[index + 1] === '"') {
-                value += '"';
-                index += 1;
-            } else if (char === '"') {
-                quoted = false;
-            } else {
-                value += char;
-            }
-        } else if (char === '"') {
-            quoted = true;
-        } else if (char === ",") {
-            result.push(value);
-            value = "";
-        } else {
-            value += char;
-        }
-    }
-    result.push(value);
-    return result;
-}
-
 const ARRAY_COLUMNS = new Set(["schemas", "signature", "type_modifiers", "columns"]);
 const JSON_COLUMNS = new Set(["binding", "checks", "problems", "pairs", "options"]);
 const BOOLEAN_COLUMNS = new Set([
@@ -87,114 +36,12 @@ const BOOLEAN_COLUMNS = new Set([
 ]);
 const NUMBER_COLUMNS = new Set(["ordinal", "array_dimensions", "journal_format_version"]);
 
-function parsePgArray(value) {
-    if (value === "{}") return [];
-    if (!value.startsWith("{") || !value.endsWith("}")) return value;
-    const body = value.slice(1, -1);
-    if (body === "") return [];
-    return parseCsvLine(body).map((one) => one === "NULL" ? null : one);
-}
-
 function typedValue(column, value) {
-    if (value === "__SD_NULL__") return null;
     if (ARRAY_COLUMNS.has(column)) return parsePgArray(value);
     if (JSON_COLUMNS.has(column)) return JSON.parse(value);
     if (BOOLEAN_COLUMNS.has(column) && (value === "t" || value === "f")) return value === "t";
     if (NUMBER_COLUMNS.has(column) && /^-?\d+$/u.test(value)) return Number(value);
     return value;
-}
-
-function isCommandStatus(line) {
-    return /^(?:BEGIN|COMMIT|ROLLBACK|SET|CREATE|ALTER|DROP|UPDATE \d+|DELETE \d+|INSERT \d+ \d+)$/u.test(line.trim());
-}
-
-function rowsFromCsv(lines) {
-    const data = lines.filter((line) => line.trim() !== "" && !isCommandStatus(line));
-    if (data.length < 2) return [];
-    const header = parseCsvLine(data[0]);
-    return data.slice(1).map((line) => {
-        const values = parseCsvLine(line);
-        if (values.length !== header.length) throw new Error(`unexpected psql CSV row: ${line}`);
-        const row = Object.create(null);
-        for (let index = 0; index < header.length; index += 1) {
-            row[header[index]] = typedValue(header[index], values[index]);
-        }
-        return row;
-    });
-}
-
-class PsqlSession {
-    constructor() {
-        this.sequence = 0;
-        this.pending = null;
-        this.stderr = "";
-        this.child = spawn("psql", ["--no-psqlrc", "--quiet", "--set", "ON_ERROR_STOP=1"], {
-            env: process.env,
-            stdio: ["pipe", "pipe", "pipe"],
-        });
-        this.child.stderr.setEncoding("utf8");
-        this.child.stderr.on("data", (chunk) => { this.stderr += chunk; });
-        this.child.on("error", (error) => this.rejectPending(error));
-        this.child.on("exit", (code) => {
-            if (code !== 0) this.rejectPending(new Error((this.stderr || `psql exited ${code}`).trim()));
-        });
-        const lines = createInterface({input: this.child.stdout});
-        lines.on("line", (line) => this.onLine(line));
-        this.child.stdin.write("\\pset format csv\n\\pset footer off\n\\pset null __SD_NULL__\n");
-    }
-
-    rejectPending(error) {
-        if (this.pending !== null) {
-            const pending = this.pending;
-            this.pending = null;
-            pending.reject(error);
-        }
-    }
-
-    onLine(line) {
-        const pending = this.pending;
-        if (pending === null) return;
-        if (line === pending.start) {
-            pending.started = true;
-            return;
-        }
-        if (!pending.started) return;
-        if (line.startsWith(pending.rowCountPrefix)) {
-            const raw = line.slice(pending.rowCountPrefix.length).trim();
-            pending.rowCount = /^\d+$/u.test(raw) ? Number(raw) : null;
-            return;
-        }
-        if (line === pending.end) {
-            this.pending = null;
-            try {
-                pending.resolve({rows: rowsFromCsv(pending.lines), rowCount: pending.rowCount});
-            } catch (error) {
-                pending.reject(error);
-            }
-            return;
-        }
-        pending.lines.push(line);
-    }
-
-    async query(text, values) {
-        if (this.pending !== null) throw new Error("psql integration session does not support concurrent queries");
-        const id = ++this.sequence;
-        const start = `__SD_START_${id}__`;
-        const end = `__SD_END_${id}__`;
-        const rowCountPrefix = `__SD_ROWCOUNT_${id}__ `;
-        const sql = bindSql(text.trim().replace(/;+\s*$/u, ""), values);
-        return new Promise((resolve, reject) => {
-            this.pending = {start, end, rowCountPrefix, started: false, lines: [], rowCount: null, resolve, reject};
-            this.child.stdin.write(`\\echo ${start}\n${sql};\n\\echo ${rowCountPrefix}:ROW_COUNT\n\\echo ${end}\n`);
-        });
-    }
-
-    async close() {
-        if (this.child.exitCode === null) {
-            this.child.stdin.end("\\q\n");
-            await new Promise((resolve) => this.child.once("exit", resolve));
-        }
-    }
 }
 
 function field(name, type, nullable) {
@@ -477,7 +324,7 @@ async function mixed(session, blocking) {
 }
 
 async function main() {
-    const session = new PsqlSession();
+    const session = new PsqlSession({decodeValue: typedValue});
     try {
         await generatedOnly(session);
         process.stdout.write("T22 PostgreSQL authoring integration: generated-only passed\n");
