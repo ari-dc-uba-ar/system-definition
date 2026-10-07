@@ -31,6 +31,12 @@ export type ContentRefInfo<TKind extends string> = {
     contentHash: string;
 };
 
+export function sameContentRef(left: ContentRefInfo<string>, right: ContentRefInfo<string>): boolean {
+    return left.name === right.name
+        && left.kind === right.kind
+        && left.contentHash === right.contentHash;
+}
+
 export type ResourceInfo = FileResourceInfo<"sql" | "check">;
 
 export type ResourceRefInfo = ContentRefInfo<"sql" | "check">;

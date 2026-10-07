@@ -2,6 +2,7 @@ import {createHash} from "node:crypto";
 import {
     isSha256,
     problem,
+    sameContentRef,
     sameReleaseRef,
     type MigrationInfo,
     type PublishedMigrationInfo,
@@ -122,16 +123,8 @@ function fail<T>(
 }
 
 
-function sameResourceRef(left: ResourceRefInfo, right: ResourceRefInfo): boolean {
-    return left.name === right.name && left.kind === right.kind && left.contentHash === right.contentHash;
-}
-
 function validMilliseconds(value: number): boolean {
     return Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647;
-}
-
-function sameQueryRef(left: QueryRefInfo, right: QueryRefInfo): boolean {
-    return left.name === right.name && left.kind === right.kind && left.contentHash === right.contentHash;
 }
 
 function prepareAuthoringCheckpoints(
@@ -226,7 +219,7 @@ function prepareAuthoringCheckpoints(
 
             const query = authoring.queryResources[row.select.name];
             if (query === undefined || query === null || typeof query !== "object"
-                || typeof query.text !== "string" || !sameQueryRef(query.ref, row.select)) {
+                || typeof query.text !== "string" || !sameContentRef(query.ref, row.select)) {
                 return fail("migration.checksumMismatch", {
                     name: row.select.name,
                     reason: "resolved row query does not match the checkpoint reference",
@@ -291,7 +284,7 @@ function resolveResource(
         return fail("migration.invalidReference", {reason: "resource kind/name does not match its migration position"});
     }
     const resolved = resources[ref.name];
-    if (resolved === undefined || !sameResourceRef(resolved.ref, ref)) {
+    if (resolved === undefined || !sameContentRef(resolved.ref, ref)) {
         return fail("migration.checksumMismatch", {name: ref.name, reason: "resolved resource does not match the published reference"});
     }
     return {ok: true, value: resolved};

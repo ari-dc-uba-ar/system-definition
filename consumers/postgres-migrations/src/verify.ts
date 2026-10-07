@@ -1,6 +1,7 @@
 import {
     hasExactKeys,
     problem,
+    sameContentRef,
     sameReleaseRef,
     type MigrationPathInfo,
     type PersistenceInfo,
@@ -85,13 +86,6 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-
-function sameResourceRef(
-    left: {name: string; kind: "sql" | "check"; contentHash: string},
-    right: {name: string; kind: "sql" | "check"; contentHash: string},
-): boolean {
-    return left.name === right.name && left.kind === right.kind && left.contentHash === right.contentHash;
-}
 
 function validScratchHandle(value: unknown): value is ScratchHandle {
     return typeof value === "object" && value !== null
@@ -351,7 +345,7 @@ async function replayDataProofAfterSchemaDrift(
             }
             for (const ref of published.migration.before) {
                 const resource = context.resources[ref.name];
-                if (ref.kind !== "check" || resource === undefined || !sameResourceRef(ref, resource.ref)) {
+                if (ref.kind !== "check" || resource === undefined || !sameContentRef(ref, resource.ref)) {
                     return rollback(fail("migration.invalidReference", {name: ref.name}));
                 }
                 const checked = await runCheckResource(session, resource);
@@ -359,7 +353,7 @@ async function replayDataProofAfterSchemaDrift(
             }
             for (const step of published.migration.steps) {
                 const resource = context.resources[step.run.name];
-                if (step.run.kind !== "sql" || resource === undefined || !sameResourceRef(step.run, resource.ref)) {
+                if (step.run.kind !== "sql" || resource === undefined || !sameContentRef(step.run, resource.ref)) {
                     return rollback(fail("migration.invalidReference", {name: step.run.name}));
                 }
                 const prepared = prepareSqlResource(resource);
@@ -369,7 +363,7 @@ async function replayDataProofAfterSchemaDrift(
             }
             for (const ref of published.migration.after) {
                 const resource = context.resources[ref.name];
-                if (ref.kind !== "check" || resource === undefined || !sameResourceRef(ref, resource.ref)) {
+                if (ref.kind !== "check" || resource === undefined || !sameContentRef(ref, resource.ref)) {
                     return rollback(fail("migration.invalidReference", {name: ref.name}));
                 }
                 const checked = await runCheckResource(session, resource);

@@ -1,5 +1,5 @@
 import {createHash} from "node:crypto";
-import {compareUtf16, isSha256, problem, type PersistenceInfo, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
+import {compareUtf16, isSha256, problem, sameContentRef, type PersistenceInfo, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
 import type {
     DataMigrationInfo,
     QueryRefInfo,
@@ -93,10 +93,6 @@ function tempStem(migration: DataMigrationInfo, context: CompileDataContext): st
     return `__migration_${hash}`;
 }
 
-function sameQueryRef(left: QueryRefInfo, right: QueryRefInfo): boolean {
-    return left.kind === right.kind && left.name === right.name && left.contentHash === right.contentHash;
-}
-
 function validateIdentifierText(value: string, role: string): ValidationResult<true> {
     if (!isPgIdentifierText(value)) {
         return failure("PostgreSQL identifier contains NUL", {role});
@@ -164,14 +160,14 @@ function validateBoundary(
         if (context.transformation.lineage === null || context.lineageQuery === null) {
             return failure("set transformations require lineage");
         }
-        if (!sameQueryRef(context.transformation.lineage, context.lineageQuery.ref)) {
+        if (!sameContentRef(context.transformation.lineage, context.lineageQuery.ref)) {
             return failure("resolved lineage query reference does not match the transformation contract");
         }
     }
-    if (!sameQueryRef(migration.source.query, context.sourceQuery.ref)) {
+    if (!sameContentRef(migration.source.query, context.sourceQuery.ref)) {
         return failure("resolved source query reference does not match the migration contract");
     }
-    if (!sameQueryRef(context.transformation.query, context.transformationQuery.ref)) {
+    if (!sameContentRef(context.transformation.query, context.transformationQuery.ref)) {
         return failure("resolved transformation query reference does not match the transformation contract");
     }
     if (!queryMatches(context.sourceQuery)) {

@@ -1,6 +1,7 @@
 import {
     compareUtf16,
     problem,
+    sameContentRef,
     type ValidationResult,
 } from "system-definition";
 import type {InspectionInfo} from "./inspect-schema";
@@ -31,15 +32,6 @@ function validIdentity(identity: PgObjectIdentity): boolean {
         && identity.signature.every(one => one.length > 0 && !one.includes("\0"));
 }
 
-function sameResourceRef(
-    expected: CreateResourceInfo["run"],
-    actual: StorageContext["resources"][string]["ref"],
-): boolean {
-    return expected.name === actual.name
-        && expected.kind === actual.kind
-        && expected.contentHash === actual.contentHash;
-}
-
 export function prepareCreateResources(
     storage: StorageContext,
 ): ValidationResult<readonly CreateResourceInfo[]> {
@@ -60,7 +52,7 @@ export function prepareCreateResources(
         if (resolved === undefined) {
             return fail("migration.invalidReference", {name: resource.run.name, reason: "create resource SQL is missing"});
         }
-        if (!sameResourceRef(resource.run, resolved.ref)) {
+        if (!sameContentRef(resource.run, resolved.ref)) {
             return fail("migration.checksumMismatch", {name: resource.run.name, reason: "create resource ref differs from resolved resource"});
         }
         if (new Set(resource.dependsOn).size !== resource.dependsOn.length) {
