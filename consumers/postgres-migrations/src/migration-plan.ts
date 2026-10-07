@@ -1,5 +1,8 @@
 import {
     canonicalJson,
+    exactKeys as structuralExactKeys,
+    isPlainObject,
+    isSha256,
     sameReleaseRef,
     toJsonValue,
     type FileInfo,
@@ -22,7 +25,6 @@ import type {CompiledAuthoringInfo} from "./authoring";
 
 type JsonObject = {readonly [key: string]: JsonValue};
 
-const HASH_RE = /^[0-9a-f]{64}$/;
 const decoder = new TextDecoder("utf-8", {fatal: true});
 
 export interface MigrationPlanArtifactContext {
@@ -45,7 +47,16 @@ function failure<T>(
 }
 
 function isObject(value: JsonValue): value is JsonObject {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
+    return isPlainObject(value);
+}
+
+function hasExactShape(value: JsonObject, expected: readonly string[]): boolean {
+    return structuralExactKeys(
+        value,
+        expected,
+        "$",
+        () => ({ok: false, problems: []}),
+    ).ok;
 }
 
 
@@ -76,11 +87,11 @@ export function computePlanHash(plan: MigrationPlanInfo): string {
 
 function decodeReleaseRef(value: JsonValue, label: string): ArtifactResult<ReleaseRefInfo> {
     if (!isObject(value)
-        || Object.keys(value).sort().join(",") !== "releaseHash,releaseId,systemId"
+        || !hasExactShape(value, ["releaseHash", "releaseId", "systemId"])
         || typeof value.systemId !== "string"
         || typeof value.releaseId !== "string"
         || typeof value.releaseHash !== "string"
-        || !HASH_RE.test(value.releaseHash)) {
+        || !isSha256(value.releaseHash)) {
         return failure("migration.unsupportedFormat", {reason: `invalid authoring ${label} release reference`});
     }
     return {
@@ -106,10 +117,10 @@ function decodeAuthoring(value: JsonValue): ArtifactResult<CompiledAuthoringInfo
         "queryResources",
         "validationArtifacts",
     ].sort();
-    if (Object.keys(value).sort().join(",") !== expected.join(",") || value.formatVersion !== 1) {
+    if (!hasExactShape(value, expected) || value.formatVersion !== 1) {
         return failure("migration.unsupportedFormat", {reason: "invalid authoring artifact shape"});
     }
-    if (typeof value.draftHash !== "string" || !HASH_RE.test(value.draftHash)) {
+    if (typeof value.draftHash !== "string" || !isSha256(value.draftHash)) {
         return failure("migration.unsupportedFormat", {reason: "invalid authoring draft hash"});
     }
     if (!isObject(value.base)) return failure("migration.unsupportedFormat", {reason: "invalid authoring base"});
@@ -121,7 +132,7 @@ function decodeAuthoring(value: JsonValue): ArtifactResult<CompiledAuthoringInfo
         "fromPersistenceHash",
         "toPersistenceHash",
     ].sort();
-    if (Object.keys(value.base).sort().join(",") !== baseKeys.join(",")) {
+    if (!hasExactShape(value.base, baseKeys)) {
         return failure("migration.unsupportedFormat", {reason: "invalid authoring base shape"});
     }
     const from = decodeReleaseRef(value.base.from, "from");
@@ -130,7 +141,7 @@ function decodeAuthoring(value: JsonValue): ArtifactResult<CompiledAuthoringInfo
     if (!to.ok) return to;
     for (const key of ["fromSnapshotHash", "toSnapshotHash", "fromPersistenceHash", "toPersistenceHash"] as const) {
         const hash = value.base[key];
-        if (typeof hash !== "string" || !HASH_RE.test(hash)) {
+        if (typeof hash !== "string" || !isSha256(hash)) {
             return failure("migration.unsupportedFormat", {reason: `invalid authoring ${key}`});
         }
     }

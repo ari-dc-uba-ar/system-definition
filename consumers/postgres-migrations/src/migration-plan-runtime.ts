@@ -1,4 +1,6 @@
 import {
+    isPlainObject,
+    isSha256,
     type FileInfo,
     type Problem,
     type PublishedMigrationInfo,
@@ -25,7 +27,6 @@ import {
     type ValidationArtifactInfo,
 } from "./validation-artifact";
 
-const HASH_RE = /^[0-9a-f]{64}$/;
 const decoder = new TextDecoder("utf-8", {fatal: true});
 
 type SnapshotBinding = {
@@ -61,12 +62,12 @@ function validationFailure<T>(problems: readonly Problem[]): ArtifactResult<T> {
 }
 
 function isFileInfo(value: unknown): value is FileInfo {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+    if (!isPlainObject(value)) return false;
     const candidate = value as Partial<FileInfo>;
     return typeof candidate.path === "string"
         && candidate.path.length > 0
         && typeof candidate.contentHash === "string"
-        && HASH_RE.test(candidate.contentHash)
+        && isSha256(candidate.contentHash)
         && typeof candidate.byteLength === "number"
         && Number.isSafeInteger(candidate.byteLength)
         && candidate.byteLength >= 0;
