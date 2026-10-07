@@ -1,4 +1,5 @@
 import {
+    hasExactKeys,
     problem,
     sameReleaseRef,
     type MigrationPathInfo,
@@ -92,15 +93,9 @@ function sameResourceRef(
     return left.name === right.name && left.kind === right.kind && left.contentHash === right.contentHash;
 }
 
-function exactKeys(value: object, expected: readonly string[]): boolean {
-    const actual = Object.keys(value).sort();
-    const wanted = [...expected].sort();
-    return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
-}
-
 function validScratchHandle(value: unknown): value is ScratchHandle {
     return typeof value === "object" && value !== null
-        && exactKeys(value, ["id", "session"])
+        && hasExactKeys(value, ["id", "session"])
         && typeof (value as {id?: unknown}).id === "string"
         && (value as {id: string}).id.length > 0
         && typeof (value as {session?: unknown}).session === "object"
@@ -111,19 +106,19 @@ function validScratchHandle(value: unknown): value is ScratchHandle {
 
 function validReleaseInput(value: unknown): value is ReleaseVerificationInput {
     return typeof value === "object" && value !== null
-        && exactKeys(value, ["ref", "snapshot", "persistence", "storage", "inspection"]);
+        && hasExactKeys(value, ["ref", "snapshot", "persistence", "storage", "inspection"]);
 }
 
 function validUpgradeInput(value: unknown): value is UpgradeVerificationInput {
     if (typeof value !== "object" || value === null
-        || !exactKeys(value, ["source", "target", "path", "journal", "scope", "fixture", "resolveContext"])) {
+        || !hasExactKeys(value, ["source", "target", "path", "journal", "scope", "fixture", "resolveContext"])) {
         return false;
     }
     const input = value as UpgradeVerificationInput;
     return validReleaseInput(input.source)
         && validReleaseInput(input.target)
         && typeof input.fixture === "object" && input.fixture !== null
-        && exactKeys(input.fixture, ["id", "load", "verify"])
+        && hasExactKeys(input.fixture, ["id", "load", "verify"])
         && typeof input.fixture.id === "string" && input.fixture.id.length > 0
         && typeof input.fixture.load === "function"
         && typeof input.fixture.verify === "function"

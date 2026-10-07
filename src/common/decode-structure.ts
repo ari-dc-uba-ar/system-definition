@@ -26,6 +26,13 @@ export function isSha256(value: unknown): value is string {
     return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 
+export function hasExactKeys(value: object, expected: readonly string[]): boolean {
+    const actual = Object.keys(value);
+    if (actual.length !== expected.length) return false;
+    const wanted = new Set(expected);
+    return actual.every(key => wanted.has(key));
+}
+
 /** Preserve the bracket-path convention already used by migration diagnostics. */
 export function childPath(path: string, key: string): string {
     return path + "[" + JSON.stringify(key) + "]";

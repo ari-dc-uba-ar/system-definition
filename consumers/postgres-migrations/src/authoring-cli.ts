@@ -1,5 +1,7 @@
 import {createHash} from "node:crypto";
 import {
+    hasExactKeys,
+    isPlainObject,
     problem,
     toJsonValue,
     type Problem,
@@ -119,16 +121,11 @@ function addDataQuestion(draft: MigrationDraftInfo): ValidationResult<PendingQue
     };
 }
 
-function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 function decodeAnswer(value: unknown, questionId: string): ValidationResult<AddDataAnswerInfo> {
-    if (!isObject(value)) {
+    if (!isPlainObject(value)) {
         return {ok: false, problems: oneProblem("migration.authoringInvalid", {reason: "answer must be an object"})};
     }
-    const keys = Object.keys(value).sort();
-    if (keys.length !== 3 || keys[0] !== "dataMigration" || keys[1] !== "kind" || keys[2] !== "questionId") {
+    if (!hasExactKeys(value, ["questionId", "kind", "dataMigration"])) {
         return {ok: false, problems: oneProblem("migration.authoringInvalid", {reason: "unexpected add-data answer shape"})};
     }
     if (value.questionId !== questionId || value.kind !== "add-data") {
@@ -148,11 +145,10 @@ function decodeAnswer(value: unknown, questionId: string): ValidationResult<AddD
 function decodeAnswersFile(value: unknown, draft: MigrationDraftInfo, questionId: string): ValidationResult<AddDataAnswerInfo | null> {
     const json = toJsonValue(value);
     if (!json.ok) return json;
-    if (!isObject(json.value)) {
+    if (!isPlainObject(json.value)) {
         return {ok: false, problems: oneProblem("migration.authoringInvalid", {reason: "answers file must be an object"})};
     }
-    const keys = Object.keys(json.value).sort();
-    if (keys.length !== 3 || keys[0] !== "answers" || keys[1] !== "draftHash" || keys[2] !== "formatVersion") {
+    if (!hasExactKeys(json.value, ["formatVersion", "draftHash", "answers"])) {
         return {ok: false, problems: oneProblem("migration.authoringInvalid", {reason: "unexpected answers file shape"})};
     }
     if (json.value.formatVersion !== 1 || typeof json.value.draftHash !== "string" || !Array.isArray(json.value.answers)) {

@@ -1,5 +1,7 @@
 import {
     compareUtf16,
+    hasExactKeys,
+    isPlainObject,
     problem,
     type PersistenceInfo,
     type Problem,
@@ -20,29 +22,17 @@ function invalid<T>(reason: string, details: Readonly<Record<string, string>> = 
     };
 }
 
-function ownKeys(value: unknown): readonly string[] | null {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
-    return Object.keys(value);
-}
-
-function sameKeySet(actual: readonly string[], expected: readonly string[]): boolean {
-    if (actual.length !== expected.length) return false;
-    const actualSorted = [...actual].sort();
-    const expectedSorted = [...expected].sort();
-    return actualSorted.every((key, index) => key === expectedSorted[index]);
-}
-
 function decodeMachineRow(
     value: unknown,
     expectedKeys: readonly string[],
     rowIndex: number,
     scope: string,
 ): ValidationResult<MachineRow> {
-    const actualKeys = ownKeys(value);
-    if (actualKeys === null) {
+    if (!isPlainObject(value)) {
         return invalid("machine row must be an object record", {scope, rowIndex: String(rowIndex)});
     }
-    if (!sameKeySet(actualKeys, expectedKeys)) {
+    const actualKeys = Object.keys(value);
+    if (!hasExactKeys(value, expectedKeys)) {
         const expected = new Set(expectedKeys);
         const actual = new Set(actualKeys);
         const missing = expectedKeys.filter(key => !actual.has(key));
@@ -55,7 +45,7 @@ function decodeMachineRow(
         });
     }
 
-    const source = value as Record<string, unknown>;
+    const source = value;
     const decoded = {} as Record<string, MachineValue>;
     for (const key of expectedKeys) {
         const descriptor = Object.getOwnPropertyDescriptor(source, key);
