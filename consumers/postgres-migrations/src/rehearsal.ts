@@ -1,7 +1,7 @@
 import {
     decodeMigrationPathInfo,
     decodeReleaseRefInfo,
-    exactKeys,
+    hasExactKeys,
     isNonEmptyString,
     isPlainObject,
     problem,
@@ -92,13 +92,7 @@ function hasExactShape(
     value: unknown,
     expected: readonly string[],
 ): value is Readonly<Record<string, unknown>> {
-    if (!isPlainObject(value)) return false;
-    return exactKeys(
-        value,
-        expected,
-        "$",
-        () => fail<never>("migration.invalidReference", {reason: "invalid rehearsal structure"}),
-    ).ok;
+    return isPlainObject(value) && hasExactKeys(value, expected);
 }
 
 function validRelease(value: unknown): value is ReleaseRefInfo {
