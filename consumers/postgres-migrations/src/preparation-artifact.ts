@@ -3,7 +3,7 @@ import {
     decodeFileResourceInfo as decodePackageFileResourceInfo,
     decodeReleaseRefInfo as decodePackageReleaseRefInfo,
     decodeResourceRefInfo as decodePackageResourceRefInfo,
-    exactKeys as structuralExactKeys,
+    hasExactKeys,
     isNonEmptyString,
     isPlainObject,
     isSha256,
@@ -90,14 +90,6 @@ function isObject(value: JsonValue): value is JsonObject {
     return isPlainObject(value);
 }
 
-function hasExactShape(value: JsonObject, expected: readonly string[]): boolean {
-    return structuralExactKeys(
-        value,
-        expected,
-        "$",
-        () => fail<never>("invalid structural shape"),
-    ).ok;
-}
 
 function decodeRelease(value: JsonValue): ValidationResult<ReleaseRefInfo> {
     return decodePackageReleaseRefInfo(
@@ -135,7 +127,7 @@ function decodeQueryRef(value: JsonValue): ValidationResult<QueryRefInfo> {
 function decodeFieldRef(value: JsonValue): ValidationResult<FieldRefInfo | null> {
     if (value === null) return {ok: true, value: null};
     if (!isObject(value)
-        || !hasExactShape(value, ["side", "entity", "field"])
+        || !hasExactKeys(value, ["side", "entity", "field"])
         || !(value.side === "from" || value.side === "to")
         || !isNonEmptyString(value.entity)
         || !isNonEmptyString(value.field)) {
@@ -146,7 +138,7 @@ function decodeFieldRef(value: JsonValue): ValidationResult<FieldRefInfo | null>
 
 function decodeDomain(value: JsonValue): ValidationResult<DomainRefInfo> {
     if (!isObject(value)
-        || !hasExactShape(value, ["side", "type", "nullable"])
+        || !hasExactKeys(value, ["side", "type", "nullable"])
         || !(value.side === "from" || value.side === "to")
         || !isNonEmptyString(value.type)
         || typeof value.nullable !== "boolean") {
@@ -156,7 +148,7 @@ function decodeDomain(value: JsonValue): ValidationResult<DomainRefInfo> {
 }
 
 function decodePort(value: JsonValue): ValidationResult<PortInfo> {
-    if (!isObject(value) || !hasExactShape(value, ["domain", "field"])) return fail("invalid port");
+    if (!isObject(value) || !hasExactKeys(value, ["domain", "field"])) return fail("invalid port");
     const domain = decodeDomain(value.domain);
     if (!domain.ok) return domain;
     const field = decodeFieldRef(value.field);
@@ -169,7 +161,7 @@ function decodePort(value: JsonValue): ValidationResult<PortInfo> {
 
 function decodeSourceSelection(value: JsonValue): ValidationResult<SourceSelectionInfo> {
     if (!isObject(value)
-        || !hasExactShape(value, ["query", "ports", "identity", "coverageChecks"])
+        || !hasExactKeys(value, ["query", "ports", "identity", "coverageChecks"])
         || !isObject(value.ports)
         || !Array.isArray(value.identity)
         || !Array.isArray(value.coverageChecks)) {
@@ -247,7 +239,7 @@ function decodeSteps(value: JsonValue): ValidationResult<readonly {id: string; r
     const ids = new Set<string>();
     for (const rawStep of value) {
         if (!isObject(rawStep)
-            || !hasExactShape(rawStep, ["id", "run"])
+            || !hasExactKeys(rawStep, ["id", "run"])
             || !isNonEmptyString(rawStep.id)
             || ids.has(rawStep.id)) {
             return fail("invalid preparation step");
@@ -314,7 +306,7 @@ function collectCheckpointRefs(checkpoints: CompiledAuthoringInfo["checkpoints"]
     const validatorHashes: string[] = [];
     for (const rawCheckpoint of converted.value) {
         if (!isObject(rawCheckpoint)
-            || !hasExactShape(rawCheckpoint, ["afterStep", "checks", "rows"])
+            || !hasExactKeys(rawCheckpoint, ["afterStep", "checks", "rows"])
             || !isNonEmptyString(rawCheckpoint.afterStep)
             || !Array.isArray(rawCheckpoint.checks)
             || !Array.isArray(rawCheckpoint.rows)) {
@@ -327,7 +319,7 @@ function collectCheckpointRefs(checkpoints: CompiledAuthoringInfo["checkpoints"]
         }
         for (const rawRow of rawCheckpoint.rows) {
             if (!isObject(rawRow)
-                || !hasExactShape(rawRow, ["id", "afterStep", "side", "entity", "select", "validatorArtifactHash"])
+                || !hasExactKeys(rawRow, ["id", "afterStep", "side", "entity", "select", "validatorArtifactHash"])
                 || !isNonEmptyString(rawRow.id)
                 || !isNonEmptyString(rawRow.afterStep)
                 || !(rawRow.side === "from" || rawRow.side === "to")
@@ -396,7 +388,7 @@ function decodePreparation(
     const raw = converted.value;
     const keys = includesHash ? ARTIFACT_KEYS : INPUT_KEYS;
     if (!isObject(raw)
-        || !hasExactShape(raw, keys)
+        || !hasExactKeys(raw, keys)
         || raw.formatVersion !== 1
         || !isNonEmptyString(raw.id)
         || (includesHash && !isSha256(raw.artifactHash))

@@ -14,7 +14,7 @@ import {
     decodeMigration,
     decodePersistence,
     decodeSystemSnapshot,
-    exactKeys as structuralExactKeys,
+    hasExactKeys,
     isPlainObject,
     isSha256,
     toJsonValue,
@@ -164,14 +164,6 @@ function isObject(value: JsonValue): value is JsonObject {
     return isPlainObject(value);
 }
 
-function hasExactShape(value: JsonObject, expected: readonly string[]): boolean {
-    return structuralExactKeys(
-        value,
-        expected,
-        "$",
-        () => ({ok: false, problems: []}),
-    ).ok;
-}
 
 function cloneJson<T>(value: T): ArtifactResult<T> {
     const converted = toJsonValue(value);
@@ -549,7 +541,7 @@ function parseJsonBytes(bytes: Uint8Array, path: string): ArtifactResult<JsonVal
 
 function decodeFileInfo(value: JsonValue, path: string): ArtifactResult<FileInfo> {
     if (!isObject(value)) return failure("migration.unsupportedFormat", {path, reason: "expected file info"});
-    if (!hasExactShape(value, ["byteLength", "contentHash", "path"])) return failure("migration.unsupportedFormat", {path, reason: "invalid file info shape"});
+    if (!hasExactKeys(value, ["byteLength", "contentHash", "path"])) return failure("migration.unsupportedFormat", {path, reason: "invalid file info shape"});
     if (typeof value.path !== "string" || !isSafeArtifactPath(value.path)) return failure("migration.invalidReference", {path, reason: "invalid file path"});
     if (typeof value.contentHash !== "string" || !isSha256(value.contentHash)) return failure("migration.unsupportedFormat", {path, reason: "invalid content hash"});
     if (typeof value.byteLength !== "number" || !Number.isSafeInteger(value.byteLength) || value.byteLength < 0) {
@@ -561,12 +553,12 @@ function decodeFileInfo(value: JsonValue, path: string): ArtifactResult<FileInfo
 function migrationContextFromSerialized(value: JsonValue): ArtifactResult<MigrationContext> {
     if (!isObject(value)) return failure("migration.unsupportedFormat", {reason: "invalid migration"});
     const expected = ["id", "from", "to", "description", "before", "steps", "after"].sort();
-    if (!hasExactShape(value, expected)) {
+    if (!hasExactKeys(value, expected)) {
         return failure("migration.unsupportedFormat", {reason: "invalid migration shape"});
     }
 
     function release(raw: JsonValue, label: string): ArtifactResult<{systemId: string; releaseId: string; releaseHash: string}> {
-        if (!isObject(raw) || !hasExactShape(raw, ["releaseHash", "releaseId", "systemId"])
+        if (!isObject(raw) || !hasExactKeys(raw, ["releaseHash", "releaseId", "systemId"])
             || typeof raw.systemId !== "string" || !isSafeOpaqueId(raw.systemId)
             || typeof raw.releaseId !== "string" || !isSafeOpaqueId(raw.releaseId)
             || typeof raw.releaseHash !== "string" || !isSha256(raw.releaseHash)) {
@@ -582,7 +574,7 @@ function migrationContextFromSerialized(value: JsonValue): ArtifactResult<Migrat
 
     const resources: Record<string, {kind: "sql" | "check"; file: FileInfo}> = Object.create(null);
     function addResource(raw: JsonValue, expectedKind: "sql" | "check"): ArtifactResult<true> {
-        if (!isObject(raw) || !hasExactShape(raw, ["contentHash", "kind", "name"])
+        if (!isObject(raw) || !hasExactKeys(raw, ["contentHash", "kind", "name"])
             || typeof raw.name !== "string" || !isSafeOpaqueId(raw.name)
             || raw.kind !== expectedKind
             || typeof raw.contentHash !== "string" || !isSha256(raw.contentHash)) {
@@ -612,7 +604,7 @@ function migrationContextFromSerialized(value: JsonValue): ArtifactResult<Migrat
         if (!added.ok) return added;
     }
     for (const raw of value.steps) {
-        if (!isObject(raw) || !hasExactShape(raw, ["id", "run"]) || typeof raw.id !== "string") {
+        if (!isObject(raw) || !hasExactKeys(raw, ["id", "run"]) || typeof raw.id !== "string") {
             return failure("migration.unsupportedFormat", {reason: "invalid migration step"});
         }
         const added = addResource(raw.run, "sql");
@@ -631,7 +623,7 @@ function migrationContextFromSerialized(value: JsonValue): ArtifactResult<Migrat
 export function decodeMigrationManifest(value: JsonValue): ArtifactResult<MigrationManifestInfo> {
     if (!isObject(value)) return failure("migration.unsupportedFormat", {reason: "migration manifest must be an object"});
     const expected = ["formatVersion", "migration", "authoring", "migrationHash"].sort();
-    if (!hasExactShape(value, expected)) {
+    if (!hasExactKeys(value, expected)) {
         return failure("migration.unsupportedFormat", {reason: "invalid migration manifest shape"});
     }
     if (value.formatVersion !== 1) return failure("migration.unsupportedFormat", {reason: "unsupported migration manifest format"});
@@ -662,7 +654,7 @@ export function decodeMigrationManifest(value: JsonValue): ArtifactResult<Migrat
 function decodeEnvironment(value: JsonValue): ArtifactResult<EnvironmentInfo> {
     if (!isObject(value)) return failure("migration.unsupportedFormat", {reason: "invalid environment"});
     const expected = ["engine", "version", "serverVersionNum", "encoding", "collations", "externalDependencies"].sort();
-    if (!hasExactShape(value, expected)) {
+    if (!hasExactKeys(value, expected)) {
         return failure("migration.unsupportedFormat", {reason: "invalid environment shape"});
     }
     if (!matchesPostgresSupport(value)) {
@@ -682,10 +674,10 @@ function decodeManifest(value: JsonValue): ArtifactResult<ReleaseManifestInfo> {
         "formatVersion", "release", "snapshot", "snapshotHash", "persistence", "schema", "schemaHash", "createPlan",
         "resources", "invariantChecks", "managedData", "environment", "generator", "inspector",
     ].sort();
-    if (!hasExactShape(value, expected)) return failure("migration.unsupportedFormat", {reason: "invalid manifest shape"});
+    if (!hasExactKeys(value, expected)) return failure("migration.unsupportedFormat", {reason: "invalid manifest shape"});
     if (value.formatVersion !== 1) return failure("migration.unsupportedFormat", {reason: "unsupported manifest format"});
     if (!isObject(value.release)
-        || !hasExactShape(value.release, ["releaseHash", "releaseId", "systemId"])
+        || !hasExactKeys(value.release, ["releaseHash", "releaseId", "systemId"])
         || typeof value.release.systemId !== "string"
         || typeof value.release.releaseId !== "string"
         || typeof value.release.releaseHash !== "string"
@@ -716,7 +708,7 @@ function decodeManifest(value: JsonValue): ArtifactResult<ReleaseManifestInfo> {
     const resources: Record<string, ResourceInfo> = Object.create(null);
     for (const [name, raw] of Object.entries(value.resources)) {
         if (!isSafeOpaqueId(name) || !isObject(raw)
-            || !hasExactShape(raw, ["file", "kind"])
+            || !hasExactKeys(raw, ["file", "kind"])
             || (raw.kind !== "sql" && raw.kind !== "check")) {
             return failure("migration.unsupportedFormat", {reason: "invalid resource", name});
         }
@@ -728,7 +720,7 @@ function decodeManifest(value: JsonValue): ArtifactResult<ReleaseManifestInfo> {
     const invariantChecks: ResourceRefInfo[] = [];
     const invariantNames = new Set<string>();
     for (const raw of value.invariantChecks) {
-        if (!isObject(raw) || !hasExactShape(raw, ["contentHash", "kind", "name"])
+        if (!isObject(raw) || !hasExactKeys(raw, ["contentHash", "kind", "name"])
             || typeof raw.name !== "string" || raw.kind !== "check" || typeof raw.contentHash !== "string" || !isSha256(raw.contentHash)) {
             return failure("migration.unsupportedFormat", {reason: "invalid invariant check"});
         }
@@ -744,7 +736,7 @@ function decodeManifest(value: JsonValue): ArtifactResult<ReleaseManifestInfo> {
     const environment = decodeEnvironment(value.environment);
     if (!environment.ok) return environment;
     function decodeProducer(raw: JsonValue, label: string): ArtifactResult<{name: string, version: string, contentHash: string}> {
-        if (!isObject(raw) || !hasExactShape(raw, ["contentHash", "name", "version"])
+        if (!isObject(raw) || !hasExactKeys(raw, ["contentHash", "name", "version"])
             || typeof raw.name !== "string" || typeof raw.version !== "string" || typeof raw.contentHash !== "string" || !isSha256(raw.contentHash)) {
             return failure("migration.unsupportedFormat", {reason: "invalid " + label});
         }

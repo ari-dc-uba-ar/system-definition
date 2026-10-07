@@ -1,6 +1,6 @@
 import {
     canonicalJson,
-    exactKeys as structuralExactKeys,
+    hasExactKeys,
     isPlainObject,
     isSha256,
     sameReleaseRef,
@@ -50,14 +50,6 @@ function isObject(value: JsonValue): value is JsonObject {
     return isPlainObject(value);
 }
 
-function hasExactShape(value: JsonObject, expected: readonly string[]): boolean {
-    return structuralExactKeys(
-        value,
-        expected,
-        "$",
-        () => ({ok: false, problems: []}),
-    ).ok;
-}
 
 
 function jsonOf(value: unknown): JsonValue {
@@ -87,7 +79,7 @@ export function computePlanHash(plan: MigrationPlanInfo): string {
 
 function decodeReleaseRef(value: JsonValue, label: string): ArtifactResult<ReleaseRefInfo> {
     if (!isObject(value)
-        || !hasExactShape(value, ["releaseHash", "releaseId", "systemId"])
+        || !hasExactKeys(value, ["releaseHash", "releaseId", "systemId"])
         || typeof value.systemId !== "string"
         || typeof value.releaseId !== "string"
         || typeof value.releaseHash !== "string"
@@ -117,7 +109,7 @@ function decodeAuthoring(value: JsonValue): ArtifactResult<CompiledAuthoringInfo
         "queryResources",
         "validationArtifacts",
     ].sort();
-    if (!hasExactShape(value, expected) || value.formatVersion !== 1) {
+    if (!hasExactKeys(value, expected) || value.formatVersion !== 1) {
         return failure("migration.unsupportedFormat", {reason: "invalid authoring artifact shape"});
     }
     if (typeof value.draftHash !== "string" || !isSha256(value.draftHash)) {
@@ -132,7 +124,7 @@ function decodeAuthoring(value: JsonValue): ArtifactResult<CompiledAuthoringInfo
         "fromPersistenceHash",
         "toPersistenceHash",
     ].sort();
-    if (!hasExactShape(value.base, baseKeys)) {
+    if (!hasExactKeys(value.base, baseKeys)) {
         return failure("migration.unsupportedFormat", {reason: "invalid authoring base shape"});
     }
     const from = decodeReleaseRef(value.base.from, "from");
