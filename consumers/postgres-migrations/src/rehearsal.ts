@@ -1,6 +1,9 @@
 import {
     decodeMigrationPathInfo,
     decodeReleaseRefInfo,
+    exactKeys,
+    isNonEmptyString,
+    isPlainObject,
     problem,
     sameReleaseRef,
     type MigrationPathInfo,
@@ -85,18 +88,17 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function exactKeys(value: object, expected: readonly string[]): boolean {
-    const actual = Object.keys(value).sort();
-    const wanted = [...expected].sort();
-    return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
-}
-
-function nonEmpty(value: unknown): value is string {
-    return typeof value === "string" && value.length > 0;
+function hasExactShape(
+    value: unknown,
+    expected: readonly string[],
+): value is Readonly<Record<string, unknown>> {
+    if (!isPlainObject(value)) return false;
+    return exactKeys(
+        value,
+        expected,
+        "$",
+        () => fail<never>("migration.invalidReference", {reason: "invalid rehearsal structure"}),
+    ).ok;
 }
 
 function validRelease(value: unknown): value is ReleaseRefInfo {
@@ -114,7 +116,7 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
 function validSchemas(value: unknown): value is readonly string[] {
     return Array.isArray(value)
         && value.length > 0
-        && value.every(nonEmpty)
+        && value.every(isNonEmptyString)
         && new Set(value).size === value.length;
 }
 
@@ -131,36 +133,35 @@ function validCopy(value: unknown): value is RehearsalCopyRef {
 }
 
 function validScope(value: unknown): value is InstallationScope {
-    return isObject(value)
-        && exactKeys(value, ["systemId", "schemas"])
-        && nonEmpty(value.systemId)
+    return hasExactShape(value, ["systemId", "schemas"])
+        && isNonEmptyString(value.systemId)
         && validSchemas(value.schemas);
 }
 
 function validJournal(value: unknown): value is JournalConfig {
-    return isObject(value)
-        && exactKeys(value, ["schema"])
-        && nonEmpty(value.schema);
+    return hasExactShape(value, ["schema"])
+        && isNonEmptyString(value.schema);
 }
 
 function validSession(value: unknown): value is PgSession {
-    return isObject(value)
-        && typeof value.query === "function"
-        && typeof value.close === "function";
+    return typeof value === "object"
+        && value !== null
+        && typeof Reflect.get(value, "query") === "function"
+        && typeof Reflect.get(value, "close") === "function";
 }
 
 function validHandle(value: unknown): value is RehearsalHandle {
-    return isObject(value)
-        && exactKeys(value, ["copy", "session"])
+    return hasExactShape(value, ["copy", "session"])
         && validCopy(value.copy)
         && validSession(value.session);
 }
 
 function validProvider(value: unknown): value is RehearsalProvider {
-    return isObject(value)
-        && typeof value.open === "function"
-        && typeof value.owns === "function"
-        && typeof value.destroy === "function";
+    return typeof value === "object"
+        && value !== null
+        && typeof Reflect.get(value, "open") === "function"
+        && typeof Reflect.get(value, "owns") === "function"
+        && typeof Reflect.get(value, "destroy") === "function";
 }
 
 function validPath(value: unknown): value is MigrationPathInfo {
@@ -172,8 +173,7 @@ function validPath(value: unknown): value is MigrationPathInfo {
 }
 
 function validInput(value: unknown): value is RehearsalInput {
-    return isObject(value)
-        && exactKeys(value, ["copy", "path", "journal", "scope", "resolveContext"])
+    return hasExactShape(value, ["copy", "path", "journal", "scope", "resolveContext"])
         && validCopy(value.copy)
         && validPath(value.path)
         && validJournal(value.journal)
@@ -182,7 +182,9 @@ function validInput(value: unknown): value is RehearsalInput {
 }
 
 function isValidationResult<T>(value: unknown): value is ValidationResult<T> {
-    return isObject(value) && typeof value.ok === "boolean";
+    return typeof value === "object"
+        && value !== null
+        && typeof Reflect.get(value, "ok") === "boolean";
 }
 
 function resourceKey(ref: ResourceRefInfo): string {
@@ -405,8 +407,7 @@ export async function rehearseUpgrade(
 }
 
 function validRequirement(value: unknown): value is RehearsalRequirement {
-    if (!isObject(value)
-        || !exactKeys(value, ["production", "operation", "from", "to", "scope", "path"])
+    if (!hasExactShape(value, ["production", "operation", "from", "to", "scope", "path"])
         || typeof value.production !== "boolean"
         || (value.operation !== "install" && value.operation !== "upgrade")
         || !validRelease(value.to)
