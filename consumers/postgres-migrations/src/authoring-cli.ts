@@ -1,11 +1,11 @@
 import {createHash} from "node:crypto";
 import {
-    canonicalJson,
     problem,
     toJsonValue,
     type Problem,
     type ValidationResult,
 } from "system-definition";
+import {canonicalJsonSha256} from "./canonical-hash";
 import type {ManualStepInfo, MigrationDraftInfo, PendingQuestionInfo} from "./authoring-contract";
 import {
     decodeDataMigration,
@@ -87,7 +87,7 @@ function stableHash(value: unknown): ValidationResult<string> {
     if (!json.ok) return json;
     return {
         ok: true,
-        value: createHash("sha256").update(canonicalJson(json.value), "utf8").digest("hex"),
+        value: canonicalJsonSha256(json.value),
     };
 }
 

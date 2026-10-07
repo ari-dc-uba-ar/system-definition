@@ -17,12 +17,12 @@ import {
     type ArtifactResult,
     type MigrationManifestInfo,
 } from "./artifact";
+import {canonicalJsonSha256} from "./canonical-hash";
 import type {CompiledAuthoringInfo} from "./authoring";
 
 type JsonObject = {readonly [key: string]: JsonValue};
 
 const HASH_RE = /^[0-9a-f]{64}$/;
-const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", {fatal: true});
 
 export interface MigrationPlanArtifactContext {
@@ -71,7 +71,7 @@ function hashablePlan(plan: MigrationPlanInfo): JsonValue {
 
 /** Hash the complete serialized migration plan except for its own hash field. */
 export function computePlanHash(plan: MigrationPlanInfo): string {
-    return sha256Hex(encoder.encode(canonicalJson(hashablePlan(plan))));
+    return canonicalJsonSha256(hashablePlan(plan));
 }
 
 function decodeReleaseRef(value: JsonValue, label: string): ArtifactResult<ReleaseRefInfo> {

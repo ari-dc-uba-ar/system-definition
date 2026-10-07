@@ -1,4 +1,3 @@
-import {createHash} from "node:crypto";
 import {
     canonicalJson,
     compareUtf16,
@@ -7,6 +6,7 @@ import {
     type JsonValue,
     type ValidationResult,
 } from "system-definition";
+import {canonicalJsonSha256} from "./canonical-hash";
 import type {
     AuthoringBaseInfo,
     ChangeImpact,
@@ -404,7 +404,7 @@ function changeId(base: AuthoringBaseInfo, change: ChangeWithoutId): string {
         after: change.after,
         differences: change.differences,
     });
-    return createHash("sha256").update(canonicalJson(json), "utf8").digest("hex");
+    return canonicalJsonSha256(json);
 }
 
 function makeChange(
