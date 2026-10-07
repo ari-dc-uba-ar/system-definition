@@ -1,4 +1,5 @@
 import {
+    isSha256,
     problem,
     type ResourceRefInfo,
     type ValidationResult,
@@ -29,7 +30,7 @@ function safeResourceRef(ref: ResourceRefInfo, expectedKind: ResourceRefInfo["ki
     return typeof ref === "object" && ref !== null
         && typeof ref.name === "string" && ref.name.length > 0 && !ref.name.includes("\0")
         && ref.kind === expectedKind
-        && typeof ref.contentHash === "string" && /^[0-9a-f]{64}$/.test(ref.contentHash);
+        && isSha256(ref.contentHash);
 }
 
 function dollarTagAt(text: string, start: number): string | null {

@@ -1,5 +1,5 @@
 import {createHash} from "node:crypto";
-import {compareUtf16, problem, type PersistenceInfo, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
+import {compareUtf16, isSha256, problem, type PersistenceInfo, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
 import type {
     DataMigrationInfo,
     QueryRefInfo,
@@ -70,7 +70,7 @@ function hashText(text: string): string {
 
 function queryMatches(resolved: ResolvedQuery): boolean {
     return resolved.ref.kind === "query"
-        && /^[0-9a-f]{64}$/.test(resolved.ref.contentHash)
+        && isSha256(resolved.ref.contentHash)
         && hashText(resolved.text) === resolved.ref.contentHash;
 }
 

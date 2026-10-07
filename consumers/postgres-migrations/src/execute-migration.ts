@@ -1,5 +1,6 @@
 import {createHash} from "node:crypto";
 import {
+    isSha256,
     problem,
     sameReleaseRef,
     type MigrationInfo,
@@ -129,10 +130,6 @@ function validMilliseconds(value: number): boolean {
     return Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647;
 }
 
-function validHash(value: string): boolean {
-    return /^[0-9a-f]{64}$/.test(value);
-}
-
 function sameQueryRef(left: QueryRefInfo, right: QueryRefInfo): boolean {
     return left.name === right.name && left.kind === right.kind && left.contentHash === right.contentHash;
 }
@@ -210,8 +207,8 @@ function prepareAuthoringCheckpoints(
                 || row.select === null || typeof row.select !== "object"
                 || row.select.kind !== "query"
                 || typeof row.select.name !== "string" || row.select.name.length === 0
-                || typeof row.select.contentHash !== "string" || !validHash(row.select.contentHash)
-                || typeof row.validatorArtifactHash !== "string" || !validHash(row.validatorArtifactHash)) {
+                || !isSha256(row.select.contentHash)
+                || !isSha256(row.validatorArtifactHash)) {
                 return fail("migration.invalidReference", {reason: "invalid authoring row checkpoint shape"});
             }
             if (row.afterStep !== checkpoint.afterStep) {
@@ -247,7 +244,7 @@ function prepareAuthoringCheckpoints(
             }
             const historical = authoring.snapshots[side];
             if (historical === undefined || historical === null
-                || typeof historical.snapshotHash !== "string" || !validHash(historical.snapshotHash)
+                || !isSha256(historical.snapshotHash)
                 || historical.snapshot === null || typeof historical.snapshot !== "object") {
                 return fail("migration.invalidReference", {
                     reason: "historical snapshot binding is missing",
@@ -463,7 +460,7 @@ async function runAuthoringCheckpoint(
 
 function validatePublishedMigration(migration: PublishedMigrationInfo): ValidationResult<PublishedMigrationInfo> {
     if (migration === null || typeof migration !== "object"
-        || typeof migration.migrationHash !== "string" || !/^[0-9a-f]{64}$/.test(migration.migrationHash)
+        || !isSha256(migration.migrationHash)
         || migration.migration === null || typeof migration.migration !== "object"
         || typeof migration.migration.id !== "string" || migration.migration.id.length === 0
         || migration.migration.from.systemId !== migration.migration.to.systemId
