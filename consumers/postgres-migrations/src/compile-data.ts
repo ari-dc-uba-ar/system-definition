@@ -1,10 +1,11 @@
 import {createHash} from "node:crypto";
 import {compareUtf16, isSha256, problem, sameContentRef, type PersistenceInfo, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
-import type {
-    DataMigrationInfo,
-    QueryRefInfo,
-    TransformationInfo,
-    WriteInfo,
+import {
+    sameDomainRef,
+    type DataMigrationInfo,
+    type QueryRefInfo,
+    type TransformationInfo,
+    type WriteInfo,
 } from "./migration-authoring";
 import type {MachineCodecInfo, PgSchemaInfo, PgTypeRepresentation, StorageContext} from "./pg-schema";
 import {isPgIdentifierText, quotePgIdentifier, quotePgQualified} from "./pg-sql";
@@ -391,13 +392,6 @@ type CompiledParameters = {
     values: readonly (string | null)[];
 };
 
-function sameDomain(
-    left: {side: string; type: string; nullable: boolean},
-    right: {side: string; type: string; nullable: boolean},
-): boolean {
-    return left.side === right.side && left.type === right.type && left.nullable === right.nullable;
-}
-
 function pgTypeSql(type: PgTypeRepresentation): ValidationResult<string> {
     if (type.schema.length === 0 || type.name.length === 0 || type.schema.includes("\0") || type.name.includes("\0")) {
         return failure("physical type has an invalid PostgreSQL identity");
@@ -473,7 +467,7 @@ function compileParameters(
         const name = parameterNames[index]!;
         const domain = context.transformation.parameters[name]!;
         const argument = migration.arguments[name]!;
-        if (!sameDomain(domain, argument.domain)) {
+        if (!sameDomainRef(domain, argument.domain)) {
             return failure("migration argument domain does not match transformation parameter", {parameter: name});
         }
         if (argument.value === null && !domain.nullable) {

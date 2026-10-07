@@ -513,7 +513,7 @@ function decodeDomain(
     return {ok: true, value: {side: side.value, type: type.value, nullable: object.nullable}};
 }
 
-function sameDomain(left: DomainRefInfo, right: DomainRefInfo): boolean {
+export function sameDomainRef(left: DomainRefInfo, right: DomainRefInfo): boolean {
     return left.side === right.side && left.type === right.type && left.nullable === right.nullable;
 }
 
@@ -559,7 +559,7 @@ function decodePort(
             || (actual.nullable && !domain.value.nullable)) {
             return invalid(childPath(path, "domain"), "source domain disagrees with referenced field");
         }
-    } else if (!sameDomain(actual, domain.value)) {
+    } else if (!sameDomainRef(actual, domain.value)) {
         return invalid(childPath(path, "domain"), "domain disagrees with referenced field");
     }
     return {ok: true, value: {domain: domain.value, field: field.value}};
@@ -725,7 +725,7 @@ function decodeArguments(
     for (const name of expected) {
         const decoded = decodeMachineValue(context, object[name]!, childPath(path, name));
         if (!decoded.ok) return decoded;
-        if (!sameDomain(decoded.value.domain, transformation.parameters[name]!)) {
+        if (!sameDomainRef(decoded.value.domain, transformation.parameters[name]!)) {
             return invalid(childPath(path, name), "argument domain is incompatible with transformation parameter");
         }
         result[name] = decoded.value;
