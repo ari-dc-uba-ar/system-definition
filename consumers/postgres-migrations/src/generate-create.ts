@@ -1,4 +1,5 @@
-import {problem, type ValidationResult} from "system-definition";
+import {compareUtf16, problem, type ValidationResult} from "system-definition";
+import {pgIdentityKey} from "./pg-identity";
 import {
     quotePgIdentifier,
     type PgObjectIdentity,
@@ -26,14 +27,20 @@ function fail<T>(messageKey: string, details: Readonly<Record<string, string>> =
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function identityKey(identity: PgObjectIdentity): string {
-    return [identity.schema, identity.kind, identity.parentName ?? "", identity.name, ...identity.signature].join("\0");
-}
-
-function compareIdentity(left: PgObjectIdentity, right: PgObjectIdentity): number {
-    const l = identityKey(left);
-    const r = identityKey(right);
-    return l < r ? -1 : l > r ? 1 : 0;
+/**
+ * Clean-create output historically orders the semantic identity fields directly.
+ * Keep that SQL-generation policy explicit: comparePgIdentity orders the JSON key
+ * representation and can differ for legal quoted identifiers.
+ */
+function compareCreateIdentity(left: PgObjectIdentity, right: PgObjectIdentity): number {
+    const leftParts = [left.schema, left.kind, left.parentName ?? "", left.name, ...left.signature];
+    const rightParts = [right.schema, right.kind, right.parentName ?? "", right.name, ...right.signature];
+    const length = Math.min(leftParts.length, rightParts.length);
+    for (let index = 0; index < length; index++) {
+        const compared = compareUtf16(leftParts[index], rightParts[index]);
+        if (compared !== 0) return compared;
+    }
+    return leftParts.length - rightParts.length;
 }
 
 function qualified(schema: string, name: string): string {
@@ -53,7 +60,7 @@ function columnsOf(objects: readonly PgObjectInfo[], table: PgObjectIdentity): E
         .filter((one): one is Extract<PgObjectInfo, {kind: "column"}> => one.kind === "column"
             && one.identity.schema === table.schema
             && one.identity.parentName === table.name)
-        .sort((a, b) => compareIdentity(a.identity, b.identity));
+        .sort((a, b) => compareCreateIdentity(a.identity, b.identity));
 }
 
 function constraintSql(object: Extract<PgObjectInfo, {kind: "constraint"}>): ValidationResult<string> {
@@ -96,7 +103,7 @@ export function generateCreate(schema: PgSchemaInfo): ValidationResult<CreateSql
 
     const identities = new Set<string>();
     for (const object of schema.objects) {
-        const key = identityKey(object.identity);
+        const key = pgIdentityKey(object.identity);
         if (identities.has(key)) {
             return fail("migration.unsupportedFormat", {reason: "duplicate PostgreSQL object identity", object: key});
         }
@@ -112,10 +119,10 @@ export function generateCreate(schema: PgSchemaInfo): ValidationResult<CreateSql
 
     const tables = schema.objects
         .filter((one): one is Extract<PgObjectInfo, {kind: "table"}> => one.kind === "table")
-        .sort((a, b) => compareIdentity(a.identity, b.identity));
+        .sort((a, b) => compareCreateIdentity(a.identity, b.identity));
     const constraints = schema.objects
         .filter((one): one is Extract<PgObjectInfo, {kind: "constraint"}> => one.kind === "constraint")
-        .sort((a, b) => compareIdentity(a.identity, b.identity));
+        .sort((a, b) => compareCreateIdentity(a.identity, b.identity));
 
     const statements: CreateSqlStatement[] = [];
     for (const table of tables) {
