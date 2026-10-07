@@ -20,6 +20,11 @@ export function sameReleaseRef(left: ReleaseRefInfo, right: ReleaseRefInfo): boo
         && left.releaseHash === right.releaseHash;
 }
 
+export function sameOptionalReleaseRef(left: ReleaseRefInfo | null, right: ReleaseRefInfo | null): boolean {
+    if (left === null || right === null) return left === right;
+    return sameReleaseRef(left, right);
+}
+
 export type FileResourceInfo<TKind extends string> = {
     kind: TKind;
     file: FileInfo;

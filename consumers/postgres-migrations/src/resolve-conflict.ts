@@ -4,6 +4,7 @@ import {
     isPlainObject,
     isSha256,
     problem,
+    sameOptionalReleaseRef,
     sameReleaseRef,
     toJsonValue,
     type Problem,
@@ -79,10 +80,6 @@ function blocked(reportHash: string, reason: string): ValidationResult<Resolutio
     };
 }
 
-function sameOptionalRelease(left: ReleaseRefInfo | null, right: ReleaseRefInfo | null): boolean {
-    if (left === null || right === null) return left === right;
-    return sameReleaseRef(left, right);
-}
 
 function schemaHash(schema: PgSchemaInfo): ValidationResult<string> {
     const converted = toJsonValue(schema);
@@ -225,7 +222,7 @@ async function validateInstallationFreshness(
     if (current.value.installationId !== report.installationId) {
         return failure("installation id changed while resolving conflict");
     }
-    if (!sameOptionalRelease(current.value.confirmedHead, report.confirmedHead)) {
+    if (!sameOptionalReleaseRef(current.value.confirmedHead, report.confirmedHead)) {
         return failure("confirmed head changed since conflict report");
     }
     if (report.historyHash === null || current.value.historyHash !== report.historyHash) {

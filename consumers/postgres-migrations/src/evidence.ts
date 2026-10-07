@@ -5,6 +5,7 @@ import {
     isPlainObject,
     isSha256,
     problem,
+    sameOptionalReleaseRef,
     sameReleaseRef,
     type Problem,
     type ReleaseRefInfo,
@@ -347,10 +348,6 @@ export function deriveVerificationStatus(
     return VERIFICATION_STATUS.passed;
 }
 
-function sameOptionalRelease(left: ReleaseRefInfo | null, right: ReleaseRefInfo | null): boolean {
-    if (left === null || right === null) return left === right;
-    return sameReleaseRef(left, right);
-}
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
     return left.length === right.length && left.every((one, index) => one === right[index]);
@@ -362,8 +359,8 @@ function sameBinding(left: DeploymentBindingInfo, right: DeploymentBindingInfo):
         && left.candidateApplicationHash === right.candidateApplicationHash
         && left.planHash === right.planHash
         && left.operation === right.operation
-        && sameOptionalRelease(left.from, right.from)
-        && sameOptionalRelease(left.to, right.to)
+        && sameOptionalReleaseRef(left.from, right.from)
+        && sameOptionalReleaseRef(left.to, right.to)
         && left.engineVersion === right.engineVersion
         && sameStrings(left.schemas, right.schemas)
         && left.configurationHash === right.configurationHash
