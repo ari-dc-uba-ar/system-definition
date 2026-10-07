@@ -1,4 +1,8 @@
 import {
+    exactKeys,
+    isNonEmptyString,
+    isPlainObject,
+    isSha256,
     problem,
     sameReleaseRef,
     toJsonValue,
@@ -41,7 +45,6 @@ export type ResolutionResultInfo =
     | {kind: "draftUpdated"; reportHash: string; draft: MigrationDraftInfo}
     | {kind: "blocked"; reportHash: string; problems: readonly Problem[]};
 
-type JsonObject = Readonly<Record<string, unknown>>;
 
 type DestructiveAnswerInfo = {
     questionId: string;
@@ -57,7 +60,6 @@ type ResolutionAnswersInfo = {
     answers: readonly DestructiveAnswerInfo[];
 };
 
-const HASH_RE = /^[0-9a-f]{64}$/;
 
 function failure<T>(reason: string): ValidationResult<T> {
     return {
@@ -77,24 +79,6 @@ function blocked(reportHash: string, reason: string): ValidationResult<Resolutio
     };
 }
 
-function isObject(value: unknown): value is JsonObject {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function exactKeys(value: JsonObject, required: readonly string[]): boolean {
-    const actual = Object.keys(value).sort();
-    const expected = [...required].sort();
-    return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
-
-function exactKeysOneOf(value: JsonObject, variants: readonly (readonly string[])[]): boolean {
-    return variants.some(keys => exactKeys(value, keys));
-}
-
-function nonEmptyString(value: unknown): value is string {
-    return typeof value === "string" && value.length > 0;
-}
-
 function sameOptionalRelease(left: ReleaseRefInfo | null, right: ReleaseRefInfo | null): boolean {
     if (left === null || right === null) return left === right;
     return sameReleaseRef(left, right);
@@ -112,15 +96,20 @@ function schemaHash(schema: PgSchemaInfo): ValidationResult<string> {
 function decodeAnswers(value: unknown, report: ConflictReportInfo): ValidationResult<ResolutionAnswersInfo> {
     const converted = toJsonValue(value);
     if (!converted.ok) return failure("answers must be strict JSON");
-    const raw = converted.value as unknown;
-    if (!isObject(raw)
-        || !exactKeysOneOf(raw, [
-            ["formatVersion", "reportHash", "answers"],
-            ["formatVersion", "reportHash", "draftHash", "draft", "answers"],
-        ])
+    const raw = converted.value;
+    if (!isPlainObject(raw)) return failure("invalid resolution answers shape");
+    const hasDraft = Object.prototype.hasOwnProperty.call(raw, "draftHash");
+    const shape = exactKeys(
+        raw,
+        hasDraft
+            ? ["formatVersion", "reportHash", "draftHash", "draft", "answers"]
+            : ["formatVersion", "reportHash", "answers"],
+        "$",
+        () => failure("invalid resolution answers shape"),
+    );
+    if (!shape.ok
         || raw.formatVersion !== 1
-        || typeof raw.reportHash !== "string"
-        || !HASH_RE.test(raw.reportHash)
+        || !isSha256(raw.reportHash)
         || !Array.isArray(raw.answers)) {
         return failure("invalid resolution answers shape");
     }
@@ -129,11 +118,10 @@ function decodeAnswers(value: unknown, report: ConflictReportInfo): ValidationRe
         return failure("answers are bound to another conflict report");
     }
 
-    const hasDraft = Object.prototype.hasOwnProperty.call(raw, "draftHash");
     let draftHash: string | null = null;
     let draft: MigrationDraftInfo | null = null;
     if (hasDraft) {
-        if (typeof raw.draftHash !== "string" || !HASH_RE.test(raw.draftHash) || !isObject(raw.draft)) {
+        if (!isSha256(raw.draftHash) || !isPlainObject(raw.draft)) {
             return failure("invalid answer draft binding");
         }
         draftHash = raw.draftHash;
@@ -143,9 +131,15 @@ function decodeAnswers(value: unknown, report: ConflictReportInfo): ValidationRe
     const answers: DestructiveAnswerInfo[] = [];
     for (let index = 0; index < raw.answers.length; index++) {
         const answer = raw.answers[index];
-        if (!isObject(answer)
-            || !exactKeys(answer, ["questionId", "kind", "decision"])
-            || !nonEmptyString(answer.questionId)
+        if (!isPlainObject(answer)) return failure("invalid conflict answer");
+        const answerShape = exactKeys(
+            answer,
+            ["questionId", "kind", "decision"],
+            `answers[${index}]`,
+            () => failure("invalid conflict answer"),
+        );
+        if (!answerShape.ok
+            || !isNonEmptyString(answer.questionId)
             || answer.kind !== "destructive") {
             return failure("invalid conflict answer");
         }
