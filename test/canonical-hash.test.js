@@ -2,8 +2,8 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
-const {canonicalJsonSha256, omitJsonObjectKeys} = require("../.verify-dist/consumers/postgres-migrations/src/canonical-hash.js");
-const {canonicalJson} = require("../.verify-dist/src/common/json-value.js");
+const {canonicalJsonSha256, omitJsonObjectKeys} = require("../consumers/postgres-migrations/dist/src/canonical-hash.js");
+const {canonicalJson} = require("../dist/src/common/json-value.js");
 
 const value = {z: 1, a: {b: true}, selfHash: "ignored"};
 const omitted = omitJsonObjectKeys(value, ["selfHash"]);

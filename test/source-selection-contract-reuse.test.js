@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {buildSourceSelection} = require("../.verify-dist/consumers/postgres-migrations/src/source-selection.js");
+const {buildSourceSelection} = require("../consumers/postgres-migrations/dist/src/source-selection.js");
 
 const hash = "a".repeat(64);
 const context = {

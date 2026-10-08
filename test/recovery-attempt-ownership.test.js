@@ -4,7 +4,7 @@ const path = require("node:path");
 const {
     readAttempt,
     settleAttempt,
-} = require("../.verify-dist/consumers/postgres-migrations/src/journal.js");
+} = require("../consumers/postgres-migrations/dist/src/journal.js");
 
 const hash = "c".repeat(64);
 const target = {systemId: "system", releaseId: "r2", releaseHash: hash};

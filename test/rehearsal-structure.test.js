@@ -8,7 +8,7 @@ const source = fs.readFileSync("consumers/postgres-migrations/src/rehearsal.ts",
 assert.doesNotMatch(source, /function isObject\s*\(/, "rehearsal must not re-own structural object membership");
 assert.doesNotMatch(source, /function exactKeys\s*\(/, "rehearsal must not re-own exact-key mechanics");
 assert.doesNotMatch(source, /function nonEmpty\s*\(/, "rehearsal must not re-own non-empty string membership");
-assert.match(source, /function hasExactShape[\s\S]*isPlainObject\(value\)[\s\S]*exactKeys\(/,
+assert.match(source, /function hasExactShape[\s\S]*isPlainObject\(value\)[\s\S]*hasExactKeys\(/,
   "record-shaped rehearsal inputs must delegate to the shared structural owner");
 assert.match(source, /function validSession[\s\S]*Reflect\.get\(value, "query"\)/,
   "session capability checks must not require a plain-record prototype");

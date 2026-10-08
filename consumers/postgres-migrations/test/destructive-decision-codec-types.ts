@@ -1,7 +1,7 @@
 import {
     decodeDestructiveDecisionInfo,
     type DestructiveDecisionInfo,
-} from "../consumers/postgres-migrations/src/authoring-contract";
+} from "../src/authoring-contract";
 import type {StructuralFailure, ValidationResult} from "system-definition";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)

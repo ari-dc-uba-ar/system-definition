@@ -1,7 +1,7 @@
-import type {EnvironmentInfo} from "../consumers/postgres-migrations/src/artifact";
-import type {DeploymentBindingInfo} from "../consumers/postgres-migrations/src/evidence";
-import type {PgSchemaInfo} from "../consumers/postgres-migrations/src/pg-schema";
-import {POSTGRES_SUPPORT} from "../consumers/postgres-migrations/src/postgres-support";
+import type {EnvironmentInfo} from "../src/artifact";
+import type {DeploymentBindingInfo} from "../src/evidence";
+import type {PgSchemaInfo} from "../src/pg-schema";
+import {POSTGRES_SUPPORT} from "../src/postgres-support";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)
     ? (<T>() => T extends B ? 1 : 2) extends (<T>() => T extends A ? 1 : 2) ? true : false

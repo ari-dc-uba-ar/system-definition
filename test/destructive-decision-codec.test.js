@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   decodeDestructiveDecisionInfo,
-} = require("../.verify-dist/consumers/postgres-migrations/src/authoring-contract.js");
+} = require("../consumers/postgres-migrations/dist/src/authoring-contract.js");
 
 function invalid(pathValue, reason) {
   return {

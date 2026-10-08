@@ -1,11 +1,11 @@
-import type {DeploymentReadinessInfo} from "../consumers/postgres-migrations/src/deployment-gate";
-import type {VerificationRunInfo} from "../consumers/postgres-migrations/src/evidence";
+import type {DeploymentReadinessInfo} from "../src/deployment-gate";
+import type {VerificationRunInfo} from "../src/evidence";
 import {
     DEPLOYMENT_READINESS_STATES,
     VERIFICATION_STATUSES,
     type DeploymentReadinessState,
     type VerificationStatus,
-} from "../consumers/postgres-migrations/src/journal-contracts";
+} from "../src/journal-contracts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)
     ? (<T>() => T extends B ? 1 : 2) extends (<T>() => T extends A ? 1 : 2) ? true : false

@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
-const {quotePgIdentifier, quotePgQualified} = require("../.verify-dist/consumers/postgres-migrations/src/pg-sql.js");
-const {buildSourceSelection} = require("../.verify-dist/consumers/postgres-migrations/src/source-selection.js");
+const {quotePgIdentifier, quotePgQualified} = require("../consumers/postgres-migrations/dist/src/pg-sql.js");
+const {buildSourceSelection} = require("../consumers/postgres-migrations/dist/src/source-selection.js");
 
 assert.equal(quotePgIdentifier('a"b'), '"a""b"');
 assert.equal(quotePgQualified("public", "users"), '"public"."users"');

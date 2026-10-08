@@ -47,11 +47,13 @@ function qualified(schema: string, name: string): string {
     return quotePgIdentifier(schema) + "." + quotePgIdentifier(name);
 }
 
-function renderType(type: PgTypeInfo): string {
+export function renderPgType(type: PgTypeInfo): string {
     const base = qualified(type.schema, type.name);
     const modifiers = type.modifiers.length === 0 ? "" : "(" + type.modifiers.join(", ") + ")";
     const arrays = "[]".repeat(type.arrayDimensions);
-    const collation = type.collation === null ? "" : " COLLATE " + qualified(type.schema, type.collation);
+    const collationParts = type.collation?.split(".");
+    const collation = type.collation === null || type.collation === "pg_catalog.default" ? ""
+        : " COLLATE " + (collationParts?.length === 2 ? qualified(collationParts[0]!, collationParts[1]!) : qualified(type.schema, type.collation));
     return base + modifiers + arrays + collation;
 }
 
@@ -63,7 +65,7 @@ function columnsOf(objects: readonly PgObjectInfo[], table: PgObjectIdentity): E
         .sort((a, b) => compareCreateIdentity(a.identity, b.identity));
 }
 
-function constraintSql(object: Extract<PgObjectInfo, {kind: "constraint"}>): ValidationResult<string> {
+export function constraintSql(object: Extract<PgObjectInfo, {kind: "constraint"}>): ValidationResult<string> {
     const table = object.identity.parentName;
     if (table === null) {
         return fail("migration.unsupportedFormat", {constraint: object.identity.name, reason: "constraint has no parent table"});
@@ -130,7 +132,7 @@ export function generateCreate(schema: PgSchemaInfo): ValidationResult<CreateSql
         if (columns.length === 0) {
             return fail("migration.unsupportedSchemaFeature", {table: table.identity.name, reason: "table has no columns"});
         }
-        const definitions = columns.map(column => quotePgIdentifier(column.identity.name) + " " + renderType(column.type)
+        const definitions = columns.map(column => quotePgIdentifier(column.identity.name) + " " + renderPgType(column.type)
             + (column.nullable ? "" : " NOT NULL"));
         statements.push({
             phase: "table",

@@ -42,3 +42,12 @@ export * from "./conflict-report";
 export * from "./resolve-conflict";
 
 export * from "./preparation";
+
+export * from "./cli-project";
+export * from "./pg-session";
+export * from "./pg-ast";
+export * from "./authoring-files";
+export * from "./postgres-authoring";
+export * from "./build-validation";
+export * from "./historical-validation";
+export * from "./compiled-artifact";

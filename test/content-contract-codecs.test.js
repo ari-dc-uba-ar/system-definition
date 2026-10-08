@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const {
     decodeContentRefInfo,
     decodeFileResourceInfo,
-} = require("../.verify-dist/src/common/migration.js");
+} = require("../dist/src/common/migration.js");
 
 const HASH = "a".repeat(64);
 const invalid = (path, reason) => ({ok: false, problems: [{path, reason}]});

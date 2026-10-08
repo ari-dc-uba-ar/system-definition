@@ -34,7 +34,7 @@ describe("T23 final preparation execution, journal and deployment integration co
         assert.equal(typeof api.verifyResolution, "function", "verify-resolution must be a library operation, not CLI-only SQL");
         assert.equal(typeof api.applyResolution, "function", "apply-resolution must be a distinct explicit library operation");
 
-        const preparationSource = source("src/preparation.ts");
+        const preparationSource = source("src/preparation-execution.ts");
         assert.match(preparationSource, /PreparationReceiptInfo/);
         assert.match(preparationSource, /status\s*:\s*["']passed["']\s*\|\s*["']failed["']\s*\|\s*["']incomplete["']/);
         assert.match(preparationSource, /checkPreparationPreconditions/);
@@ -42,7 +42,7 @@ describe("T23 final preparation execution, journal and deployment integration co
     });
 
     it("journals attempts and confirmed preparations without advancing migration head and reconciles duplicate or ambiguous execution", () => {
-        const journal = source("src/journal.ts");
+        const journal = source("src/journal-schema.ts") + source("src/journal-preparations.ts");
         assert.match(journal, /preparation_attempts/);
         assert.match(journal, /preparations/);
         assert.match(journal, /preparation_id/);

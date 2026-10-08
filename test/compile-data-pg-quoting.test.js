@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const {createHash} = require('node:crypto');
-const {compileDataMigration} = require('../.verify-dist/consumers/postgres-migrations/src/compile-data.js');
+const {compileDataMigration} = require('../consumers/postgres-migrations/dist/src/compile-data.js');
 
 function hash(text) {
     return createHash('sha256').update(text, 'utf8').digest('hex');

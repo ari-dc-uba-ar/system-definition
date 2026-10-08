@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {decodeReleaseRefInfo, decodeResourceRefInfo} = require("../.verify-dist/migration.js");
+const {decodeReleaseRefInfo, decodeResourceRefInfo} = require("../dist/src/common/migration.js");
 
 const invalid = (path, reason) => ({
     ok: false,

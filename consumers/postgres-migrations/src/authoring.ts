@@ -17,6 +17,7 @@ import type {
     RenameInfo,
     StructureChangeInfo,
 } from "./authoring-contract";
+import {compileGenerated} from "./compile-generated";
 import {inferStructureChanges} from "./infer";
 import type {DataMigrationInfo} from "./migration-authoring";
 import {pgIdentityKey, samePgIdentity} from "./pg-identity";
@@ -430,7 +431,7 @@ function validateMigrateDecision(
     return {ok: true, value: true};
 }
 
-function validateDestructiveDecisions(
+export function validateDestructiveDecisions(
     changes: readonly StructureChangeInfo[],
     decisions: readonly DestructiveDecisionInfo[],
     data: readonly DataMigrationInfo[],
@@ -610,20 +611,7 @@ export async function compileDraft(
     );
     if (!manual.ok) return manual;
 
-    const referencedDataIds = new Set(
-        draft.decisions
-            .filter((decision): decision is DestructiveDecisionInfo & {
-                resolution: Extract<DestructiveDecisionInfo["resolution"], {kind: "migrate"}>;
-            } => decision.resolution.kind === "migrate")
-            .map(decision => decision.resolution.dataMigrationId),
-    );
-    if (draft.data.some(migration => !referencedDataIds.has(migration.id))) {
-        return fail("migration.authoringPending", {
-            reason: "unreferenced data migrations require a later authoring slice",
-        });
-    }
-
-    const inspected = await runtime.inspectDraft(draft);
+    const inspected = await runtime.inspectDraft({...draft, manual: manual.value.steps});
     if (!inspected.ok) return inspected;
 
     const residual = inferStructureChanges(
@@ -645,8 +633,7 @@ export async function compileDraft(
     const firstUnsupported = residual.value.find(change => change.impact === "unsupported");
     if (firstUnsupported !== undefined) return unsupported(firstUnsupported);
 
-    const firstPending = residual.value.find(change => change.impact === "requiresDataCheck"
-        || change.impact === "destructive");
+    const firstPending = residual.value.find(change => change.impact === "requiresDataCheck" && draft.data.length === 0);
     if (firstPending !== undefined) return pendingFor(firstPending);
 
     const manualOperations: readonly CompiledAuthoringOperationInfo[] = manual.value.steps.map(step => ({
@@ -655,31 +642,8 @@ export async function compileDraft(
         changeIds: [...step.implementsChanges],
         dataMigrationIds: [],
     }));
-    const dataOperations: readonly CompiledAuthoringOperationInfo[] = draft.data.map(migration => ({
-        id: "data:" + migration.id,
-        stepIds: [],
-        changeIds: [],
-        dataMigrationIds: [migration.id],
-    }));
-    const migrateChangeIds = new Set(
-        draft.decisions
-            .filter(decision => decision.resolution.kind === "migrate")
-            .map(decision => decision.changeId),
-    );
-    const destructiveOperations = historical.value
-        .filter(change => change.impact === "destructive"
-            && migrateChangeIds.has(change.id)
-            && !manual.value.claimedChangeIds.has(change.id))
-        .map(operationFor);
-    const operations = [
-        ...manualOperations,
-        ...dataOperations,
-        ...destructiveOperations,
-        ...residual.value.map(operationFor),
-    ];
-    return {
-        ok: true,
-        value: {
+    const operations = manualOperations;
+    return compileGenerated(draft, runtime, inspected.value, loadedDesired.value.expectedSchema, residual.value, {
             formatVersion: 1,
             draftHash: draft.revisionHash,
             base: draft.base,
@@ -689,6 +653,5 @@ export async function compileDraft(
             checkpoints: manual.value.checkpoints,
             queryResources: Object.freeze(Object.create(null) as Record<string, never>),
             validationArtifacts: [],
-        },
-    };
+    });
 }

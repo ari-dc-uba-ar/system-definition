@@ -1,5 +1,5 @@
-import type {PgObjectIdentity as IdentityOwnerType} from "../consumers/postgres-migrations/src/pg-identity";
-import type {PgObjectIdentity as SchemaCompatibilityType} from "../consumers/postgres-migrations/src/pg-schema";
+import type {PgObjectIdentity as IdentityOwnerType} from "../src/pg-identity";
+import type {PgObjectIdentity as SchemaCompatibilityType} from "../src/pg-schema";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)
     ? (<T>() => T extends B ? 1 : 2) extends (<T>() => T extends A ? 1 : 2) ? true : false

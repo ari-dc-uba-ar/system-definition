@@ -25,6 +25,8 @@ import {
 } from "./conflict-report";
 import type {SourceSelectionInfo} from "./migration-authoring";
 import type {PgSchemaInfo} from "./pg-schema";
+import {decodePreparationArtifact, type PreparationArtifactInfo} from "./preparation-artifact";
+import {createHash} from "node:crypto";
 
 export type ResolutionStateInfo = {
     installationId: string;
@@ -40,10 +42,13 @@ export interface ResolutionRuntime extends AuthoringRuntime {
         installationId: string,
         selections: readonly SourceSelectionInfo[],
     ): Promise<ValidationResult<string>>;
+    revalidateOperational?(report: ConflictReportInfo): Promise<ValidationResult<true>>;
 }
 
 export type ResolutionResultInfo =
     | {kind: "draftUpdated"; reportHash: string; draft: MigrationDraftInfo}
+    | {kind: "preparation"; reportHash: string; artifact: PreparationArtifactInfo}
+    | {kind: "retryEligibleForVerification"; reportHash: string; head: ReleaseRefInfo}
     | {kind: "blocked"; reportHash: string; problems: readonly Problem[]};
 
 
@@ -59,6 +64,7 @@ type ResolutionAnswersInfo = {
     draftHash: string | null;
     draft: MigrationDraftInfo | null;
     answers: readonly DestructiveAnswerInfo[];
+    preparation: unknown | null;
 };
 
 
@@ -96,11 +102,12 @@ function decodeAnswers(value: unknown, report: ConflictReportInfo): ValidationRe
     const raw = converted.value;
     if (!isPlainObject(raw)) return failure("invalid resolution answers shape");
     const hasDraft = Object.prototype.hasOwnProperty.call(raw, "draftHash");
+    const hasPreparation = Object.prototype.hasOwnProperty.call(raw, "preparation");
     const shape = exactKeys(
         raw,
-        hasDraft
+        [...(hasDraft
             ? ["formatVersion", "reportHash", "draftHash", "draft", "answers"]
-            : ["formatVersion", "reportHash", "answers"],
+            : ["formatVersion", "reportHash", "answers"]), ...(hasPreparation ? ["preparation"] : [])],
         "$",
         () => failure("invalid resolution answers shape"),
     );
@@ -153,7 +160,8 @@ function decodeAnswers(value: unknown, report: ConflictReportInfo): ValidationRe
         return failure("answers that edit a draft require an exact draft binding");
     }
 
-    return {ok: true, value: {formatVersion: 1, reportHash: raw.reportHash, draftHash, draft, answers}};
+    if (hasPreparation && (hasDraft || answers.length > 0)) return failure("Preparation and draft answers are separate resolution actions");
+    return {ok: true, value: {formatVersion: 1, reportHash: raw.reportHash, draftHash, draft, answers, preparation: raw.preparation ?? null}};
 }
 
 function validateDraftBinding(
@@ -178,13 +186,13 @@ function applyDestructiveAnswer(
     report: ConflictReportInfo,
     answers: ResolutionAnswersInfo,
 ): ValidationResult<ResolutionResultInfo> {
-    if (answers.answers.length !== 1) {
-        return failure("exactly one pending conflict answer is required in this resolver slice");
-    }
+    if (answers.answers.length === 0) return failure("At least one pending answer is required");
     const bound = validateDraftBinding(report, answers);
     if (!bound.ok) return bound;
     const draft = bound.value;
-    const answer = answers.answers[0]!;
+    const decisions = [...draft.decisions];
+    const resolvedQuestions = new Set<string>();
+    for (const answer of answers.answers) {
     const question = draft.pending.find(one => one.id === answer.questionId);
     if (question === undefined || question.kind !== "destructive") {
         return failure("answer does not match a pending destructive question");
@@ -192,16 +200,43 @@ function applyDestructiveAnswer(
     if (!report.questions.some(one => one.id === question.id && one.kind === question.kind)) {
         return failure("answer question is not part of the conflict report");
     }
-    if (draft.decisions.some(one => one.changeId === answer.decision.changeId
+    const change = draft.changes.find(one => one.id === answer.decision.changeId);
+    if (change === undefined || change.impact !== "destructive") {
+        return failure("answer does not reference a destructive change in the draft");
+    }
+    const source = answer.decision.source;
+    if (source === null ? change.affectedFields.length !== 0 : !change.affectedFields.some(field =>
+        field.side === source.side && field.entity === source.entity && field.field === source.field)) {
+        return failure("answer source is not affected by the destructive change");
+    }
+    const sourceIdentity = change.before;
+    const subject = sourceIdentity === null ? "" : [sourceIdentity.schema, sourceIdentity.parentName, sourceIdentity.name].filter(one => one !== null).join(".");
+    if (!question.subjects.includes(change.id) && !question.subjects.includes(subject)) {
+        return failure("answer does not address this question's destructive subject");
+    }
+    if (answer.decision.resolution.kind === "discard" && answer.decision.resolution.reason.trim().length === 0) return failure("Discard requires a reason");
+    if (answer.decision.resolution.kind === "migrate") {
+        const resolution = answer.decision.resolution;
+        const data = draft.data.find(one => one.id === resolution.dataMigrationId);
+        if (data === undefined || source === null
+            || !Object.values(data.source.ports).some(port => port.field?.side === source.side && port.field.entity === source.entity && port.field.field === source.field)
+            || !resolution.outputs.every(output => data.writes.some(write => write.values.some(binding => binding.output === output)))) {
+            return failure("Migrate answer must consume the source and write every selected output");
+        }
+    }
+    if (decisions.some(one => one.changeId === answer.decision.changeId
         && JSON.stringify(one.source) === JSON.stringify(answer.decision.source)
         && JSON.stringify(one.partitionCheck) === JSON.stringify(answer.decision.partitionCheck))) {
         return failure("duplicate destructive decision");
     }
+    decisions.push(answer.decision);
+    resolvedQuestions.add(question.id);
+    }
 
     const nextWithoutRevision: MigrationDraftInfo = {
         ...draft,
-        decisions: [...draft.decisions, answer.decision],
-        pending: draft.pending.filter(one => one.id !== question.id),
+        decisions,
+        pending: draft.pending.filter(one => !resolvedQuestions.has(one.id)),
     };
     const revision = computeDraftRevisionHash(nextWithoutRevision);
     if (!revision.ok) return revision;
@@ -283,5 +318,48 @@ export async function resolveConflict(
         return applyDestructiveAnswer(report.value, answers.value);
     }
 
-    return blocked(report.value.reportHash, "conflict requires a later resolver/preparation slice");
+    if (report.value.kind === "historyIntegrity" || report.value.kind === "artifactIntegrity") {
+        return blocked(report.value.reportHash, "Restore authentic history and artifacts before obtaining a new report");
+    }
+    if (fresh.value === null || fresh.value.confirmedHead === null || fresh.value.unknownCommit) {
+        return blocked(report.value.reportHash, "A confirmed installation and commit outcome are required");
+    }
+    if (report.value.kind === "operational") {
+        if (runtime.revalidateOperational === undefined) return blocked(report.value.reportHash, "Operational checks must be rerun before retry");
+        const checked = await runtime.revalidateOperational(report.value);
+        if (!checked.ok) return checked;
+        return {ok: true, value: {kind: "retryEligibleForVerification", reportHash: report.value.reportHash, head: fresh.value.confirmedHead}};
+    }
+    if (report.value.kind === "targetData" || report.value.kind === "schemaDrift") {
+        if (answers.value.preparation === null) return blocked(report.value.reportHash, "Provide an explicit preparation proposal; business transformations cannot be inferred");
+        const head = await runtime.loadRelease(fresh.value.confirmedHead);
+        if (!head.ok) return head;
+        if (!sameReleaseRef(head.value.ref, fresh.value.confirmedHead)) return failure("Loaded head reference changed");
+        const expected = schemaHash(head.value.expectedSchema);
+        if (!expected.ok) return expected;
+        const prepared = decodePreparationArtifact(answers.value.preparation, expected.value);
+        if (!prepared.ok) return prepared;
+        const artifact = prepared.value;
+        if (artifact.reportHash !== report.value.reportHash || artifact.installationId !== fresh.value.installationId
+            || !sameReleaseRef(artifact.head, fresh.value.confirmedHead) || artifact.historyHash !== fresh.value.historyHash
+            || artifact.observedSchemaHash !== report.value.observedSchemaHash || artifact.requestedPlanHash !== report.value.planHash) {
+            return failure("Preparation is bound to another report, installation, head, history, schema or plan");
+        }
+        const fingerprint = await runtime.fingerprintInputs(artifact.installationId, artifact.inputCapture);
+        if (!fingerprint.ok) return fingerprint;
+        if (fingerprint.value !== artifact.inputFingerprint) return failure("Relevant data changed since preparation was authored");
+        if (runtime.readSql === undefined) return failure("Preparation resources must be read and verified");
+        for (const [name, resource] of Object.entries(artifact.resources)) {
+            const read = await runtime.readSql({name, kind: resource.kind, contentHash: resource.file.contentHash});
+            if (!read.ok) return read;
+            if (createHash("sha256").update(read.value).digest("hex") !== resource.file.contentHash) return failure("Preparation SQL checksum mismatch");
+        }
+        for (const [name, resource] of Object.entries(artifact.queryResources)) {
+            const read = await runtime.readQuery({name, kind: "query", contentHash: resource.file.contentHash});
+            if (!read.ok) return read;
+            if (createHash("sha256").update(read.value).digest("hex") !== resource.file.contentHash) return failure("Preparation query checksum mismatch");
+        }
+        return {ok: true, value: {kind: "preparation", reportHash: report.value.reportHash, artifact}};
+    }
+    return blocked(report.value.reportHash, "The report still has unresolved authoring questions");
 }

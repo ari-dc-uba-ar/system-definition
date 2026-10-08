@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {createConflictReport, decodeConflictReport} = require("../.verify-dist/consumers/postgres-migrations/src/conflict-report.js");
+const {createConflictReport, decodeConflictReport} = require("../consumers/postgres-migrations/dist/src/conflict-report.js");
 
 const hash = "b".repeat(64);
 const release = {systemId: "system", releaseId: "r1", releaseHash: hash};

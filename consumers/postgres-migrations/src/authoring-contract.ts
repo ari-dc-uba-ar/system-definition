@@ -5,6 +5,8 @@ import {
     isNonEmptyString,
     isPlainObject,
     type FileResourceInfo,
+    type FileInfo,
+    type PersistenceInfo,
     type JsonValue,
     type MigrationInfo,
     type ReleaseRefInfo,
@@ -14,6 +16,10 @@ import {
 } from "system-definition";
 import type {PgObjectIdentity, PgSchemaInfo} from "./pg-schema";
 import type {DataMigrationInfo, FieldRefInfo, QueryRefInfo} from "./migration-authoring";
+import type {AuthoringContext} from "./migration-authoring";
+import type {StorageContext} from "./pg-schema";
+import type {ValidationArtifactInfo} from "./validation-artifact";
+import type {AuthoredResource} from "./authoring-files";
 
 export type {FieldRefInfo, QueryRefInfo, SnapshotSide} from "./migration-authoring";
 
@@ -227,6 +233,14 @@ export interface AuthoringRuntime {
     readQuery(ref: QueryRefInfo): Promise<ValidationResult<string>>;
     readSql?(ref: ResourceRefInfo): Promise<ValidationResult<string>>;
     inspectDraft(draft: MigrationDraftInfo): Promise<ValidationResult<PgSchemaInfo>>;
+    emitResource?(resource: AuthoredResource): Promise<ValidationResult<FileInfo>>;
+    inspectCompiled?(compiled: CompiledAuthoringInfo): Promise<ValidationResult<PgSchemaInfo>>;
+    loadDataContext?(): Promise<ValidationResult<{
+        context: AuthoringContext;
+        persistence: PersistenceInfo;
+        storage: StorageContext;
+        validationArtifacts: readonly ValidationArtifactInfo[];
+    }>>;
 }
 
 export type CompiledAuthoringOperationInfo = {

@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {decodeValidationArtifact} = require("../.verify-dist/consumers/postgres-migrations/src/validation-artifact.js");
+const {decodeValidationArtifact} = require("../consumers/postgres-migrations/dist/src/validation-artifact.js");
 
 const hash = "a".repeat(64);
 const valid = () => ({

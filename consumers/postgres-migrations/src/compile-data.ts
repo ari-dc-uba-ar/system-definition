@@ -776,7 +776,8 @@ function preservationContracts(
                 : []),
         );
         const candidateKeys = [contract.value.entity.pk, ...Object.values(contract.value.entity.uks)];
-        const identityFields = candidateKeys.find(key => key.length > 0 && key.every(field => !changedFields.has(field)));
+        const identityFields = candidateKeys.find(key => key.length > 0
+            && key.every(field => !changedFields.has(field) && contract.value.entity.fields[field]?.nullable === false));
         if (identityFields === undefined) {
             return failure("conservation requires a destination key that remains unchanged across writes", {entity});
         }
@@ -934,7 +935,9 @@ function preservationVerificationSql(
         "SELECT 1 / CASE WHEN EXISTS (",
         `    SELECT 1 FROM ${quotePgIdentifier(preserved.table)} AS "before"`,
         `    FULL JOIN ${quotePgQualified(schema, preserved.entity)} AS "after"`,
-        `      ON ${pgRowIdentityPredicate(identityFields, "before", "after")}`,
+        // The preserved row identity is its non-null primary key. Equality is
+        // hash/merge joinable; PostgreSQL rejects FULL JOIN with IS NOT DISTINCT FROM.
+        `      ON ${identityFields.map(field => `"before".${quotePgIdentifier(field)} = "after".${quotePgIdentifier(field)}`).join(" AND ")}`,
         "    WHERE (",
         '        "before"."__before_present" IS NOT NULL AND "after".ctid IS NULL',
         "    ) OR (",

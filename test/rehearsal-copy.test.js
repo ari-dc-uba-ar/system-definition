@@ -5,7 +5,7 @@ const {
   decodeRehearsalCopyRef,
   hasWellFormedRehearsalCopyIdentity,
   sameRehearsalCopyRef,
-} = require("../.verify-dist/consumers/postgres-migrations/src/rehearsal-copy.js");
+} = require("../consumers/postgres-migrations/dist/src/rehearsal-copy.js");
 
 const hash = "a".repeat(64);
 const valid = {

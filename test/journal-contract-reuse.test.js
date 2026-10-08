@@ -5,7 +5,7 @@ const {
     startAttempt,
     readConfirmedPreparation,
     readHistory,
-} = require("../.verify-dist/consumers/postgres-migrations/src/journal.js");
+} = require("../consumers/postgres-migrations/dist/src/journal.js");
 
 const hash = "b".repeat(64);
 

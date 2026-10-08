@@ -1,3 +1,4 @@
+import {AuthoringFiles} from "../src/authoring-files";
 import {strict as assert} from "node:assert";
 import {describe, it} from "mocha";
 import type {ReleaseRefInfo, ValidationResult} from "system-definition";
@@ -75,14 +76,14 @@ function draft(changes: readonly StructureChangeInfo[] = [], pending: readonly u
 
 type LoadedDesired = {ref: ReleaseRefInfo; expectedSchema: PgSchemaInfo};
 
-class CompileRuntime {
+class CompileRuntime extends AuthoringFiles {
     readonly calls: string[] = [];
 
     constructor(
         readonly history: PgSchemaInfo,
         readonly desired: PgSchemaInfo,
         readonly inspected: PgSchemaInfo,
-    ) {}
+    ) { super(); }
 
     async loadRelease(ref: ReleaseRefInfo): Promise<ValidationResult<LoadedDesired>> {
         this.calls.push("load:" + ref.releaseId);
@@ -96,6 +97,10 @@ class CompileRuntime {
 
     async readQuery(): Promise<ValidationResult<string>> {
         throw new Error("T18 structure-only compilation must not load data queries");
+    }
+
+    async inspectCompiled(): Promise<ValidationResult<PgSchemaInfo>> {
+        return {ok: true, value: this.desired};
     }
 
     async inspectDraft(): Promise<ValidationResult<PgSchemaInfo>> {
@@ -116,6 +121,47 @@ function firstKey(result: ValidationResult<unknown>): string | undefined {
 }
 
 describe("T18 residual structure planning and compileDraft boundary", () => {
+    it("emits executable SQL steps for an inferred nullable column addition", async () => {
+        const history = schema([table("people"), column("people", "id", false)]);
+        const desired = schema([...history.objects, column("people", "nickname", true)]);
+        const result = await compileDraft(draft(), new CompileRuntime(history, desired, history));
+
+        assert.equal(result.ok, true);
+        if (!result.ok) return;
+        assert.ok(result.value.migration.steps.length > 0,
+            "a successful structural compilation must contain executable SQL, not only logical operations");
+        const stepIds = new Set(result.value.migration.steps.map(step => step.id));
+        for (const operation of result.value.operations) {
+            assert.ok(operation.stepIds.length > 0, "every emitted operation must reference executable steps");
+            assert.ok(operation.stepIds.every(id => stepIds.has(id)));
+        }
+        assert.ok(result.value.migration.steps.every(step => step.run.kind === "sql"));
+    });
+
+    it("compiles a column removal after its historical source has an explicit discard decision", async () => {
+        const desired = schema([table("people"), column("people", "id", false)]);
+        const history = schema([...desired.objects, column("people", "legacy", true)]);
+        const changes = infer(history, desired);
+        const removal = changes.find(change => change.action === "remove" && change.before?.name === "legacy");
+        assert.ok(removal);
+        const approved: MigrationDraftInfo = {
+            ...draft(changes),
+            decisions: [{
+                changeId: removal.id,
+                source: {side: "from", entity: "people", field: "legacy"},
+                partitionCheck: null,
+                resolution: {kind: "discard", reason: "The owner explicitly retired this field."},
+            }],
+        };
+
+        const result = await compileDraft(approved, new CompileRuntime(history, desired, history));
+
+        if (!result.ok) assert.fail(JSON.stringify(result.problems));
+        assert.ok(result.value.migration.steps.length > 0);
+        assert.ok(result.value.operations.some(operation => operation.changeIds.includes(removal.id)
+            && operation.stepIds.length > 0));
+    });
+
     it("recomputes the residual against desired and emits only preserving changes still missing after authored effects", async () => {
         const history = schema([table("people"), column("people", "id", false)]);
         const desired = schema([

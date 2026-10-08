@@ -1,5 +1,5 @@
-import type {AttemptState} from "../consumers/postgres-migrations/src/journal";
-import type {CommitOutcomeState} from "../consumers/postgres-migrations/src/recovery";
+import type {AttemptState} from "../src/journal";
+import type {CommitOutcomeState} from "../src/recovery";
 
 type Expected = Exclude<AttemptState, "running">;
 

@@ -3,7 +3,7 @@ import {
     ATTEMPT_STATES,
     type AttemptState,
     type PreparationAttemptState,
-} from "../consumers/postgres-migrations/src/journal";
+} from "../src/journal";
 
 declare const attempt: AttemptState;
 declare const preparation: PreparationAttemptState;

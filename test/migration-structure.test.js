@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {completeMigration, decodeMigration} = require("../.verify-dist/migration.js");
+const {completeMigration, decodeMigration} = require("../dist/src/common/migration.js");
 
 const releaseHash1 = "1".repeat(64);
 const releaseHash2 = "2".repeat(64);

@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const {
   recordVerificationRecord,
   readLatestVerificationRecord,
-} = require("../.verify-dist/consumers/postgres-migrations/src/journal-verification.js");
+} = require("../consumers/postgres-migrations/dist/src/journal-verification.js");
 
 const status = "passed";
 const createdAt = "2026-10-06T12:00:00Z";

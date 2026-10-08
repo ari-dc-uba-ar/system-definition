@@ -3,8 +3,8 @@ import {
     hasWellFormedRehearsalCopyIdentity,
     sameRehearsalCopyRef,
     type RehearsalCopyRef,
-} from "../consumers/postgres-migrations/src/rehearsal-copy";
-import type {ValidationResult} from "../src/common/problem";
+} from "../src/rehearsal-copy";
+import type {ValidationResult} from "system-definition";
 
 const copy: RehearsalCopyRef = {
     copyId: "copy-1",

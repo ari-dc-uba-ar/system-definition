@@ -3,6 +3,7 @@ import {describe, it} from "mocha";
 import type {ReleaseRefInfo, ResourceRefInfo, ValidationResult} from "system-definition";
 import {
     compileDraft,
+    validateDestructiveDecisions,
     type AuthoringRuntime,
     type DestructiveDecisionInfo,
     type MigrationDraftInfo,
@@ -194,11 +195,11 @@ function firstKey(result: ValidationResult<unknown>): string | undefined {
 describe("T21 migrate decisions, partitions and preservation order", () => {
     it("accepts migrate only when the named data migration consumes the source and writes every named output", async () => {
         const decision = migrate(legacyDrop());
-        const result = await compileDraft(draft([moveNote()], [decision]), new Runtime());
+        const result = validateDestructiveDecisions(infer(), [decision], [moveNote()]);
 
         assert.equal(result.ok, true);
         if (!result.ok) return;
-        assert.deepEqual(result.value.decisions, [decision]);
+        assert.deepEqual(result.value, [decision]);
     });
 
     it("rejects an unknown migration, empty outputs, an unconsumed source and an output not bound by the migration", async () => {
@@ -244,10 +245,10 @@ describe("T21 migrate decisions, partitions and preservation order", () => {
             discardPartition(change, archived),
         ];
 
-        const result = await compileDraft(draft([moveNote()], decisions), new Runtime());
+        const result = validateDestructiveDecisions(infer(), decisions, [moveNote()]);
         assert.equal(result.ok, true);
         if (!result.ok) return;
-        assert.deepEqual(result.value.decisions, decisions);
+        assert.deepEqual(result.value, decisions);
     });
 
     it("rejects duplicate partition coverage, whole-field plus partition widening, and a non-check partition resource", async () => {
@@ -270,17 +271,11 @@ describe("T21 migrate decisions, partitions and preservation order", () => {
         );
     });
 
-    it("orders the preserving data migration before the destructive source removal", async () => {
+    it("refuses to pretend a preserving migration compiled when its runtime has no SQL artifacts or replay", async () => {
         const change = legacyDrop();
         const result = await compileDraft(draft([moveNote()], [migrate(change)]), new Runtime());
 
-        assert.equal(result.ok, true);
-        if (!result.ok) return;
-
-        const preserveIndex = result.value.operations.findIndex(operation => operation.dataMigrationIds.includes("move-note"));
-        const dropIndex = result.value.operations.findIndex(operation => operation.changeIds.includes(change.id));
-        assert.notEqual(preserveIndex, -1, "compiled graph must contain the preserving migration");
-        assert.notEqual(dropIndex, -1, "compiled graph must contain the destructive removal");
-        assert.ok(preserveIndex < dropIndex, "preservation and its checks must precede DROP");
+        assert.equal(result.ok, false);
+        if (!result.ok) assert.equal(result.problems[0]?.messageKey, "migration.authoringInvalid");
     });
 });

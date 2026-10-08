@@ -1,4 +1,7 @@
 import {strict as assert} from "node:assert";
+import {spawnSync} from "node:child_process";
+import {readFileSync} from "node:fs";
+import {resolve} from "node:path";
 import {describe, it} from "mocha";
 import {problem, type ValidationResult} from "system-definition";
 import {
@@ -16,6 +19,24 @@ function failed(messageKey: string): ValidationResult<unknown> {
 }
 
 describe("migration CLI boundary", () => {
+    it("ships a runnable postgres-migrations command with offline help", () => {
+        const root = resolve(__dirname, "../..");
+        const manifest: {bin?: Record<string, string>} = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+        const entry = manifest.bin?.["postgres-migrations"];
+        assert.equal(typeof entry, "string", "the documented CLI must be registered in package.json");
+        if (entry === undefined) return;
+        const help = spawnSync(process.execPath, [resolve(root, entry), "--help"], {
+            encoding: "utf8",
+            timeout: 10_000,
+            env: {...process.env, CI: "true", DATABASE_URL: ""},
+        });
+        assert.equal(help.error, undefined);
+        assert.equal(help.status, 0, help.stderr);
+        for (const command of ["infer", "add-data", "resolve", "verify", "apply"]) {
+            assert.ok(help.stdout.includes(command), `help must document ${command}`);
+        }
+    });
+
     it("maps complete success and the documented technical failure classes to 0/2/3/4", () => {
         assert.equal(cliExitCode({ok: true, value: {id: "ok"}}), 0);
         assert.equal(cliExitCode(failed("migration.invalidReference")), 2);

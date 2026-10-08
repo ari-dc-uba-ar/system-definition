@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
-const {isPgNonEmptyText} = require("../.verify-dist/consumers/postgres-migrations/src/pg-text.js");
-const {recordVerification} = require("../.verify-dist/consumers/postgres-migrations/src/evidence.js");
+const {isPgNonEmptyText} = require("../consumers/postgres-migrations/dist/src/pg-text.js");
+const {recordVerification} = require("../consumers/postgres-migrations/dist/src/evidence.js");
 
 assert.equal(isPgNonEmptyText("ok"), true);
 assert.equal(isPgNonEmptyText(""), false);

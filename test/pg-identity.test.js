@@ -7,7 +7,7 @@ const {
     comparePgIdentity,
     pgIdentityKey,
     samePgIdentity,
-} = require("../.verify-dist/consumers/postgres-migrations/src/pg-identity.js");
+} = require("../consumers/postgres-migrations/dist/src/pg-identity.js");
 
 const table = {schema: "app", kind: "table", name: "user", parentName: null, signature: []};
 const sameTable = {...table, signature: []};

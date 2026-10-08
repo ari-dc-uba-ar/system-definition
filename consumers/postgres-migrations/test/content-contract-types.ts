@@ -3,9 +3,9 @@ import type {
     FileResourceInfo,
     ResourceInfo,
     ResourceRefInfo,
-} from "../src/common/migration";
-import type {QueryResourceInfo} from "../consumers/postgres-migrations/src/authoring-contract";
-import type {QueryRefInfo} from "../consumers/postgres-migrations/src/migration-authoring";
+} from "system-definition";
+import type {QueryResourceInfo} from "../src/authoring-contract";
+import type {QueryRefInfo} from "../src/migration-authoring";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)
     ? (<T>() => T extends B ? 1 : 2) extends (<T>() => T extends A ? 1 : 2) ? true : false

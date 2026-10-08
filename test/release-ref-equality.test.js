@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const {sameReleaseRef} = require("../.verify-dist/src/common/migration.js");
+const {sameReleaseRef, sameOptionalReleaseRef} = require("../dist/src/common/migration.js");
 
 const base = {systemId: "system", releaseId: "r1", releaseHash: "a".repeat(64)};
 assert.equal(sameReleaseRef(base, {...base}), true);
@@ -28,14 +28,18 @@ const evidence = fs.readFileSync(
     path.join(__dirname, "../consumers/postgres-migrations/src/evidence.ts"),
     "utf8",
 );
-assert.match(evidence, /function sameOptionalRelease/);
-assert.match(evidence, /return sameReleaseRef\(left, right\)/);
+assert.match(evidence, /\bsameOptionalReleaseRef\(/);
+assert.doesNotMatch(evidence, /function sameOptionalRelease/);
 
 const resolver = fs.readFileSync(
     path.join(__dirname, "../consumers/postgres-migrations/src/resolve-conflict.ts"),
     "utf8",
 );
-assert.match(resolver, /function sameOptionalRelease/);
-assert.match(resolver, /return sameReleaseRef\(left, right\)/);
+assert.match(resolver, /\bsameOptionalReleaseRef\(/);
+assert.doesNotMatch(resolver, /function sameOptionalRelease/);
+assert.equal(sameOptionalReleaseRef(null, null), true);
+assert.equal(sameOptionalReleaseRef(null, base), false);
+assert.equal(sameOptionalReleaseRef(base, null), false);
+assert.equal(sameOptionalReleaseRef(base, {...base}), true);
 
 console.log("release reference equality tests passed");

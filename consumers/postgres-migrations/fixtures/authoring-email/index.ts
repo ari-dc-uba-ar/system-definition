@@ -30,7 +30,6 @@ import {
     type SystemSnapshotInfo,
     type ValidationResult,
 } from "system-definition";
-import {compileDraft} from "../../src/authoring";
 import {
     decodeDestructiveDecisionInfo,
     type AuthoringBaseInfo,
@@ -68,7 +67,7 @@ function canonicalHash(value: unknown): string {
 const fixtureTypeDefs = commonTypeDefs;
 type FixtureFieldDef = {type: keyof typeof fixtureTypeDefs; nullable?: boolean};
 
-const fixtureTypes = defineTypes({
+export const fixtureTypes = defineTypes({
     types: fixtureTypeDefs,
     behaviours: commonTypeBehaviours,
     completeField: (field: FixtureFieldDef, name: string) => completeCoreField(field, name),
@@ -121,6 +120,11 @@ export const authoringEmailStorage: StorageContext = {
         text: {schema: "pg_catalog", name: "text", modifiers: []},
         integer: {schema: "pg_catalog", name: "int4", modifiers: []},
         boolean: {schema: "pg_catalog", name: "bool", modifiers: []},
+    },
+    machineCodecs: {
+        text: {readExpression: "migration_value", transportType: "text"},
+        integer: {readExpression: "migration_value::text", transportType: "text"},
+        boolean: {readExpression: "CASE WHEN migration_value THEN 'true' ELSE 'false' END", transportType: "text"},
     },
     schema: "app",
     environment: {
@@ -238,10 +242,10 @@ export const authoringEmailContext = {
 } as const satisfies AuthoringContext;
 
 export const authoringEmailConservationSql = [
-    "SELECT 1 / CASE WHEN NOT EXISTS (",
+    "SELECT NOT EXISTS (",
     "  SELECT 1 FROM app.alumnos",
     "  WHERE email_anterior IS DISTINCT FROM email",
-    ") THEN 1 ELSE 0 END AS email_copy_conserved;",
+    ") AS ok;",
     "",
 ].join("\n");
 
@@ -336,48 +340,10 @@ function unknownRelease(ref: ReleaseRefInfo): ValidationResult<never> {
     };
 }
 
-const queryTextByName: Readonly<Record<string, string>> = {
+export const queryTextByName: Readonly<Record<string, string>> = {
     [authoringEmailSource.selection.query.name]: authoringEmailSource.sql,
     [authoringEmailTransformationQuery.name]: authoringEmailTransformationSql,
 };
-
-/**
- * Run the example through the real authoring compiler.  The runtime is intentionally in-memory:
- * releases and query bytes are the values defined above, historical reconstruction is release A,
- * and inspection represents the authored database after the declared operations have been applied.
- */
-export async function compileAuthoringEmailExample() {
-    const runtime: AuthoringRuntime = {
-        async loadRelease(ref) {
-            if (sameReleaseRef(ref, authoringEmailReleaseB)) {
-                return result({ref: authoringEmailReleaseB, expectedSchema: authoringEmailSchemaB});
-            }
-            if (sameReleaseRef(ref, authoringEmailReleaseA)) {
-                return result({ref: authoringEmailReleaseA, expectedSchema: authoringEmailSchemaA});
-            }
-            return unknownRelease(ref);
-        },
-        async reconstructHistory(ref) {
-            return sameReleaseRef(ref, authoringEmailReleaseA)
-                ? result(authoringEmailSchemaA)
-                : unknownRelease(ref);
-        },
-        async readQuery(ref) {
-            const text = queryTextByName[ref.name];
-            if (text === undefined || sha256Text(text) !== ref.contentHash) {
-                return {
-                    ok: false,
-                    problems: [problem(null, "migration.invalidReference", "blocking", {query: ref.name})],
-                };
-            }
-            return result(text);
-        },
-        async inspectDraft() {
-            return result(authoringEmailSchemaB);
-        },
-    };
-    return compileDraft(authoringEmailDraft, runtime);
-}
 
 // A compact discovery export for readers who want the complete example from one import.
 export const authoringEmailFixture = {

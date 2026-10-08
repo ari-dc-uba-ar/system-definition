@@ -1,3 +1,4 @@
+import {AuthoringFiles} from "../src/authoring-files";
 import {createHash} from "node:crypto";
 import {strict as assert} from "node:assert";
 import {describe, it} from "mocha";
@@ -127,12 +128,12 @@ function draft(
 
 type LoadedDesired = {ref: ReleaseRefInfo; expectedSchema: PgSchemaInfo};
 
-class Runtime implements AuthoringRuntime {
+class Runtime extends AuthoringFiles implements AuthoringRuntime {
     constructor(
         readonly from: PgSchemaInfo,
         readonly to: PgSchemaInfo,
         readonly inspected: PgSchemaInfo,
-    ) {}
+    ) { super(); }
 
     async loadRelease(ref: ReleaseRefInfo): Promise<ValidationResult<LoadedDesired>> {
         return {ok: true, value: {ref, expectedSchema: this.to}};
@@ -148,6 +149,10 @@ class Runtime implements AuthoringRuntime {
 
     async readSql(ref: ResourceRefInfo): Promise<ValidationResult<string>> {
         return {ok: true, value: `SELECT 1 /* ${ref.name} */;`};
+    }
+
+    async inspectCompiled(): Promise<ValidationResult<PgSchemaInfo>> {
+        return {ok: true, value: this.to};
     }
 
     async inspectDraft(): Promise<ValidationResult<PgSchemaInfo>> {

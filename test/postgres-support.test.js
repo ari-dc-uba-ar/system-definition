@@ -5,8 +5,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
-const {POSTGRES_SUPPORT, matchesPostgresSupport} = require("../.verify-dist/consumers/postgres-migrations/src/postgres-support.js");
-const {checkPostgres18_6} = require("../.verify-dist/consumers/postgres-migrations/src/pg-schema.js");
+const {POSTGRES_SUPPORT, matchesPostgresSupport} = require("../consumers/postgres-migrations/dist/src/postgres-support.js");
+const {checkPostgres18_6} = require("../consumers/postgres-migrations/dist/src/pg-schema.js");
 
 assert.deepEqual(POSTGRES_SUPPORT, {
     engine: "postgresql",

@@ -9,26 +9,26 @@ import {
 
 const context = {
     releases: {
-        aida_001: {systemId: "aida", releaseId: "aida_001", releaseHash: "release-001"},
-        aida_002: {systemId: "aida", releaseId: "aida_002", releaseHash: "release-002"},
-        other_001: {systemId: "other", releaseId: "other_001", releaseHash: "other-release-001"},
+        aida_001: {systemId: "aida", releaseId: "aida_001", releaseHash: "1111111111111111111111111111111111111111111111111111111111111111"},
+        aida_002: {systemId: "aida", releaseId: "aida_002", releaseHash: "2222222222222222222222222222222222222222222222222222222222222222"},
+        other_001: {systemId: "other", releaseId: "other_001", releaseHash: "3333333333333333333333333333333333333333333333333333333333333333"},
     },
     resources: {
         email_source_complete_v1: {
             kind: "check",
-            file: {path: "checks/email-source.sql", contentHash: "check-before-hash", byteLength: 10},
+            file: {path: "checks/email-source.sql", contentHash: "4444444444444444444444444444444444444444444444444444444444444444", byteLength: 10},
         },
         backfill_alumno_email_v1: {
             kind: "sql",
-            file: {path: "sql/backfill-email.sql", contentHash: "sql-fill-hash", byteLength: 20},
+            file: {path: "sql/backfill-email.sql", contentHash: "5555555555555555555555555555555555555555555555555555555555555555", byteLength: 20},
         },
         require_alumno_email_v1: {
             kind: "sql",
-            file: {path: "sql/require-email.sql", contentHash: "sql-require-hash", byteLength: 30},
+            file: {path: "sql/require-email.sql", contentHash: "6666666666666666666666666666666666666666666666666666666666666666", byteLength: 30},
         },
         alumno_email_required_v1: {
             kind: "check",
-            file: {path: "checks/email-required.sql", contentHash: "check-after-hash", byteLength: 40},
+            file: {path: "checks/email-required.sql", contentHash: "7777777777777777777777777777777777777777777777777777777777777777", byteLength: 40},
         },
     },
 } as const;
@@ -74,16 +74,16 @@ describe("migration definition", function () {
         assert.deepEqual(result.value.before[0], {
             name: "email_source_complete_v1",
             kind: "check",
-            contentHash: "check-before-hash",
+            contentHash: "4444444444444444444444444444444444444444444444444444444444444444",
         });
         assert.deepEqual(result.value.steps[0], {
             id: "fill_email",
-            run: {name: "backfill_alumno_email_v1", kind: "sql", contentHash: "sql-fill-hash"},
+            run: {name: "backfill_alumno_email_v1", kind: "sql", contentHash: "5555555555555555555555555555555555555555555555555555555555555555"},
         });
         assert.deepEqual(result.value.after[0], {
             name: "alumno_email_required_v1",
             kind: "check",
-            contentHash: "check-after-hash",
+            contentHash: "7777777777777777777777777777777777777777777777777777777777777777",
         });
         assert.notEqual(result.value.from, context.releases.aida_001);
         assert.notEqual(result.value.before[0], context.resources.email_source_complete_v1);

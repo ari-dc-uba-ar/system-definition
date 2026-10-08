@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const {
   upsertDeploymentReadiness,
   consumeDeploymentReadiness,
-} = require("../.verify-dist/consumers/postgres-migrations/src/journal-readiness.js");
+} = require("../consumers/postgres-migrations/dist/src/journal-readiness.js");
 
 const hash = "a".repeat(64);
 const binding = {deploymentId: "deploy-1", planHash: hash};

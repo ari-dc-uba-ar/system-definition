@@ -197,6 +197,22 @@ function state(overrides: Partial<ResolutionStateInfo> = {}): ResolutionStateInf
 }
 
 describe("T23 conflict resolver freshness and answer application", () => {
+    it("rejects a destructive answer for a change outside the reported draft", async () => {
+        const current = draft();
+        const report = reportForDraft(current);
+        const unrelated: DestructiveDecisionInfo = {
+            ...DECISION,
+            changeId: "remove:app.alumnos.unrelated",
+            source: {side: "from", entity: "alumnos", field: "unrelated"},
+        };
+
+        const resolved = await resolveConflict(report, answers(current, report, unrelated), new ReadOnlyRuntime(state()));
+
+        assert.equal(resolved.ok, false,
+            "an unrelated decision must not clear the pending question and produce a resolved draft");
+        if (!resolved.ok) assert.equal(resolved.problems[0]?.messageKey, "migration.invalidConflictResolution");
+    });
+
     it("applies one exact versioned destructive answer and returns only a draftUpdated result", async () => {
         const current = draft();
         const report = reportForDraft(current);

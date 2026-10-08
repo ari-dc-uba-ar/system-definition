@@ -1,3 +1,4 @@
+import {AuthoringFiles} from "../src/authoring-files";
 import {strict as assert} from "node:assert";
 import {describe, it} from "mocha";
 import type {ReleaseRefInfo, ResourceRefInfo, ValidationResult} from "system-definition";
@@ -148,7 +149,7 @@ function draft(
 
 type LoadedDesired = {ref: ReleaseRefInfo; expectedSchema: PgSchemaInfo};
 
-class Runtime implements AuthoringRuntime {
+class Runtime extends AuthoringFiles implements AuthoringRuntime {
     readonly calls: string[] = [];
 
     constructor(
@@ -156,7 +157,7 @@ class Runtime implements AuthoringRuntime {
         readonly to: PgSchemaInfo,
         readonly inspected: PgSchemaInfo,
         readonly sqlText: Readonly<Record<string, string>> = {},
-    ) {}
+    ) { super(); }
 
     async loadRelease(ref: ReleaseRefInfo): Promise<ValidationResult<LoadedDesired>> {
         this.calls.push("load:" + ref.releaseId);
@@ -179,6 +180,10 @@ class Runtime implements AuthoringRuntime {
         return value === undefined
             ? {ok: false, problems: []}
             : {ok: true, value};
+    }
+
+    async inspectCompiled(): Promise<ValidationResult<PgSchemaInfo>> {
+        return {ok: true, value: this.to};
     }
 
     async inspectDraft(): Promise<ValidationResult<PgSchemaInfo>> {
@@ -217,7 +222,9 @@ describe("T21 manual SQL, residual completion and CASCADE boundary", () => {
         assert.equal(result.ok, true);
         if (!result.ok) return;
 
-        assert.deepEqual(result.value.migration.steps, [{id: "manual-note", run: step.run}]);
+        assert.deepEqual(result.value.migration.steps[0], {id: "manual-note", run: step.run});
+        assert.equal(result.value.migration.steps.length, 2, "the residual must also have an executable SQL step");
+        assert.match(runtime.resources.get(result.value.migration.steps[1]!.run.name)!.text, /ADD COLUMN "tag"/);
         const manualOperation = result.value.operations.find(operation => operation.stepIds.includes("manual-note"));
         assert.deepEqual(manualOperation?.changeIds, [note.id]);
         assert.equal(result.value.operations.flatMap(operation => operation.changeIds).filter(id => id === note.id).length, 1);

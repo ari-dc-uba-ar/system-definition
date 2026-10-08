@@ -11,6 +11,7 @@ import {
     type ValidationResult,
 } from "system-definition";
 import {compareSchemas} from "./compare-schema";
+import {normalizePgSchema} from "./normalize-schema";
 import {prepareCreateResources, validateExpectedObjects} from "./create-resources";
 import type {MigrationExecutionContext} from "./execute-migration";
 import {generateCreate} from "./generate-create";
@@ -211,7 +212,8 @@ async function inspectAndValidateRelease(
     const authored = validateExpectedObjects(createResources, inspected.value);
     if (!authored.ok) return authored;
 
-    const compared = compareSchemas(expected, projectionRelevantInspection(inspected.value, createResources));
+    const relevant = projectionRelevantInspection(inspected.value, createResources);
+    const compared = compareSchemas(await normalizePgSchema(expected), {...relevant, schema: await normalizePgSchema(relevant.schema)});
     if (!compared.ok) return compared;
     if (!compared.value.equal) {
         const first = compared.value.differences[0];
@@ -227,7 +229,7 @@ async function inspectAndValidateRelease(
     return runInvariantChecks(session, release.storage);
 }
 
-async function buildReleaseOnScratch(
+export async function buildReleaseOnScratch(
     session: PgSession,
     release: ReleaseVerificationInput,
 ): Promise<ValidationResult<PgSchemaInfo>> {

@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const assert = require("node:assert/strict");
-const {compareUtf16} = require("../.verify-dist/order.js");
+const {compareUtf16} = require("../dist/src/common/order.js");
 
 const values = ["z", "a", "ä", "A", "😀", "😃", "𐀀", "￿"];
 assert.deepEqual([...values].sort(compareUtf16), [...values].sort());

@@ -28,10 +28,12 @@
   "scripts": {
     "build": "tsc",
     "prepare": "npm run build",
-    "test": "npm run test:core && npm --prefix consumers/postgres-migrations test",
-    "test-ci": "npm run test-ci:core && npm --prefix consumers/postgres-migrations test-ci",
-    "test:core": "tsc && mocha --exit --node-option enable-source-maps --node-option harmony-temporal dist/test/",
-    "test-ci:core": "tsc && c8 mocha --node-option enable-source-maps --node-option harmony-temporal dist/test/"
+    "test": "npm run test:core && npm --prefix consumers/postgres-migrations test && npm run test:regressions",
+    "test-ci": "npm run test-ci:core && npm --prefix consumers/postgres-migrations test-ci && npm run test:regressions",
+    "test:core": "tsc && mocha --exit --node-option enable-source-maps --node-option harmony-temporal \"dist/test/*-test.js\"",
+    "test-ci:core": "tsc && c8 mocha --node-option enable-source-maps --node-option harmony-temporal \"dist/test/*-test.js\"",
+    "test:regressions": "node --test test/*.test.js",
+    "test:all": "npm test && npm --prefix consumers/postgres-migrations run docs:check && npm --prefix consumers/postgres-migrations run test-integration"
   },
   "overrides": {
     "diff": ">=8.0.2",
@@ -42,10 +44,14 @@
     "@toon-format/toon": "^4.1.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.6.2",
+    "@types/pg": "8.23.1",
     "best-globals": "^2.2.2",
     "c8": "^12.0.0",
+    "esbuild": "0.28.2",
     "like-ar": "^0.5.4",
     "mocha": "^12.0.2",
+    "pg": "8.23.1",
+    "pgsql-parser": "18.2.10",
     "qa-control": "^0.11.3",
     "typescript": "^7.0.2"
   },

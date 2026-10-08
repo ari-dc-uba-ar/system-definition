@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const {readLatestAttempt} = require("../.verify-dist/consumers/postgres-migrations/src/journal.js");
+const {readLatestAttempt} = require("../consumers/postgres-migrations/dist/src/journal.js");
 
 const hash = "d".repeat(64);
 const target = {systemId: "system", releaseId: "r2", releaseHash: hash};

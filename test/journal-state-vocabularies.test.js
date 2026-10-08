@@ -8,8 +8,8 @@ const {
     DEPLOYMENT_READINESS_STATES,
     VERIFICATION_STATUS,
     VERIFICATION_STATUSES,
-} = require("../.verify-dist/consumers/postgres-migrations/src/journal-contracts.js");
-const {bootstrapJournal} = require("../.verify-dist/consumers/postgres-migrations/src/journal-schema.js");
+} = require("../consumers/postgres-migrations/dist/src/journal-contracts.js");
+const {bootstrapJournal} = require("../consumers/postgres-migrations/dist/src/journal-schema.js");
 
 assert.deepEqual(VERIFICATION_STATUSES, ["passed", "failed", "incomplete"]);
 assert.deepEqual(DEPLOYMENT_READINESS_STATES, ["pending", "blocked", "ready", "consumed"]);

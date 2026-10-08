@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
-const {decodeFileInfo} = require("../.verify-dist/migration.js");
-const {decodeProblem} = require("../.verify-dist/problem.js");
+const {decodeFileInfo} = require("../dist/src/common/migration.js");
+const {decodeProblem} = require("../dist/src/common/problem.js");
 
 const invalid = (path, reason) => ({
     ok: false,

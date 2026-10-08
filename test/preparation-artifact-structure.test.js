@@ -7,7 +7,7 @@ const source = fs.readFileSync("consumers/postgres-migrations/src/preparation-ar
 
 assert.match(source, /return isPlainObject\(value\);/,
   "preparation artifact object membership must use the shared strict plain-object owner");
-assert.match(source, /function hasExactShape[\s\S]*structuralExactKeys\(/,
+assert.match(source, /\bhasExactKeys\(/,
   "preparation artifact exact-shape checks must delegate to the shared structural owner");
 assert.doesNotMatch(source, /const HASH_RE\s*=/,
   "preparation artifact must not own SHA-256 membership");

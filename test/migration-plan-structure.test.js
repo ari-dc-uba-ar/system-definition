@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {completeMigrationCatalog, resolveMigrationPath} = require("../.verify-dist/migration-plan.js");
+const {completeMigrationCatalog, resolveMigrationPath} = require("../dist/src/common/migration-plan.js");
 
 const h1 = "1".repeat(64);
 const h2 = "2".repeat(64);
@@ -45,7 +45,7 @@ assert.deepEqual(badStep.problems[0].details, {
 
 console.log("migration-plan structural reuse tests passed");
 
-const {decodeMigrationPathInfo} = require("../.verify-dist/migration-plan.js");
+const {decodeMigrationPathInfo} = require("../dist/src/common/migration-plan.js");
 const invalid = (path, reason) => ({ok: false, problems: [{path, reason}]});
 const path = {from: releases[0], to: releases[1], migrations: [{migration, migrationHash: mh}]};
 const decodedPath = decodeMigrationPathInfo(path, "$", invalid);

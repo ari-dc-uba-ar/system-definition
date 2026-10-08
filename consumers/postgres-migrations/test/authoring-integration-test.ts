@@ -1,3 +1,4 @@
+import {compileDraft} from "../src/authoring";
 import * as assert from "node:assert/strict";
 import {existsSync, readFileSync} from "node:fs";
 import {resolve} from "node:path";
@@ -7,8 +8,11 @@ import {
     authoringEmailSnapshotA,
     authoringEmailSnapshotB,
     authoringEmailSource,
-    compileAuthoringEmailExample,
+    authoringEmailDraft,
+    authoringEmailSchemaA,
+    authoringEmailSchemaB,
 } from "../fixtures/authoring-email";
+import {authoringEmailResources} from "../fixtures/authoring-email/resources";
 
 const consumerRoot = resolve(__dirname, "../..");
 const repositoryRoot = resolve(consumerRoot, "../..");
@@ -53,12 +57,36 @@ describe("T22 final CLI/CI and PostgreSQL authoring integration contract", () =>
         assert.ok(authoringEmailDecisions.some(decision => decision.resolution.kind === "migrate"));
         assert.ok(authoringEmailDecisions.some(decision => decision.resolution.kind === "discard"));
 
-        const compiled = await compileAuthoringEmailExample();
-        assert.equal(compiled.ok, true, compiled.ok ? undefined : JSON.stringify(compiled.problems));
-        if (!compiled.ok) return;
+        const prepared = await authoringEmailResources();
+        const compiled = await compileDraft(authoringEmailDraft, {
+            async loadRelease(ref) { return {ok: true, value: {ref, expectedSchema: authoringEmailSchemaB}}; },
+            async reconstructHistory() { return {ok: true, value: authoringEmailSchemaA}; },
+            async inspectDraft() { return {ok: true, value: authoringEmailSchemaA}; },
+            // This unit test isolates emission; the PostgreSQL matrix exercises actual replay.
+            async inspectCompiled() { return {ok: true, value: authoringEmailSchemaB}; },
+            async readQuery(ref) {
+                const query = prepared.files.resources.get(ref.name);
+                assert.ok(query);
+                return {ok: true, value: query.text};
+            },
+            emitResource: prepared.files.emitResource.bind(prepared.files),
+            loadDataContext: prepared.loadDataContext,
+        });
+        if (!compiled.ok) assert.fail(JSON.stringify(compiled.problems));
         assert.equal(compiled.value.migration.from.releaseId, "A");
         assert.equal(compiled.value.migration.to.releaseId, "B");
         assert.ok(compiled.value.operations.some(operation => operation.dataMigrationIds.includes("move-email")));
+        const dataOperation = compiled.value.operations.find(operation => operation.dataMigrationIds.includes("move-email"));
+        assert.ok(dataOperation);
+        assert.ok(dataOperation.stepIds.length > 0,
+            "the email example must compile its transformation to executable steps");
+        assert.ok(dataOperation.stepIds.every(id => compiled.value.migration.steps.some(step => step.id === id)));
+        const steps = compiled.value.migration.steps;
+        const lastDataStep = Math.max(...dataOperation.stepIds.map(id => steps.findIndex(step => step.id === id)));
+        const dropSteps = steps.map((step, index) => ({index, sql: prepared.files.resources.get(step.run.name)!.text}))
+            .filter(step => /DROP COLUMN/u.test(step.sql));
+        assert.equal(dropSteps.length, 2);
+        assert.ok(dropSteps.every(step => step.index > lastDataStep), "data writes and conservation must precede both source drops");
     });
 
     it("executes generated-only, manual and mixed paths plus a blocking rollback case", () => {
