@@ -532,17 +532,8 @@ function unsupported(change: StructureChangeInfo): ValidationResult<never> {
     return fail("migration.unsupportedSchemaFeature", {
         changeId: change.id,
         action: change.action,
-        reason: "residual structure is outside T18 automatic generation coverage",
+        reason: "residual structure is outside automatic generation coverage",
     });
-}
-
-function operationFor(change: StructureChangeInfo): CompiledAuthoringOperationInfo {
-    return {
-        id: "structure:" + change.id,
-        stepIds: [],
-        changeIds: [change.id],
-        dataMigrationIds: [],
-    };
 }
 
 function migrationForDraft(
@@ -561,7 +552,7 @@ function migrationForDraft(
 }
 
 /**
- * Compile the T18 structural portion of an authoring draft.
+ * Compile the structural, data and manual portions of an authoring draft.
  *
  * The historical reconstruction, desired SSOT release and inspected authored
  * result are intentionally three separate authorities.  Derived draft.changes
@@ -572,7 +563,7 @@ export async function compileDraft(
     runtime: AuthoringRuntime,
 ): Promise<ValidationResult<CompiledAuthoringInfo>> {
     if (draft.formatVersion !== 1 || draft.id.length === 0 || draft.revisionHash.length === 0) {
-        return fail("migration.unsupportedFormat", {reason: "invalid T18 authoring draft"});
+        return fail("migration.unsupportedFormat", {reason: "invalid authoring draft"});
     }
     if (draft.pending.length > 0) {
         return fail("migration.authoringPending", {reason: "draft has unresolved authoring questions"});
@@ -633,7 +624,10 @@ export async function compileDraft(
     const firstUnsupported = residual.value.find(change => change.impact === "unsupported");
     if (firstUnsupported !== undefined) return unsupported(firstUnsupported);
 
-    const firstPending = residual.value.find(change => change.impact === "requiresDataCheck" && draft.data.length === 0);
+    const firstPending = residual.value.find(change => change.impact === "requiresDataCheck" && draft.data.length === 0
+        && !draft.manual.some(step => step.implementsChanges.includes(change.id))
+        && !residual.value.some(table => table.action === "add" && table.after?.kind === "table"
+            && table.after.schema === change.after?.schema && table.after.name === change.after?.parentName));
     if (firstPending !== undefined) return pendingFor(firstPending);
 
     const manualOperations: readonly CompiledAuthoringOperationInfo[] = manual.value.steps.map(step => ({

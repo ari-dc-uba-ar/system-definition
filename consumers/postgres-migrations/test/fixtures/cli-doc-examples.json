@@ -3,8 +3,8 @@
     "title": "status success",
     "command": "status",
     "args": [
-      "--installation",
-      "school-prod"
+      "--project",
+      "migration-project.js"
     ],
     "result": {
       "ok": true,
@@ -16,8 +16,8 @@
     "title": "environment mismatch blocks verification",
     "command": "verify",
     "args": [
-      "--release",
-      "B"
+      "--project",
+      "migration-project.js"
     ],
     "result": {
       "ok": false,
@@ -39,8 +39,8 @@
     "title": "deployment gate blocks activation",
     "command": "deployment-gate",
     "args": [
-      "--deployment",
-      "deploy-B"
+      "--project",
+      "migration-project.js"
     ],
     "result": {
       "ok": false,
@@ -59,8 +59,8 @@
     "title": "unknown commit outcome is operational failure",
     "command": "apply",
     "args": [
-      "--to",
-      "B"
+      "--project",
+      "migration-project.js"
     ],
     "result": {
       "ok": false,
@@ -79,9 +79,14 @@
     "title": "resolve an explicit conflict report",
     "command": "resolve",
     "args": [
+      "--project",
+      "migration-project.js",
+      "--report",
       "reports/failure.json",
-      "--out",
-      "resolutions/fix-source"
+      "--answers",
+      "answers.json",
+      "--draft",
+      "draft.json"
     ],
     "result": {
       "ok": true,
@@ -93,9 +98,8 @@
     "title": "verify a preparation on an identified copy",
     "command": "verify-resolution",
     "args": [
-      "resolutions/fix-source",
-      "--copy",
-      "copy-1"
+      "--project",
+      "migration-project.js"
     ],
     "result": {
       "ok": true,
@@ -107,9 +111,8 @@
     "title": "apply a verified preparation non-interactively",
     "command": "apply-resolution",
     "args": [
-      "resolutions/fix-source",
-      "--installation",
-      "school-prod"
+      "--project",
+      "migration-project.js"
     ],
     "result": {
       "ok": true,

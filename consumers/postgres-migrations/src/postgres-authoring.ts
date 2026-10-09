@@ -1,4 +1,6 @@
 import {problem, sameReleaseRef, type MigrationPathInfo, type ValidationResult} from "system-definition";
+import {canonicalJson, toJsonValue} from "system-definition";
+import {createHash} from "node:crypto";
 import {AuthoringFiles} from "./authoring-files";
 import type {AuthoringRuntime, CompiledAuthoringInfo} from "./authoring-contract";
 import {compiledArtifact} from "./compiled-artifact";
@@ -73,7 +75,10 @@ export function createPostgresAuthoringRuntime(options: PostgresAuthoringOptions
         if (!bootstrapped.ok) return bootstrapped;
         const baseline = await installBaseline(session, journal, {installationId: id, scope, baseline: options.history.baseline.ref});
         if (!baseline.ok) return baseline;
-        const replayed = await executeMigrationPath(session, options.history.path, options.history.resolveContext);
+        const replayed = await executeMigrationPath(session, options.history.path, async published => {
+            const context = await options.history.resolveContext(published);
+            return context.ok ? {ok: true, value: {...context.value, journal, scope}} : context;
+        });
         if (!replayed.ok) return replayed;
         const observed = await inspect(session, source);
         if (!observed.ok) return observed;
@@ -87,7 +92,8 @@ export function createPostgresAuthoringRuntime(options: PostgresAuthoringOptions
 
     async function resource(ref: {name: string; kind: string; contentHash: string}): Promise<ValidationResult<string>> {
         const found = files.resources.get(ref.name);
-        if (found === undefined || found.ref.kind !== ref.kind || found.ref.contentHash !== ref.contentHash) return fail("Missing or mismatched authored resource: " + ref.name);
+        if (found === undefined || found.ref.kind !== ref.kind || found.ref.contentHash !== ref.contentHash
+            || createHash("sha256").update(found.text, "utf8").digest("hex") !== ref.contentHash) return fail("Missing or mismatched authored resource: " + ref.name);
         return {ok: true, value: found.text};
     }
 
@@ -105,6 +111,15 @@ export function createPostgresAuthoringRuntime(options: PostgresAuthoringOptions
         readQuery: resource, readSql: resource,
         emitResource: files.emitResource.bind(files), loadDataContext: options.data,
         async inspectDraft(draft) {
+            const bindings = [
+                [source.snapshot, draft.base.fromSnapshotHash], [target.snapshot, draft.base.toSnapshotHash],
+                [source.persistence, draft.base.fromPersistenceHash], [target.persistence, draft.base.toPersistenceHash],
+            ] as const;
+            for (const [value, expected] of bindings) {
+                const json = toJsonValue(value);
+                if (!json.ok) return json;
+                if (createHash("sha256").update(canonicalJson(json.value), "utf8").digest("hex") !== expected) return fail("Draft snapshot or persistence binding is stale");
+            }
             return owned(async (session, id) => {
                 const sourceState = await history(session, id);
                 if (!sourceState.ok) return sourceState;

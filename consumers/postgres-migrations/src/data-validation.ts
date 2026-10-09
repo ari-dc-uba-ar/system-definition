@@ -182,14 +182,30 @@ export function compileMachineEntityReadQuery(
     const entityInfo = snapshot.entities[entity];
     if (entityInfo === undefined) return invalid("unknown historical entity", {entity});
 
+    return compileMachineFieldsReadQuery(entityInfo.fields, entity, persistence, storage, sourceSql, projector);
+}
+
+export function compileMachinePortReadQuery(
+    ports: Readonly<Record<string, PortInfo>>, persistence: PersistenceInfo, storage: StorageContext,
+    sourceSql: string, projector: MachineReadProjector,
+): ValidationResult<string> {
+    return compileMachineFieldsReadQuery(Object.fromEntries(Object.entries(ports).map(([name, port]) => [name, {type: port.domain.type}])),
+        "ports", persistence, storage, sourceSql, projector);
+}
+
+function compileMachineFieldsReadQuery(
+    entityFields: Readonly<Record<string, {type: string}>>, entity: string,
+    persistence: PersistenceInfo, storage: StorageContext, sourceSql: string, projector: MachineReadProjector,
+): ValidationResult<string> {
+
     const representation = persistence.representations[storage.representation];
     if (representation === undefined) {
         return invalid("physical type representation is missing", {representation: storage.representation});
     }
 
     const fields: MachineReadProjectionField[] = [];
-    for (const fieldName of Object.keys(entityInfo.fields).sort(compareUtf16)) {
-        const field = entityInfo.fields[fieldName]!;
+    for (const fieldName of Object.keys(entityFields).sort(compareUtf16)) {
+        const field = entityFields[fieldName]!;
         const physicalName = representation[field.type];
         if (physicalName === undefined || physicalName.length === 0) {
             return invalid("physical type mapping is missing", {

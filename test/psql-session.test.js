@@ -42,10 +42,13 @@ assert.match(librarySource, /:SQLSTATE/);
 assert.doesNotMatch(librarySource, /ON_ERROR_STOP/);
 
 const authoringSource = fs.readFileSync("consumers/postgres-migrations/scripts/test-authoring-integration.js", "utf8");
-assert.match(authoringSource, /require\("\.\/lib\/psql-session\.js"\)/);
+assert.match(authoringSource, /createPostgresScratch/);
 assert.doesNotMatch(authoringSource, /class PsqlSession/);
 assert.doesNotMatch(authoringSource, /require\("node:child_process"\)/);
-assert.match(authoringSource, /new PsqlSession\(\{decodeValue: typedValue\}\)/);
+assert.match(authoringSource, /studentProject/);
+const driverSource = fs.readFileSync("consumers/postgres-migrations/src/pg-session.ts", "utf8");
+assert.match(driverSource, /from "pg"/);
+assert.match(driverSource, /client\.query/);
 assert.equal(authoringSource.includes('"locked"'), false, "authoring coercion must not inherit conflict-only columns");
 
 const conflictSource = fs.readFileSync("consumers/postgres-migrations/scripts/test-conflict-resolution-integration.js", "utf8");

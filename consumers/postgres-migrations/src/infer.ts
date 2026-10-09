@@ -307,6 +307,7 @@ function classifyAdd(object: PgObjectInfo): ChangeImpact {
 
 function classifyRemove(object: PgObjectInfo): ChangeImpact {
     if (object.kind === "table" || object.kind === "column") return "destructive";
+    if (object.kind === "constraint" || object.kind === "index" || object.kind === "view") return "preserving";
     return "unsupported";
 }
 
@@ -527,9 +528,14 @@ export function inferStructureChanges(
         ));
     }
 
-    changes.sort((left, right) => compareUtf16(changeSortKey(left), changeSortKey(right)));
+    // Dropping a table removes its columns/local constraints as one physical operation.
+    // Keep their fields on the table decision; do not ask twice for the same lost data.
+    const removedTables = changes.filter(change => change.action === "remove" && change.before?.kind === "table");
+    const effective = changes.filter(change => !(change.action === "remove" && change.before?.parentName !== null
+        && removedTables.some(table => table.before?.schema === change.before?.schema && table.before?.name === change.before?.parentName)));
+    effective.sort((left, right) => compareUtf16(changeSortKey(left), changeSortKey(right)));
     return {
         ok: true,
-        value: changes.map(change => ({id: changeId(base, change), ...change})),
+        value: effective.map(change => ({id: changeId(base, change), ...change})),
     };
 }

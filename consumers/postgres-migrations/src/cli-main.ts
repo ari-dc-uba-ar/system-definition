@@ -12,15 +12,18 @@ import type {MigrationDraftInfo} from "./authoring-contract";
 import {computeDraftRevisionHash, runAddDataSession, runAddSqlSession, type AuthoringDraftStore, type AddSqlContractInfo} from "./authoring-cli";
 import {inferStructureChanges} from "./infer";
 import {resolveConflict} from "./resolve-conflict";
-import {decodeConflictReport} from "./conflict-report";
+import {createConflictReport, decodeConflictReport} from "./conflict-report";
 import {publishReleaseArtifact} from "./artifact";
 import {buildMigrationPlan} from "./migration-plan";
 import {verifyRelease, verifyUpgrade, buildReleaseOnScratch} from "./verify";
 import {applyResolution, verifyResolution} from "./preparation";
-import {bootstrapJournal, installBaseline, readHistory, readInstallation, withMigrationLock} from "./journal";
+import {bootstrapJournal, installBaseline, readHistory, readInstallation, withMigrationLock, startAttempt, finishAttempt} from "./journal";
 import {checkApplyEligibility, recordVerification} from "./evidence";
 import {checkDeploymentReady} from "./deployment-gate";
 import {executeMigrationPath} from "./runner";
+import {compiledArtifact} from "./compiled-artifact";
+import {promptDataMigration} from "./authoring-prompt";
+import type {AuthoredResource} from "./authoring-files";
 
 const commands = ["capture", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
 const help = `postgres-migrations <command> --project <module.js> [options]
@@ -77,9 +80,28 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
         try { return await terminal.question(text); } finally { terminal.close(); }
     };
     const authoring = project.authoring;
+    if (authoring && flags.has("draft")) {
+        let saved: unknown;
+        try { saved = await json(required("draft") + ".resources.json"); }
+        catch (error) { if (!(isPlainObject(error) || error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error; }
+        if (saved !== undefined) {
+            if (!Array.isArray(saved)) return invalid("Malformed draft resource registry");
+            for (const entry of saved) {
+                if (!isPlainObject(entry) || !isPlainObject(entry.ref) || typeof entry.text !== "string"
+                    || typeof entry.ref.name !== "string" || typeof entry.ref.contentHash !== "string"
+                    || !["sql", "query", "check"].includes(String(entry.ref.kind))) return invalid("Malformed draft resource");
+                const loaded = await authoring.files.emitResource(entry as unknown as AuthoredResource);
+                if (!loaded.ok) return loaded;
+            }
+        }
+    }
     const store: AuthoringDraftStore = {
         async readDraft(path) { return draftValue(flags.has("draft") ? await json(path) : authoring?.draft); },
-        async replaceDraftAtomic(path, next) { await atomicJson(path, next); return {ok: true, value: true}; },
+        async replaceDraftAtomic(path, next) {
+            if (authoring) await atomicJson(path + ".resources.json", [...authoring.files.resources.values()]);
+            await atomicJson(path, next);
+            return {ok: true, value: true};
+        },
     };
     if (["infer", "add-data", "add-sql", "validate", "generate"].includes(command)) {
         if (!authoring) return invalid("Project lacks authoring context");
@@ -94,26 +116,39 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
             const changes = inferStructureChanges(loaded.value.base, from.value, to.value.expectedSchema, loaded.value.renames);
             if (!changes.ok) return changes;
             const pending = changes.value.filter(change => change.impact === "destructive"
-                && !loaded.value.decisions.some(decision => decision.changeId === change.id)).map(change => ({
+                && (change.affectedFields.length === 0 ? !loaded.value.decisions.some(decision => decision.changeId === change.id)
+                    : !change.affectedFields.every(field => loaded.value.decisions.some(decision => decision.changeId === change.id
+                        && decision.source?.side === field.side && decision.source.entity === field.entity && decision.source.field === field.field)))).map(change => ({
                 id: change.id, kind: "destructive" as const, subjects: [change.id], messageKey: "migration.destructiveDecisionRequired",
             }));
             const next = {...loaded.value, changes: changes.value, pending};
             await atomicJson(draftPath, next);
+            if (pending.length > 0) {
+                const reportPath = flags.get("report") ?? draftPath + ".conflict.json";
+                const problems = [problem(null, "migration.authoringPending", "blocking", {reportPath})];
+                const report = createConflictReport({formatVersion: 1, reportId: randomUUID(), command, kind: "authoringDecision", phase: "authoring",
+                    systemId: next.base.from.systemId, draftHash: next.revisionHash, installationId: null, attemptId: null,
+                    confirmedHead: next.base.from, requestedTarget: next.base.to, planHash: null, observedSchemaHash: null, historyHash: null,
+                    questions: pending, problems, evidenceRefs: []});
+                if (!report.ok) return report;
+                await atomicJson(reportPath, report.value);
+                return {ok: false, problems};
+            }
             return {ok: true, value: next};
         }
         if (command === "add-data") {
             const report = await runAddDataSession({draftPath, context: authoring.context, store, nonInteractive,
                 ...(flags.has("answers") ? {answers: await json(required("answers"))} : {}),
                 prompt: {async ask(question) {
-                    process.stderr.write(JSON.stringify({
-                        sources: authoring.context.from.entities,
-                        destinations: authoring.context.to.entities,
-                        transformations: authoring.context.transformations,
-                    }, null, 2) + "\n");
-                    // Full source selections support joins/set mappings, with the same codec
-                    // as answers files. Domain and mapping errors return structured problems.
-                    const path = await ask("Data migration JSON file (source ports, transformation, arguments and writes): ");
-                    return path ? {questionId: question.id, kind: "add-data", dataMigration: await json(path)} : null;
+                    const mode = await ask("Choose guided field mapping or a JSON contract file [guided/file]: ");
+                    if (mode === "file") return {questionId: question.id, kind: "add-data", dataMigration: await json(await ask("Data migration JSON file: "))};
+                    if (mode !== "guided") return null;
+                    if (!authoring.runtime.loadDataContext) throw new Error("Guided mapping requires storage context");
+                    const data = await authoring.runtime.loadDataContext();
+                    if (!data.ok) throw new Error(JSON.stringify(data.problems));
+                    const migration = await promptDataMigration(authoring.context, data.value.storage.schema, authoring.files, ask);
+                    if (!migration.ok) throw new Error(JSON.stringify(migration.problems));
+                    return {questionId: question.id, kind: "add-data", dataMigration: migration.value};
                 }},
             });
             return report.ok ? {ok: true, value: report} : {ok: false, problems: report.problems};
@@ -124,6 +159,9 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
             if (!isPlainObject(contract) || typeof contract.resourceName !== "string" || typeof contract.id !== "string"
                 || !["dependsOn", "implementsChanges", "reads", "writes", "destroys", "before", "after", "rowChecks"].every(key => Array.isArray(contract[key]))) return invalid("Malformed manual SQL contract");
             const text = await readFile(resolve(path), "utf8");
+            const {createHash} = await import("node:crypto");
+            const emitted = await authoring.files.emitResource({ref: {name: contract.resourceName, kind: "sql", contentHash: createHash("sha256").update(text, "utf8").digest("hex")}, text});
+            if (!emitted.ok) return emitted;
             const report = await runAddSqlSession({draftPath, store, file: {path, text}, contract: contract as unknown as AddSqlContractInfo});
             return report.ok ? {ok: true, value: report} : {ok: false, problems: report.problems};
         }
@@ -132,6 +170,7 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
         // A new directory is the publication boundary. Existing output is never replaced.
         const destination = resolve(required("out"));
         const temporary = destination + "." + randomUUID() + ".tmp";
+        const artifact = compiledArtifact(result.value, authoring.files, authoring.context);
         await mkdir(temporary);
         try {
             for (const [path, bytes] of authoring.files.files) {
@@ -142,13 +181,18 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
                 await writeFile(target, bytes, {flag: "wx"});
             }
             await atomicJson(resolve(temporary, "compiled.json"), result.value);
+            await atomicJson(resolve(temporary, "migration.json"), artifact.manifest);
             await atomicJson(resolve(temporary, "resources.json"), [...authoring.files.resources.values()].map(resource => ({ref: resource.ref, text: resource.text})));
             await rename(temporary, destination);
         } finally { await rm(temporary, {recursive: true, force: true}); }
         return result;
     }
     if (command === "resolve") {
-        if (!project.resolution) return invalid("Project lacks resolution runtime");
+        const resolutionRuntime = project.resolution ?? (authoring ? {...authoring.runtime,
+            async inspectInstallation() { return invalid("Installation conflicts require the project resolution adapter"); },
+            async fingerprintInputs() { return invalid("Installation conflicts require the project resolution adapter"); },
+        } : undefined);
+        if (!resolutionRuntime) return invalid("Project lacks resolution runtime");
         const report = decodeConflictReport(await json(required("report")));
         if (!report.ok) return report;
         let answers: unknown;
@@ -172,7 +216,7 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
             }
             answers = {formatVersion: 1, reportHash: report.value.reportHash, draftHash: draft.value.revisionHash, draft: draft.value, answers: decisions};
         }
-        const result = await resolveConflict(report.value, answers, project.resolution);
+        const result = await resolveConflict(report.value, answers, resolutionRuntime);
         if (result.ok && result.value.kind === "draftUpdated") await atomicJson(required("draft"), result.value.draft);
         if (result.ok && result.value.kind === "blocked") return {ok: false, problems: result.value.problems};
         return result;
@@ -189,6 +233,7 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
     if (command === "status") {
         const installation = await readInstallation(runtime.session, runtime.journal, deployment.scope);
         if (!installation.ok) return installation;
+        if (installation.value === null) return {ok: true, value: {installation: null, history: []}};
         const history = await readHistory(runtime.session, runtime.journal, installation.value.installationId);
         return history.ok ? {ok: true, value: {installation: installation.value, history: history.value}} : history;
     }
@@ -196,20 +241,33 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
     if (command === "verify") {
         const verification = deployment.verification;
         if (!verification) return invalid("Project lacks verification inputs");
-        if (!sameReleaseRef(verification.input.target.ref, binding.to)
-            || binding.operation !== "upgrade" || !sameReleaseRef(verification.input.source.ref, binding.from)) return invalid("Verification and deployment endpoints differ");
-        const result = await verifyUpgrade(verification.input, verification.scratch);
-        const checks = [...await verification.checks(), {
+        if (binding.operation === "upgrade" && (!verification.input || !sameReleaseRef(verification.input.target.ref, binding.to)
+            || !sameReleaseRef(verification.input.source.ref, binding.from))) return invalid("Verification and deployment endpoints differ");
+        if (binding.operation === "install" && (!project.release || !sameReleaseRef(project.release.input.ref, binding.to))) return invalid("Verification and install endpoints differ");
+        let result: CommandResult;
+        let additional: Awaited<ReturnType<typeof verification.checks>> = [];
+        try {
+            result = binding.operation === "upgrade" ? await verifyUpgrade(verification.input!, verification.scratch)
+                : await verifyRelease(project.release!.input, verification.scratch);
+            additional = await verification.checks();
+        } catch (error) {
+            result = {ok: false, problems: [problem(null, "deployment.verificationFailed", "blocking", {
+                reason: error instanceof Error ? error.message : String(error),
+            })]};
+        }
+        const checks = [...additional, {
             id: "cli-upgrade", kind: "structure" as const, status: result.ok ? "passed" as const : "failed" as const,
             reportId: randomUUID(), problems: result.ok ? [] : result.problems,
         }];
+        const bootstrapped = await bootstrapJournal(runtime.session, runtime.journal);
+        if (!bootstrapped.ok) return bootstrapped;
         const recorded = await recordVerification(runtime.session, runtime.journal, {verificationId: randomUUID(), binding, checks, createdAt: new Date().toISOString()});
         if (!recorded.ok) return recorded;
         if (!result.ok) return result;
         return recorded.value.status === "passed" ? recorded : {ok: false, problems: [problem(null, "deployment.verificationIncomplete", "blocking")]};
     }
     if (command === "apply" || command === "install") {
-        return withMigrationLock(deployment.sessions, deployment.scope, deployment.lockWaitTimeoutMs, async session => {
+        return withMigrationLock<unknown>(deployment.sessions, deployment.scope, deployment.lockWaitTimeoutMs, async session => {
             const eligible = await checkApplyEligibility(binding, {session, journal: runtime.journal});
             if (!eligible.ok) return eligible;
             if (!await runtime.maintenance.isActive(binding.maintenanceId, binding.installationId)) return {ok: false, problems: [problem(null, "deployment.maintenanceRequired", "blocking")]};
@@ -220,20 +278,35 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
                 const actual = await buildMigrationPlan(deployment.path, project.plan![1]);
                 if (!actual.ok) return actual;
                 if (actual.value.planHash !== binding.planHash) return invalid("Apply plan hash differs from verification");
-                return executeMigrationPath(session, deployment.path, deployment.resolveContext);
+                const started = await startAttempt(session, runtime.journal, {attemptId: randomUUID(), deploymentId: binding.deploymentId,
+                    installationId: binding.installationId, planHash: binding.planHash});
+                if (!started.ok) return started;
+                const executed = await executeMigrationPath(session, deployment.path, deployment.resolveContext);
+                const finished = await finishAttempt(session, runtime.journal, started.value.attemptId, {
+                    state: executed.ok ? "succeeded" : executed.problems.some(one => one.messageKey === "migration.unknownCommitOutcome") ? "unknown" : "failed",
+                    confirmedTarget: executed.ok ? binding.to : null, problems: executed.ok ? [] : executed.problems,
+                });
+                return finished.ok ? executed : finished;
             }
             if (binding.operation !== "install" || !project.release || !sameReleaseRef(project.release.input.ref, binding.to)) return invalid("Install release and binding differ");
+            const started = await startAttempt(session, runtime.journal, {attemptId: randomUUID(), deploymentId: binding.deploymentId,
+                installationId: binding.installationId, planHash: binding.planHash});
+            if (!started.ok) return started;
             await session.query("BEGIN", []);
+            let installed: CommandResult;
+            let commitSent = false;
             try {
                 const built = await buildReleaseOnScratch(session, project.release.input);
-                if (!built.ok) return built;
-                const journal = await bootstrapJournal(session, runtime.journal);
-                if (!journal.ok) return journal;
-                const baseline = await installBaseline(session, runtime.journal, {installationId: binding.installationId, scope: deployment.scope, baseline: binding.to});
-                if (!baseline.ok) return baseline;
-                await session.query("COMMIT", []);
-                return baseline;
-            } finally { await session.query("ROLLBACK", []); }
+                installed = built.ok ? await installBaseline(session, runtime.journal, {installationId: binding.installationId, scope: deployment.scope, baseline: binding.to}) : built;
+                if (installed.ok) { commitSent = true; await session.query("COMMIT", []); }
+            } catch (error) {
+                installed = {ok: false, problems: [problem(null, commitSent ? "migration.unknownCommitOutcome" : "migration.executionFailed", "blocking", {reason: error instanceof Error ? error.message : String(error)})]};
+            } finally { if (!commitSent) await session.query("ROLLBACK", []); }
+            const finished = await finishAttempt(session, runtime.journal, started.value.attemptId, {
+                state: installed.ok ? "succeeded" : commitSent ? "unknown" : "failed",
+                confirmedTarget: installed.ok ? binding.to : null, problems: installed.ok ? [] : installed.problems,
+            });
+            return finished.ok ? installed : finished;
         });
     }
     return invalid("Unknown command: " + command);

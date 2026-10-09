@@ -230,7 +230,11 @@ function applyDestructiveAnswer(
         return failure("duplicate destructive decision");
     }
     decisions.push(answer.decision);
-    resolvedQuestions.add(question.id);
+    // A table question remains pending until every historical field has an answer.
+    const covered = change.affectedFields.length === 0 || change.affectedFields.every(field => decisions.some(decision =>
+        decision.changeId === change.id && decision.source?.side === field.side
+        && decision.source.entity === field.entity && decision.source.field === field.field));
+    if (covered) resolvedQuestions.add(question.id);
     }
 
     const nextWithoutRevision: MigrationDraftInfo = {

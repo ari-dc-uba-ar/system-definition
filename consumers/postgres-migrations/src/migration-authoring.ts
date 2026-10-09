@@ -565,6 +565,12 @@ function decodePort(
     return {ok: true, value: {domain: domain.value, field: field.value}};
 }
 
+export function decodeValidationPorts(context: AuthoringContext, value: unknown, side: SnapshotSide): ValidationResult<Readonly<Record<string, PortInfo>>> {
+    const json = toJsonValue(value);
+    if (!json.ok) return json;
+    return decodePortMap(context, json.value, "$", side === "from" ? "source" : "transformationOutput");
+}
+
 function decodePortMap(
     context: AuthoringContext,
     value: JsonValue | undefined,

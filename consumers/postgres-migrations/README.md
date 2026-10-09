@@ -9,14 +9,14 @@ Consumer package for immutable migration/release artifacts and PostgreSQL integr
 From the repository root:
 
 ```sh
-npm --prefix consumers/postgres-migrations test
+npm run test:all
 npm --prefix consumers/postgres-migrations run test-integration
 npm --prefix consumers/postgres-migrations run docs:check
 ```
 
 The integration command is intentionally strict: it talks to a real PostgreSQL server and requires `server_version_num = 180006` (PostgreSQL 18.6). A missing client/server or any other PostgreSQL version is a failing integration run, not a skipped success. It also runs the T22 authoring matrix on the same immutable plan/artifact resolver and transactional runner: `generated-only`, `manual`, `mixed`, and a blocking rollback case with zero activations.
 
-Authoring commands are non-interactive unless the explicit resolver flow is invoked. Pending authoring in non-interactive mode returns a non-zero result with `migration.authoringPending`; deployment/apply/verify never waits for stdin to resolve an authoring decision.
+Only add-data and resolve can prompt, and only with a TTY outside CI. All other commands are non-interactive. Pending authoring in non-interactive mode returns a non-zero result with `migration.authoringPending`; deployment/apply/verify never waits for stdin to resolve an authoring decision.
 
 ## CLI result examples
 
@@ -24,16 +24,33 @@ These examples are generated from the same fixture exercised by the CLI contract
 
 | Case | Command | Exit | Result |
 | --- | --- | ---: | --- |
-| status success | `postgres-migrations status --installation school-prod` | 0 | `success` |
-| environment mismatch blocks verification | `postgres-migrations verify --release B` | 2 | `migration.environmentMismatch` |
-| deployment gate blocks activation | `postgres-migrations deployment-gate --deployment deploy-B` | 3 | `deployment.blocked` |
-| unknown commit outcome is operational failure | `postgres-migrations apply --to B` | 4 | `migration.unknownCommitOutcome` |
-| resolve an explicit conflict report | `postgres-migrations resolve reports/failure.json --out resolutions/fix-source` | 0 | `success` |
-| verify a preparation on an identified copy | `postgres-migrations verify-resolution resolutions/fix-source --copy copy-1` | 0 | `success` |
-| apply a verified preparation non-interactively | `postgres-migrations apply-resolution resolutions/fix-source --installation school-prod` | 0 | `success` |
+| status success | `postgres-migrations status --project migration-project.js` | 0 | `success` |
+| environment mismatch blocks verification | `postgres-migrations verify --project migration-project.js` | 2 | `migration.environmentMismatch` |
+| deployment gate blocks activation | `postgres-migrations deployment-gate --project migration-project.js` | 3 | `deployment.blocked` |
+| unknown commit outcome is operational failure | `postgres-migrations apply --project migration-project.js` | 4 | `migration.unknownCommitOutcome` |
+| resolve an explicit conflict report | `postgres-migrations resolve --project migration-project.js --report reports/failure.json --answers answers.json --draft draft.json` | 0 | `success` |
+| verify a preparation on an identified copy | `postgres-migrations verify-resolution --project migration-project.js` | 0 | `success` |
+| apply a verified preparation non-interactively | `postgres-migrations apply-resolution --project migration-project.js` | 0 | `success` |
 
 ## Checkout/bootstrap behavior
 
-The checkout declares `system-definition` as a local package dependency. `prebuild`/`pretest` run `scripts/bootstrap-repository.js`, which only links this repository root into the root `node_modules`; it performs no network install. The root suite compiles the public package before entering the consumer suite.
+The checkout declares `system-definition` as a local package dependency. `prebuild`/`pretest` run `scripts/bootstrap-repository.js`, which links the core and consumer packages into the root `node_modules`; it performs no network install. The root suite compiles the public package before entering the consumer suite.
+
+## Executable CLI and examples
+
+The package registers `postgres-migrations` at `dist/src/cli-main.js`. Each application exports `createMigrationProject()` from a JS or compiled TypeScript module. The typed `MigrationProject` interface supplies contexts, artifact inputs and I/O adapters; the command implementation calls the existing compiler, verifier, resolver, journal and runner. It does not delegate command dispatch to the application.
+
+From the repository root, after `npm test`:
+
+```sh
+node consumers/postgres-migrations/dist/src/cli-main.js --help
+node consumers/postgres-migrations/dist/src/cli-main.js generate --project examples/postgres-migrations/dist/student-runtime.js --out local-generated-student-migration
+```
+
+The commented TypeScript examples in [examples/postgres-migrations](../../examples/postgres-migrations/LEEME.md) separate system definitions, behaviours, storage, migration contracts and runtime wiring, just like examples/common. They cover inferred additions, standalone data movement, explicit migrate/discard decisions and handwritten SQL. The integration matrix compiles and replays those examples; it does not supply hand-built migration SQL or exclude application tables from comparison. The executable CLI is also exercised through infer, report persistence, resolve, generation and rejection of output replacement.
+
+Use `infer --out draft.json` to persist a draft. Unresolved destructive choices produce `draft.json.conflict.json` and a nonzero exit. Use `resolve --draft draft.json --report draft.json.conflict.json` for the terminal flow or add `--answers answers.json` for versioned answers. `add-data` offers compatible source fields, a registered transformation, destination fields and row identity; complex joins/set mappings can use a complete JSON contract. The existing decoder checks domain/mapping compatibility. Generated source SQL and handwritten SQL are persisted in the draft resource sidecar. Generation then replays SQL and historical validators on owned scratch databases.
+
+Deployment projects provide the installation connection, maintenance check, scope, artifact resolver, exact deployment binding and verification adapters. `verify` records failed as well as successful runs; missing required evidence remains incomplete. `apply` checks evidence and maintenance under the migration lock and records its durable execution attempt. `deployment-gate` requires the exact verified target and a successful apply attempt. These commands never prompt or activate application code. Unsupported inferred effects require explicit manual SQL and still must reach the SSOT during replay.
 
 Published SQL resources are byte-addressed UTF-8/LF artifacts. They are validated and never normalized on load.

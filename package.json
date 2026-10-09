@@ -28,12 +28,13 @@
   "scripts": {
     "build": "tsc",
     "prepare": "npm run build",
-    "test": "npm run test:core && npm --prefix consumers/postgres-migrations test && npm run test:regressions",
-    "test-ci": "npm run test-ci:core && npm --prefix consumers/postgres-migrations test-ci && npm run test:regressions",
+    "test": "npm run test:core && npm --prefix consumers/postgres-migrations test && npm run build:examples && npm run test:regressions",
+    "test-ci": "npm run test-ci:core && npm --prefix consumers/postgres-migrations test-ci && npm run build:examples && npm run test:regressions",
     "test:core": "tsc && mocha --exit --node-option enable-source-maps --node-option harmony-temporal \"dist/test/*-test.js\"",
     "test-ci:core": "tsc && c8 mocha --node-option enable-source-maps --node-option harmony-temporal \"dist/test/*-test.js\"",
     "test:regressions": "node --test test/*.test.js",
-    "test:all": "npm test && npm --prefix consumers/postgres-migrations run docs:check && npm --prefix consumers/postgres-migrations run test-integration"
+    "test:all": "npm test && npm --prefix consumers/postgres-migrations run docs:check && npm --prefix consumers/postgres-migrations run test-integration",
+    "build:examples": "tsc -p examples/postgres-migrations"
   },
   "overrides": {
     "diff": ">=8.0.2",

@@ -1,6 +1,11 @@
 import type {ValidationResult} from "system-definition";
 
 export type CliCommand =
+    | "infer"
+    | "add-data"
+    | "add-sql"
+    | "validate"
+    | "generate"
     | "capture"
     | "build-release"
     | "verify"

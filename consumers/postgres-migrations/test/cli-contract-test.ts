@@ -9,6 +9,11 @@ import {
 } from "../src/cli";
 
 type ExpectedCommand =
+    | "infer"
+    | "add-data"
+    | "add-sql"
+    | "validate"
+    | "generate"
     | "capture"
     | "build-release"
     | "verify"

@@ -4,14 +4,22 @@
         "outDir": "dist",
         "module": "nodenext",
         "target": "es2022",
-        "lib": ["esnext"],
+        "lib": [
+            "esnext"
+        ],
         "sourceMap": true,
         "strict": true,
-        "types": ["node", "mocha"]
+        "types": [
+            "node",
+            "mocha"
+        ]
     },
     "include": [
         "src/**/*.ts",
         "examples/**/*.ts",
         "test/**/*.ts"
+    ],
+    "exclude": [
+        "examples/postgres-migrations"
     ]
 }

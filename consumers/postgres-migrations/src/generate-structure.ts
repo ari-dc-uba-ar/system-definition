@@ -10,6 +10,7 @@ export type StructureSql = {change: StructureChangeInfo; text: string; order: nu
 /** Emit only a named, inferred effect. PostgreSQL checks dependencies without CASCADE. */
 export function generateStructureSql(
     changes: readonly StructureChangeInfo[], from: PgSchemaInfo, to: PgSchemaInfo,
+    dataDestinations: ReadonlySet<string> = new Set(),
 ): ValidationResult<readonly StructureSql[]> {
     const statements: StructureSql[] = [];
     for (const change of changes) {
@@ -17,6 +18,14 @@ export function generateStructureSql(
         const after = to.objects.find(object => change.after !== null && samePgIdentity(object.identity, change.after));
         const object = after ?? before;
         if (object === undefined) return invalid(change, "Change has no schema object");
+        if (object.kind === "index" && object.ownerConstraint !== null) {
+            // PostgreSQL creates/drops the backing index with its constraint; replay still
+            // compares the index itself against the independently created desired schema.
+            if (!changes.some(one => [one.before, one.after].some(identity => identity !== null && samePgIdentity(identity, object.ownerConstraint!)))) {
+                return invalid(change, "An owned index change requires its owning constraint change");
+            }
+            continue;
+        }
         const identity = object.identity;
         const name = qualified(identity.schema, identity.name);
         const parent = qualified(identity.schema, identity.parentName ?? identity.name);
@@ -35,7 +44,9 @@ export function generateStructureSql(
                 text = `CREATE TABLE ${name} ()`;
                 order = 10;
             } else if (object.kind === "column" && object.identityDefinition === null && object.generatedDefinition === null) {
-                text = `ALTER TABLE ${parent} ADD COLUMN ${quote(identity.name)} ${columnDefinition(object)}`;
+                const staged = !object.nullable && dataDestinations.has(JSON.stringify([identity.parentName, identity.name]));
+                text = `ALTER TABLE ${parent} ADD COLUMN ${quote(identity.name)} ${columnDefinition(staged ? {...object, nullable: true} : object)}`;
+                if (staged) statements.push({change, text: `ALTER TABLE ${parent} ALTER COLUMN ${quote(identity.name)} SET NOT NULL;\n`, order: 85});
                 order = 20;
             } else if (object.kind === "constraint") {
                 const generated = constraintSql(object);
@@ -49,6 +60,11 @@ export function generateStructureSql(
             if (object.kind === "constraint") { text = `ALTER TABLE ${parent} DROP CONSTRAINT ${quote(identity.name)}`; order = 0; }
             if (object.kind === "index" && object.ownerConstraint === null) { text = `DROP INDEX ${name}`; order = 0; }
             if (object.kind === "view") { text = `DROP VIEW ${name}`; order = 0; }
+        } else if (change.action === "alter" && before?.kind === "constraint" && after?.kind === "constraint") {
+            const generated = constraintSql(after);
+            if (!generated.ok) return generated;
+            text = `ALTER TABLE ${parent} DROP CONSTRAINT ${quote(identity.name)};\n${generated.value}`;
+            order = after.constraintKind === "foreignKey" ? 80 : 70;
         } else if (change.action === "alter" && before?.kind === "column" && after?.kind === "column") {
             const alterations: string[] = [];
             const prefix = `ALTER TABLE ${parent} ALTER COLUMN ${quote(identity.name)} `;
@@ -60,6 +76,7 @@ export function generateStructureSql(
             }
             if (before.nullable !== after.nullable) alterations.push(prefix + (after.nullable ? "DROP NOT NULL" : "SET NOT NULL"));
             if (alterations.length > 0) text = alterations.join(";\n");
+            if (!after.nullable && dataDestinations.has(JSON.stringify([identity.parentName, identity.name]))) order = 85;
         }
         if (text === undefined) return invalid(change, "This effect requires a declared manual SQL resource");
         statements.push({change, text: text + ";\n", order});

@@ -93,9 +93,9 @@ describe("T22 final CLI/CI and PostgreSQL authoring integration contract", () =>
         const path = resolve(consumerRoot, "scripts/test-authoring-integration.js");
         assert.ok(existsSync(path), "T22 requires a real authoring integration harness");
         const script = readFileSync(path, "utf8");
-        assert.match(script, /generated-only/);
+        assert.match(script, /inferred/);
         assert.match(script, /manual/);
-        assert.match(script, /mixed/);
+        assert.match(script, /destructive/);
         assert.match(script, /rollback/);
         assert.match(script, /zero activations|activationCount|activations/u);
     });

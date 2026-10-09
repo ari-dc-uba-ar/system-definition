@@ -39,7 +39,7 @@ export interface MigrationProject {
         path: Parameters<typeof executeMigrationPath>[1];
         resolveContext: Parameters<typeof executeMigrationPath>[2];
         verification?: {
-            input: UpgradeVerificationInput;
+            input?: UpgradeVerificationInput;
             scratch: ScratchProvider;
             /** Environment/artifact/rehearsal checks belong to application adapters.
              * Missing checks remain incomplete; a scratch fixture is not production rehearsal. */

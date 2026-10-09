@@ -24,8 +24,8 @@ import {
     type MigrationHistoryInfo,
 } from "./journal";
 import {checkManagedData} from "./managed-data";
-import {validateMachineEntityRows, type MachineRow} from "./data-validation";
-import type {QueryRefInfo, SnapshotSide} from "./migration-authoring";
+import {validateMachineEntityRows, validateMachinePortRows, type MachineRow} from "./data-validation";
+import {decodeValidationPorts, type PortInfo, type QueryRefInfo, type SnapshotSide} from "./migration-authoring";
 import {inspectSchema, type InspectionScope} from "./inspect-schema";
 import type {PgSchemaInfo, PgSession, ResolvedSqlResource} from "./pg-schema";
 import {
@@ -53,10 +53,9 @@ export type AuthoringCheckpointRowExecution = {
     id: string;
     afterStep: string;
     side: SnapshotSide;
-    entity: string;
     select: QueryRefInfo;
     validatorArtifactHash: string;
-};
+} & ({entity: string; ports?: never} | {ports: Readonly<Record<string, PortInfo>>; entity?: never});
 
 export type AuthoringCheckpointExecution = {
     checkpoints: readonly {
@@ -93,7 +92,8 @@ type PreparedAuthoringRow = {
     id: string;
     afterStep: string;
     side: SnapshotSide;
-    entity: string;
+    entity: string | null;
+    ports: Readonly<Record<string, PortInfo>> | null;
     select: {ref: QueryRefInfo; text: string};
     validatorArtifactHash: string;
     artifact: ValidationArtifactInfo;
@@ -196,7 +196,7 @@ function prepareAuthoringCheckpoints(
                 || typeof row.id !== "string" || row.id.length === 0
                 || typeof row.afterStep !== "string"
                 || (row.side !== "from" && row.side !== "to")
-                || typeof row.entity !== "string" || row.entity.length === 0
+                || (row.ports === undefined ? typeof row.entity !== "string" || row.entity.length === 0 : row.entity !== undefined)
                 || row.select === null || typeof row.select !== "object"
                 || row.select.kind !== "query"
                 || typeof row.select.name !== "string" || row.select.name.length === 0
@@ -251,7 +251,13 @@ function prepareAuthoringCheckpoints(
                     side,
                 });
             }
-            if (historical.snapshot.entities[row.entity] === undefined) {
+            let ports: Readonly<Record<string, PortInfo>> | null = null;
+            if (row.ports !== undefined) {
+                const decoded = decodeValidationPorts({from: authoring.snapshots.from.snapshot, to: authoring.snapshots.to.snapshot, transformations: {}}, row.ports, side);
+                if (!decoded.ok) return decoded;
+                ports = decoded.value;
+            }
+            if (row.entity !== undefined && historical.snapshot.entities[row.entity] === undefined) {
                 return fail("migration.invalidReference", {
                     reason: "row checkpoint references an unknown historical entity",
                     rowId: row.id,
@@ -263,7 +269,8 @@ function prepareAuthoringCheckpoints(
                 id: row.id,
                 afterStep: row.afterStep,
                 side,
-                entity: row.entity,
+                entity: row.entity ?? null,
+                ports,
                 select: query,
                 validatorArtifactHash: row.validatorArtifactHash,
                 artifact,
@@ -445,7 +452,8 @@ async function runAuthoringCheckpoint(
             modules.set(row.validatorArtifactHash, runtime);
         }
 
-        const validated = validateMachineEntityRows(row.snapshot, runtime, row.entity, queried.value);
+        const validated = row.ports === null ? validateMachineEntityRows(row.snapshot, runtime, row.entity!, queried.value)
+            : validateMachinePortRows(runtime, row.ports, queried.value);
         if (!validated.ok) return validated;
     }
     return {ok: true, value: true};

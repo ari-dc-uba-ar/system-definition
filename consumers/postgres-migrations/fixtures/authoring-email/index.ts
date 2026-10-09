@@ -4,8 +4,7 @@
  * This fixture deliberately starts from the same public SSOT APIs an application uses:
  * it defines release A/B, captures snapshots, projects PostgreSQL schemas, infers the
  * structural diff, builds the source query, completes a typed row transformation and data
- * migration, records destructive decisions, and finally runs the authoring compiler through
- * an in-memory runtime.  The values exported below are therefore real contracts, not copied
+ * migration, records destructive decisions, and supplies inputs to the real PostgreSQL authoring runtime.  The values exported below are therefore real contracts, not copied
  * JSON shapes maintained beside the implementation.
  */
 import {createHash} from "node:crypto";
@@ -20,7 +19,6 @@ import {
     defineRecord,
     defineTypes,
     problem,
-    sameReleaseRef,
     toJsonValue,
     withRecords,
     type PersistenceInfo,
@@ -33,7 +31,6 @@ import {
 import {
     decodeDestructiveDecisionInfo,
     type AuthoringBaseInfo,
-    type AuthoringRuntime,
     type DestructiveDecisionInfo,
     type MigrationDraftInfo,
     type StructureChangeInfo,
@@ -328,17 +325,6 @@ export const authoringEmailDraft: MigrationDraftInfo = {
     manual: [],
     pending: [],
 };
-
-function result<T>(value: T): ValidationResult<T> {
-    return {ok: true, value};
-}
-
-function unknownRelease(ref: ReleaseRefInfo): ValidationResult<never> {
-    return {
-        ok: false,
-        problems: [problem(null, "migration.invalidReference", "blocking", {releaseId: ref.releaseId})],
-    };
-}
 
 export const queryTextByName: Readonly<Record<string, string>> = {
     [authoringEmailSource.selection.query.name]: authoringEmailSource.sql,

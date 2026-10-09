@@ -53,7 +53,7 @@ export async function createPgAstTools(): Promise<{
                     && ["migration_input", "migration_parameters"].includes(String(node.CommonTableExpr.ctename))) {
                     throw new Error("A CTE cannot shadow a migration relation");
                 }
-                if (["InsertStmt", "UpdateStmt", "DeleteStmt", "MergeStmt", "IntoClause", "LockingClause"].some(key => key in node)) {
+                if (["InsertStmt", "UpdateStmt", "DeleteStmt", "MergeStmt", "IntoClause", "LockingClause", "intoClause", "lockingClause"].some(key => key in node)) {
                     throw new Error("A transformation must not mutate or lock its sources");
                 }
                 const relation = node.RangeVar;

@@ -9,7 +9,7 @@
     "build": "tsc",
     "test": "tsc && mocha --exit --node-option enable-source-maps \"dist/test/*-test.js\"",
     "test-ci": "tsc && c8 mocha --exit --node-option enable-source-maps \"dist/test/*-test.js\"",
-    "test-integration": "npm run build && node scripts/test-integration.js && node scripts/test-authoring-integration.js && node scripts/test-conflict-resolution-integration.js",
+    "test-integration": "npm run build && npm --prefix ../.. run build:examples && node scripts/test-integration.js && node scripts/test-authoring-integration.js && node scripts/test-conflict-resolution-integration.js && node scripts/test-cli-integration.js",
     "docs:generate": "node scripts/generate-readme.js",
     "docs:check": "node scripts/generate-readme.js --check",
     "prebuild": "npm run bootstrap-repository",
@@ -25,5 +25,16 @@
   },
   "bin": {
     "postgres-migrations": "dist/src/cli-main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./validation": {
+      "types": "./dist/src/historical-validation.d.ts",
+      "default": "./dist/src/historical-validation.js"
+    },
+    "./package.json": "./package.json"
   }
 }
