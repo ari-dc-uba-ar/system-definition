@@ -3,12 +3,12 @@ import {describe, it} from "mocha";
 import type {ReleaseRefInfo, ResourceRefInfo, ValidationResult} from "system-definition";
 import {
     compileDraft,
-    validateDestructiveDecisions,
     type AuthoringRuntime,
     type DestructiveDecisionInfo,
     type MigrationDraftInfo,
     type StructureChangeInfo,
 } from "../src/authoring";
+import {assessMigrationDecisions} from "../src/migration-decisions";
 import type {DataMigrationInfo} from "../src/migration-authoring";
 import {inferStructureChanges} from "../src/infer";
 import type {PgObjectInfo, PgSchemaInfo} from "../src/pg-schema";
@@ -195,11 +195,11 @@ function firstKey(result: ValidationResult<unknown>): string | undefined {
 describe("T21 migrate decisions, partitions and preservation order", () => {
     it("accepts migrate only when the named data migration consumes the source and writes every named output", async () => {
         const decision = migrate(legacyDrop());
-        const result = validateDestructiveDecisions(infer(), [decision], [moveNote()]);
+        const result = assessMigrationDecisions(infer(), {decisions: [decision], data: [moveNote()], manual: []});
 
         assert.equal(result.ok, true);
         if (!result.ok) return;
-        assert.deepEqual(result.value, [decision]);
+        assert.deepEqual(result.value, []);
     });
 
     it("rejects an unknown migration, empty outputs, an unconsumed source and an output not bound by the migration", async () => {
@@ -245,10 +245,10 @@ describe("T21 migrate decisions, partitions and preservation order", () => {
             discardPartition(change, archived),
         ];
 
-        const result = validateDestructiveDecisions(infer(), decisions, [moveNote()]);
+        const result = assessMigrationDecisions(infer(), {decisions, data: [moveNote()], manual: []});
         assert.equal(result.ok, true);
         if (!result.ok) return;
-        assert.deepEqual(result.value, decisions);
+        assert.deepEqual(result.value, []);
     });
 
     it("rejects duplicate partition coverage, whole-field plus partition widening, and a non-check partition resource", async () => {

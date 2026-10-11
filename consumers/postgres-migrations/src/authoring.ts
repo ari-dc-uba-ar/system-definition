@@ -10,7 +10,6 @@ import type {
     AuthoringRuntime,
     CompiledAuthoringInfo,
     CompiledAuthoringOperationInfo,
-    DestructiveDecisionInfo,
     FieldRefInfo,
     ManualStepInfo,
     MigrationDraftInfo,
@@ -19,10 +18,10 @@ import type {
 } from "./authoring-contract";
 import {compileGenerated} from "./compile-generated";
 import {inferStructureChanges} from "./infer";
-import type {DataMigrationInfo} from "./migration-authoring";
 import {pgIdentityKey, samePgIdentity} from "./pg-identity";
 import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo} from "./pg-schema";
 import {prepareManualSqlResource} from "./sql-resource";
+import {assessMigrationDecisions} from "./migration-decisions";
 
 export * from "./authoring-contract";
 
@@ -77,27 +76,6 @@ function residualRenames(
         return !hasEntity(inspected, after);
     });
 }
-
-function pendingFor(change: StructureChangeInfo): ValidationResult<never> {
-    return fail("migration.authoringPending", {
-        changeId: change.id,
-        impact: change.impact,
-        action: change.action,
-    });
-}
-
-function sameField(left: FieldRefInfo, right: FieldRefInfo): boolean {
-    return left.side === right.side
-        && left.entity === right.entity
-        && left.field === right.field;
-}
-
-function decisionKey(changeId: string, source: FieldRefInfo | null): string {
-    return source === null
-        ? `${changeId}\0<object>`
-        : `${changeId}\0${source.side}\0${source.entity}\0${source.field}`;
-}
-
 
 function hasIdentity(schema: PgSchemaInfo, identity: PgObjectIdentity): boolean {
     return schema.objects.some(object => samePgIdentity(object.identity, identity));
@@ -362,172 +340,6 @@ async function validateManualSteps(
     };
 }
 
-/**
- * T21 slice 2 keeps destructive coverage tied to the reconstructed historical
- * diff, while allowing an explicit field to be split by distinct check
- * resources.  A migrate decision is valid only when its named data migration
- * consumes that exact source field and writes every output the decision names.
- */
-function partitionKey(decision: DestructiveDecisionInfo): string | null {
-    const ref = decision.partitionCheck;
-    return ref === null ? null : `${ref.kind}\0${ref.name}\0${ref.contentHash}`;
-}
-
-function migrationConsumesSource(migration: DataMigrationInfo, source: FieldRefInfo): boolean {
-    return Object.values(migration.source.ports)
-        .some(port => port.field !== null && sameField(port.field, source));
-}
-
-function migrationWritesOutput(migration: DataMigrationInfo, output: string): boolean {
-    return migration.writes.some(write => write.values.some(binding => binding.output === output));
-}
-
-function validateMigrateDecision(
-    decision: DestructiveDecisionInfo & {
-        resolution: Extract<DestructiveDecisionInfo["resolution"], {kind: "migrate"}>;
-    },
-    data: readonly DataMigrationInfo[],
-): ValidationResult<true> {
-    const migration = data.find(candidate => candidate.id === decision.resolution.dataMigrationId);
-    if (migration === undefined) {
-        return fail("migration.invalidReference", {
-            changeId: decision.changeId,
-            dataMigrationId: decision.resolution.dataMigrationId,
-            reason: "destructive migrate decision references an unknown data migration",
-        });
-    }
-    if (decision.resolution.outputs.length === 0) {
-        return fail("migration.authoringInvalid", {
-            changeId: decision.changeId,
-            reason: "destructive migrate decision requires at least one output",
-        });
-    }
-    if (decision.source === null || !migrationConsumesSource(migration, decision.source)) {
-        return fail("migration.invalidReference", {
-            changeId: decision.changeId,
-            dataMigrationId: migration.id,
-            reason: "data migration does not consume the destructive source",
-        });
-    }
-
-    const outputs = new Set<string>();
-    for (const output of decision.resolution.outputs) {
-        if (output.length === 0 || outputs.has(output)) {
-            return fail("migration.authoringInvalid", {
-                changeId: decision.changeId,
-                reason: "destructive migrate outputs must be non-empty and unique",
-            });
-        }
-        outputs.add(output);
-        if (!migrationWritesOutput(migration, output)) {
-            return fail("migration.invalidReference", {
-                changeId: decision.changeId,
-                dataMigrationId: migration.id,
-                output,
-                reason: "destructive migrate output is not written by the data migration",
-            });
-        }
-    }
-    return {ok: true, value: true};
-}
-
-export function validateDestructiveDecisions(
-    changes: readonly StructureChangeInfo[],
-    decisions: readonly DestructiveDecisionInfo[],
-    data: readonly DataMigrationInfo[],
-): ValidationResult<readonly DestructiveDecisionInfo[]> {
-    const destructive = changes.filter(change => change.impact === "destructive");
-    const byId = new Map(destructive.map(change => [change.id, change] as const));
-    const grouped = new Map<string, DestructiveDecisionInfo[]>();
-
-    for (const decision of decisions) {
-        const change = byId.get(decision.changeId);
-        if (change === undefined) {
-            return fail("migration.invalidReference", {
-                changeId: decision.changeId,
-                reason: "destructive decision does not belong to the reconstructed diff",
-            });
-        }
-
-        if (decision.source === null) {
-            if (change.affectedFields.length !== 0) {
-                return fail("migration.invalidReference", {
-                    changeId: decision.changeId,
-                    reason: "object-level destructive decision cannot cover persisted fields",
-                });
-            }
-        } else if (!change.affectedFields.some(field => sameField(field, decision.source as FieldRefInfo))) {
-            return fail("migration.invalidReference", {
-                changeId: decision.changeId,
-                source: `${decision.source.side}:${decision.source.entity}.${decision.source.field}`,
-                reason: "destructive decision source is not affected by the referenced change",
-            });
-        }
-
-        if (decision.partitionCheck !== null && decision.partitionCheck.kind !== "check") {
-            return fail("migration.authoringInvalid", {
-                changeId: decision.changeId,
-                reason: "destructive partition resource must be a check",
-            });
-        }
-
-        if (decision.resolution.kind === "discard") {
-            if (decision.resolution.reason.trim().length === 0) {
-                return fail("migration.authoringInvalid", {
-                    changeId: decision.changeId,
-                    reason: "discard requires a non-empty reason",
-                });
-            }
-        } else {
-            const validated = validateMigrateDecision(
-                decision as DestructiveDecisionInfo & {
-                    resolution: Extract<DestructiveDecisionInfo["resolution"], {kind: "migrate"}>;
-                },
-                data,
-            );
-            if (!validated.ok) return validated;
-        }
-
-        const key = decisionKey(decision.changeId, decision.source);
-        const matching = grouped.get(key) ?? [];
-        matching.push(decision);
-        grouped.set(key, matching);
-    }
-
-    for (const change of destructive) {
-        const sources: readonly (FieldRefInfo | null)[] = change.affectedFields.length === 0
-            ? [null]
-            : change.affectedFields;
-        for (const source of sources) {
-            const matching = grouped.get(decisionKey(change.id, source)) ?? [];
-            if (matching.length === 0) return pendingFor(change);
-
-            const wholeField = matching.filter(decision => decision.partitionCheck === null);
-            if (wholeField.length > 1 || (wholeField.length === 1 && matching.length > 1)) {
-                return fail("migration.authoringInvalid", {
-                    changeId: change.id,
-                    reason: "whole-field and partition decisions cannot overlap",
-                });
-            }
-            if (wholeField.length === 0) {
-                const partitions = new Set<string>();
-                for (const decision of matching) {
-                    const key = partitionKey(decision);
-                    if (key === null || partitions.has(key)) {
-                        return fail("migration.authoringInvalid", {
-                            changeId: change.id,
-                            reason: "destructive partition decisions must use distinct checks",
-                        });
-                    }
-                    partitions.add(key);
-                }
-            }
-        }
-    }
-
-    return {ok: true, value: decisions};
-}
-
 function unsupported(change: StructureChangeInfo): ValidationResult<never> {
     return fail("migration.unsupportedSchemaFeature", {
         changeId: change.id,
@@ -545,7 +357,7 @@ function migrationForDraft(
         from: draft.base.from,
         to: draft.base.to,
         description: "",
-        before: manual.before,
+        before: [...manual.before, ...draft.decisions.flatMap(decision => decision.resolution.kind === "check" ? [decision.resolution.run] : [])],
         steps: manual.steps.map(step => ({id: step.id, run: step.run})),
         after: [],
     };
@@ -564,9 +376,6 @@ export async function compileDraft(
 ): Promise<ValidationResult<CompiledAuthoringInfo>> {
     if (draft.formatVersion !== 1 || draft.id.length === 0 || draft.revisionHash.length === 0) {
         return fail("migration.unsupportedFormat", {reason: "invalid authoring draft"});
-    }
-    if (draft.pending.length > 0) {
-        return fail("migration.authoringPending", {reason: "draft has unresolved authoring questions"});
     }
     const reconstructed = await runtime.reconstructHistory(draft.base.from);
     if (!reconstructed.ok) return reconstructed;
@@ -591,8 +400,13 @@ export async function compileDraft(
     );
     if (!historical.ok) return historical;
 
-    const destructiveDecisions = validateDestructiveDecisions(historical.value, draft.decisions, draft.data);
-    if (!destructiveDecisions.ok) return destructiveDecisions;
+    const decisions = assessMigrationDecisions(historical.value, draft);
+    if (!decisions.ok) return decisions;
+    const unsupportedQuestion = decisions.value.find(question => question.kind === "unsupported");
+    if (unsupportedQuestion !== undefined) return unsupported(historical.value.find(change => change.id === unsupportedQuestion.id)!);
+    if (decisions.value.length > 0) return fail("migration.authoringPending", {
+        changeIds: decisions.value.map(question => question.id).join(","), reason: "Migration has unresolved data decisions",
+    });
 
     const manual = await validateManualSteps(
         historical.value,
@@ -624,12 +438,6 @@ export async function compileDraft(
     const firstUnsupported = residual.value.find(change => change.impact === "unsupported");
     if (firstUnsupported !== undefined) return unsupported(firstUnsupported);
 
-    const firstPending = residual.value.find(change => change.impact === "requiresDataCheck" && draft.data.length === 0
-        && !draft.manual.some(step => step.implementsChanges.includes(change.id))
-        && !residual.value.some(table => table.action === "add" && table.after?.kind === "table"
-            && table.after.schema === change.after?.schema && table.after.name === change.after?.parentName));
-    if (firstPending !== undefined) return pendingFor(firstPending);
-
     const manualOperations: readonly CompiledAuthoringOperationInfo[] = manual.value.steps.map(step => ({
         id: "manual:" + step.id,
         stepIds: [step.id],
@@ -643,7 +451,7 @@ export async function compileDraft(
             base: draft.base,
             migration: migrationForDraft(draft, manual.value),
             operations,
-            decisions: destructiveDecisions.value,
+            decisions: draft.decisions,
             checkpoints: manual.value.checkpoints,
             queryResources: Object.freeze(Object.create(null) as Record<string, never>),
             validationArtifacts: [],

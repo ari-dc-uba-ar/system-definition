@@ -197,6 +197,33 @@ function state(overrides: Partial<ResolutionStateInfo> = {}): ResolutionStateInf
 }
 
 describe("T23 conflict resolver freshness and answer application", () => {
+    it("persists a versioned required-data check while retaining other unanswered changes", async () => {
+        const initial = draft();
+        const changes: MigrationDraftInfo["changes"] = ["code", "name"].map(field => ({
+            ...initial.changes[0]!, id: "required:" + field, action: "add", impact: "requiresDataCheck", before: null,
+            after: {schema: "app", kind: "column", name: field, parentName: "alumnos", signature: []},
+            affectedFields: [{side: "to", entity: "alumnos", field}],
+        }));
+        const pending: PendingQuestionInfo[] = changes.map(change => ({id: change.id, kind: "dataRequired", subjects: [change.id], messageKey: "migration.authoringPending"}));
+        const current = {...initial, changes, pending};
+        const report = reportForDraft(current, {questions: pending});
+        const decision = {changeId: changes[0]!.id, source: null, partitionCheck: null,
+            resolution: {kind: "check", run: {kind: "check", name: "verify-code", contentHash: HASH_C}}};
+        const payload = {formatVersion: 1, reportHash: report.reportHash, draftHash: current.revisionHash, draft: current,
+            answers: [{questionId: pending[0]!.id, kind: "dataRequired", decision}]};
+        const runtime = new ReadOnlyRuntime(state());
+        const resolved = await resolveConflict(report, payload, runtime);
+        if (!resolved.ok) assert.fail(JSON.stringify(resolved.problems));
+        assert.equal(resolved.value.kind, "draftUpdated");
+        if (resolved.value.kind !== "draftUpdated") return;
+        assert.deepEqual(resolved.value.draft.decisions, [decision]);
+        assert.deepEqual(toJsonValue(resolved.value.draft.pending), toJsonValue([pending[1]]));
+        assert.notEqual(resolved.value.draft.revisionHash, current.revisionHash);
+        assert.equal(runtime.inspections, 0);
+        const invalid = {...payload, answers: [{...payload.answers[0]!, decision: {...decision, resolution: {kind: "discard", reason: "ignore the required value"}}}]};
+        assert.equal((await resolveConflict(report, invalid, runtime)).ok, false);
+    });
+
     it("rejects a destructive answer for a change outside the reported draft", async () => {
         const current = draft();
         const report = reportForDraft(current);

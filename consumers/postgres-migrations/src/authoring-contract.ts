@@ -60,13 +60,18 @@ export type RenameInfo = {
     after: FieldRefInfo | EntityRefInfo;
 };
 
-export type DestructiveDecisionInfo = {
+export type DataDecisionInfo = {
     changeId: string;
     source: FieldRefInfo | null;
     partitionCheck: ResourceRefInfo | null;
     resolution:
         | {kind: "discard"; reason: string}
-        | {kind: "migrate"; dataMigrationId: string; outputs: readonly string[]};
+        | {kind: "migrate"; dataMigrationId: string; outputs: readonly string[]}
+        | {kind: "check"; run: ResourceRefInfo};
+};
+
+export type DestructiveDecisionInfo = Omit<DataDecisionInfo, "resolution"> & {
+    resolution: Exclude<DataDecisionInfo["resolution"], {kind: "check"}>;
 };
 
 export function decodeFieldRefInfo(
@@ -89,12 +94,12 @@ export function decodeFieldRefInfo(
     return {ok: true, value: {side: value.side, entity: value.entity, field: value.field}};
 }
 
-export function decodeDestructiveDecisionInfo(
+export function decodeDataDecisionInfo(
     value: unknown,
     path: string,
     invalid: StructuralFailure,
-): ValidationResult<DestructiveDecisionInfo> {
-    if (!isPlainObject(value)) return invalid(path, "expected a destructive decision");
+): ValidationResult<DataDecisionInfo> {
+    if (!isPlainObject(value)) return invalid(path, "expected a data decision");
     const shape = exactKeys(value, ["changeId", "source", "partitionCheck", "resolution"], path, invalid);
     if (!shape.ok) return shape;
     if (!isNonEmptyString(value.changeId)) {
@@ -121,7 +126,16 @@ export function decodeDestructiveDecisionInfo(
 
     const resolutionPath = childPath(path, "resolution");
     if (!isPlainObject(value.resolution)) {
-        return invalid(resolutionPath, "expected a destructive resolution");
+        return invalid(resolutionPath, "expected a data resolution");
+    }
+
+    if (value.resolution.kind === "check") {
+        const checked = exactKeys(value.resolution, ["kind", "run"], resolutionPath, invalid);
+        if (!checked.ok) return checked;
+        const run = decodeResourceRefInfo(value.resolution.run, childPath(resolutionPath, "run"), invalid);
+        if (!run.ok) return run;
+        if (run.value.kind !== "check") return invalid(childPath(resolutionPath, "run"), "expected a check resource");
+        return {ok: true, value: {changeId: value.changeId, source, partitionCheck, resolution: {kind: "check", run: run.value}}};
     }
 
     if (value.resolution.kind === "discard") {
@@ -177,7 +191,14 @@ export function decodeDestructiveDecisionInfo(
         };
     }
 
-    return invalid(childPath(resolutionPath, "kind"), "unknown destructive resolution kind");
+    return invalid(childPath(resolutionPath, "kind"), "unknown data resolution kind");
+}
+
+export function decodeDestructiveDecisionInfo(value: unknown, path: string, invalid: StructuralFailure): ValidationResult<DestructiveDecisionInfo> {
+    const decoded = decodeDataDecisionInfo(value, path, invalid);
+    if (!decoded.ok) return decoded;
+    if (decoded.value.resolution.kind === "check") return invalid(path, "a check cannot authorize destructive data loss");
+    return {ok: true, value: {...decoded.value, resolution: decoded.value.resolution}};
 }
 
 
@@ -201,11 +222,7 @@ export type ManualStepInfo = {
     rowChecks: readonly unknown[];
 };
 
-/**
- * T18 owns the structural authoring base. Data migrations and manual SQL are
- * refined by later tasks; T21 makes destructive decisions explicit here while
- * keeping the not-yet-compiled authoring slots representable.
- */
+/** Authored choices belong to the migration; changes and pending are derived. */
 export type MigrationDraftInfo = {
     formatVersion: 1;
     id: string;
@@ -214,7 +231,7 @@ export type MigrationDraftInfo = {
     renames: readonly RenameInfo[];
     changes: readonly StructureChangeInfo[];
     data: readonly DataMigrationInfo[];
-    decisions: readonly DestructiveDecisionInfo[];
+    decisions: readonly DataDecisionInfo[];
     manual: readonly ManualStepInfo[];
     pending: readonly PendingQuestionInfo[];
 };
@@ -255,7 +272,7 @@ export type CompiledAuthoringInfo = {
     base: AuthoringBaseInfo;
     migration: MigrationInfo;
     operations: readonly CompiledAuthoringOperationInfo[];
-    decisions: readonly DestructiveDecisionInfo[];
+    decisions: readonly DataDecisionInfo[];
     checkpoints: readonly unknown[];
     queryResources: Readonly<Record<string, QueryResourceInfo>>;
     validationArtifacts: readonly unknown[];

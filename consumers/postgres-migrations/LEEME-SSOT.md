@@ -89,6 +89,64 @@ cubren `text`, `integer` y `boolean`. Un dominio no soportado devuelve el error 
 proyector. Este paso no ejecuta DDL ni modifica datos; reconciliación y generación
 de SQL quedan para pasos posteriores.
 
+## Decisiones de datos por migración
+
+Las decisiones se guardan en `MigrationDraftInfo.decisions`, junto a `data` y las
+correspondencias explícitas de `renames`. `DataDecisionInfo` es el contrato común;
+`DestructiveDecisionInfo` restringe sus resoluciones para la preparación de cambios
+destructivos. Las resoluciones son:
+
+- `discard`: eliminación deliberada, con motivo; sólo para cambios destructivos.
+- `migrate`: ID de una transformación/backfill en `draft.data` y outputs escritos.
+- `check`: recurso SQL de tipo check, para validar datos antes de aplicar el cambio.
+
+`assessMigrationDecisions(changes, draft)` es una función pura que devuelve las
+preguntas pendientes o errores de decisiones inválidas. Cada elección identifica
+un cambio de esa migración. Los IDs de cambios incluyen los estados origen/destino;
+una elección anterior no cubre un cambio distinto. La validación comprueba fuentes,
+outputs y, para columnas requeridas, la columna destino concreta.
+
+No se guarda un booleano de aprobación. Tener otra migración de datos, o borrar la
+lista `pending`, no resuelve un cambio. Inference, resolución de respuestas y
+compilación usan el mismo validador. La compilación reconstruye los cambios y
+bloquea antes de replay si faltan decisiones. Los checks elegidos se incluyen en
+`migration.before`; el ejecutor existente los verifica antes del DDL. La resolución
+de una decisión no sustituye las validaciones de SQL, datos y replay del compilador.
+
+```typescript
+const readiness = assessMigrationDecisions(changes, draft);
+if (!readiness.ok) throw new Error(JSON.stringify(readiness.problems));
+const pending = readiness.value; // []: decisiones completas para estos cambios
+```
+
+El flujo existente `infer --project ... --out draft.json` guarda preguntas para
+`destructive` y `dataRequired`. Se responden mediante `resolve --draft draft.json
+--report draft.json.conflict.json --answers answers.json`. Las respuestas están
+ligadas al hash del draft y del reporte. Para un check, una respuesta puede ser:
+
+```json
+{
+  "questionId": "<ID del cambio>",
+  "kind": "dataRequired",
+  "decision": {
+    "changeId": "<ID del cambio>",
+    "source": null,
+    "partitionCheck": null,
+    "resolution": {
+      "kind": "check",
+      "run": {"kind": "check", "name": "datos-validos", "contentHash": "<SHA-256 del recurso>"}
+    }
+  }
+}
+```
+
+Ese objeto va en `answers` del archivo existente, con `formatVersion`, `reportHash`,
+`draftHash` y `draft`. El recurso SQL debe estar registrado en los recursos de la
+migración; una descripción sin recurso no autoriza aplicar el cambio. El prompt
+interactivo actual conserva las decisiones destructivas; los demás casos usan el
+archivo de respuestas. La carga por `--ssot` sigue limitada al modelo y assessment;
+la composición completa del draft con esa entrada se integrará por separado.
+
 ## Pendiente: validar el estado contra el historial
 
 Al integrar el historial, comparar primero la base actual con el estado esperado

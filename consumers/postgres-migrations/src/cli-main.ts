@@ -28,6 +28,7 @@ import type {AuthoredResource} from "./authoring-files";
 import {loadSsot} from "./ssot";
 import {loadDatabaseSettings} from "./database-settings";
 import {assessDatabase} from "./assessment";
+import {assessMigrationDecisions} from "./migration-decisions";
 import {publishArtifactDirectory} from "./artifact-files";
 
 const commands = ["capture", "assess", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
@@ -124,12 +125,9 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
             if (!to.ok) return to;
             const changes = inferStructureChanges(loaded.value.base, from.value, to.value.expectedSchema, loaded.value.renames);
             if (!changes.ok) return changes;
-            const pending = changes.value.filter(change => change.impact === "destructive"
-                && (change.affectedFields.length === 0 ? !loaded.value.decisions.some(decision => decision.changeId === change.id)
-                    : !change.affectedFields.every(field => loaded.value.decisions.some(decision => decision.changeId === change.id
-                        && decision.source?.side === field.side && decision.source.entity === field.entity && decision.source.field === field.field)))).map(change => ({
-                id: change.id, kind: "destructive" as const, subjects: [change.id], messageKey: "migration.destructiveDecisionRequired",
-            }));
+            const readiness = assessMigrationDecisions(changes.value, loaded.value);
+            if (!readiness.ok) return readiness;
+            const pending = readiness.value;
             const next = {...loaded.value, changes: changes.value, pending};
             await atomicJson(draftPath, next);
             if (pending.length > 0) {

@@ -12,11 +12,12 @@ import {
     type ValidationResult,
 } from "system-definition";
 import {computeDraftRevisionHash} from "./authoring-cli";
+import {assessMigrationDecisions} from "./migration-decisions";
 import {canonicalJsonSha256} from "./canonical-hash";
 import {
-    decodeDestructiveDecisionInfo,
+    decodeDataDecisionInfo,
     type AuthoringRuntime,
-    type DestructiveDecisionInfo,
+    type DataDecisionInfo,
     type MigrationDraftInfo,
 } from "./authoring-contract";
 import {
@@ -52,10 +53,10 @@ export type ResolutionResultInfo =
     | {kind: "blocked"; reportHash: string; problems: readonly Problem[]};
 
 
-type DestructiveAnswerInfo = {
+type DataDecisionAnswerInfo = {
     questionId: string;
-    kind: "destructive";
-    decision: DestructiveDecisionInfo;
+    kind: "destructive" | "dataRequired";
+    decision: DataDecisionInfo;
 };
 
 type ResolutionAnswersInfo = {
@@ -63,7 +64,7 @@ type ResolutionAnswersInfo = {
     reportHash: string;
     draftHash: string | null;
     draft: MigrationDraftInfo | null;
-    answers: readonly DestructiveAnswerInfo[];
+    answers: readonly DataDecisionAnswerInfo[];
     preparation: unknown | null;
 };
 
@@ -132,7 +133,7 @@ function decodeAnswers(value: unknown, report: ConflictReportInfo): ValidationRe
         draft = raw.draft as unknown as MigrationDraftInfo;
     }
 
-    const answers: DestructiveAnswerInfo[] = [];
+    const answers: DataDecisionAnswerInfo[] = [];
     for (let index = 0; index < raw.answers.length; index++) {
         const answer = raw.answers[index];
         if (!isPlainObject(answer)) return failure("invalid conflict answer");
@@ -144,16 +145,16 @@ function decodeAnswers(value: unknown, report: ConflictReportInfo): ValidationRe
         );
         if (!answerShape.ok
             || !isNonEmptyString(answer.questionId)
-            || answer.kind !== "destructive") {
+            || (answer.kind !== "destructive" && answer.kind !== "dataRequired")) {
             return failure("invalid conflict answer");
         }
-        const decision = decodeDestructiveDecisionInfo(
+        const decision = decodeDataDecisionInfo(
             answer.decision,
             `answers[${index}]["decision"]`,
             (_path, reason) => failure(reason),
         );
         if (!decision.ok) return decision;
-        answers.push({questionId: answer.questionId, kind: "destructive", decision: decision.value});
+        answers.push({questionId: answer.questionId, kind: answer.kind, decision: decision.value});
     }
 
     if (answers.length > 0 && (draftHash === null || draft === null)) {
@@ -182,7 +183,7 @@ function validateDraftBinding(
     return {ok: true, value: answers.draft};
 }
 
-function applyDestructiveAnswer(
+function applyDataDecisionAnswers(
     report: ConflictReportInfo,
     answers: ResolutionAnswersInfo,
 ): ValidationResult<ResolutionResultInfo> {
@@ -191,57 +192,23 @@ function applyDestructiveAnswer(
     if (!bound.ok) return bound;
     const draft = bound.value;
     const decisions = [...draft.decisions];
-    const resolvedQuestions = new Set<string>();
     for (const answer of answers.answers) {
-    const question = draft.pending.find(one => one.id === answer.questionId);
-    if (question === undefined || question.kind !== "destructive") {
-        return failure("answer does not match a pending destructive question");
+        const question = draft.pending.find(one => one.id === answer.questionId);
+        if (question === undefined || question.kind !== answer.kind) return failure("Answer does not match a pending data decision");
+        if (!report.questions.some(one => one.id === question.id && one.kind === question.kind)) return failure("Answer question is not part of the conflict report");
+        const change = draft.changes.find(one => one.id === answer.decision.changeId);
+        if (change === undefined || (answer.kind === "destructive" ? change.impact !== "destructive" : change.impact !== "requiresDataCheck")) return failure("Answer does not reference the required change");
+        const identity = change.before ?? change.after;
+        const subject = identity === null ? "" : [identity.schema, identity.parentName, identity.name].filter(one => one !== null).join(".");
+        if (!question.subjects.includes(change.id) && !question.subjects.includes(subject)) return failure("Answer does not address this question's subject");
+        decisions.push(answer.decision);
     }
-    if (!report.questions.some(one => one.id === question.id && one.kind === question.kind)) {
-        return failure("answer question is not part of the conflict report");
-    }
-    const change = draft.changes.find(one => one.id === answer.decision.changeId);
-    if (change === undefined || change.impact !== "destructive") {
-        return failure("answer does not reference a destructive change in the draft");
-    }
-    const source = answer.decision.source;
-    if (source === null ? change.affectedFields.length !== 0 : !change.affectedFields.some(field =>
-        field.side === source.side && field.entity === source.entity && field.field === source.field)) {
-        return failure("answer source is not affected by the destructive change");
-    }
-    const sourceIdentity = change.before;
-    const subject = sourceIdentity === null ? "" : [sourceIdentity.schema, sourceIdentity.parentName, sourceIdentity.name].filter(one => one !== null).join(".");
-    if (!question.subjects.includes(change.id) && !question.subjects.includes(subject)) {
-        return failure("answer does not address this question's destructive subject");
-    }
-    if (answer.decision.resolution.kind === "discard" && answer.decision.resolution.reason.trim().length === 0) return failure("Discard requires a reason");
-    if (answer.decision.resolution.kind === "migrate") {
-        const resolution = answer.decision.resolution;
-        const data = draft.data.find(one => one.id === resolution.dataMigrationId);
-        if (data === undefined || source === null
-            || !Object.values(data.source.ports).some(port => port.field?.side === source.side && port.field.entity === source.entity && port.field.field === source.field)
-            || !resolution.outputs.every(output => data.writes.some(write => write.values.some(binding => binding.output === output)))) {
-            return failure("Migrate answer must consume the source and write every selected output");
-        }
-    }
-    if (decisions.some(one => one.changeId === answer.decision.changeId
-        && JSON.stringify(one.source) === JSON.stringify(answer.decision.source)
-        && JSON.stringify(one.partitionCheck) === JSON.stringify(answer.decision.partitionCheck))) {
-        return failure("duplicate destructive decision");
-    }
-    decisions.push(answer.decision);
-    // A table question remains pending until every historical field has an answer.
-    const covered = change.affectedFields.length === 0 || change.affectedFields.every(field => decisions.some(decision =>
-        decision.changeId === change.id && decision.source?.side === field.side
-        && decision.source.entity === field.entity && decision.source.field === field.field));
-    if (covered) resolvedQuestions.add(question.id);
-    }
-
-    const nextWithoutRevision: MigrationDraftInfo = {
-        ...draft,
-        decisions,
-        pending: draft.pending.filter(one => !resolvedQuestions.has(one.id)),
-    };
+    const readiness = assessMigrationDecisions(draft.changes, {...draft, decisions});
+    if (!readiness.ok) return failure(readiness.problems.map(problem => problem.details.reason ?? problem.messageKey).join("; "));
+    const pending = readiness.value.map(question => draft.pending.find(previous => previous.id === question.id
+        || previous.subjects.includes(question.id)
+        || answers.answers.some(answer => answer.decision.changeId === question.id && answer.questionId === previous.id)) ?? question);
+    const nextWithoutRevision: MigrationDraftInfo = {...draft, decisions, pending};
     const revision = computeDraftRevisionHash(nextWithoutRevision);
     if (!revision.ok) return revision;
     const next: MigrationDraftInfo = {...nextWithoutRevision, revisionHash: revision.value};
@@ -319,7 +286,7 @@ export async function resolveConflict(
     }
 
     if (report.value.kind === "authoringDecision" && answers.value.answers.length > 0) {
-        return applyDestructiveAnswer(report.value, answers.value);
+        return applyDataDecisionAnswers(report.value, answers.value);
     }
 
     if (report.value.kind === "historyIntegrity" || report.value.kind === "artifactIntegrity") {

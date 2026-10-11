@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const {
+  decodeDataDecisionInfo,
   decodeDestructiveDecisionInfo,
 } = require("../consumers/postgres-migrations/dist/src/authoring-contract.js");
 
@@ -58,13 +59,21 @@ const wrongPartitionKind = decodeDestructiveDecisionInfo({
 assert.equal(wrongPartitionKind.ok, false);
 assert.equal(wrongPartitionKind.problems[0].details.reason, "partitionCheck must reference a check resource");
 
-for (const relative of [
-  "consumers/postgres-migrations/src/preparation-artifact.ts",
-  "consumers/postgres-migrations/src/resolve-conflict.ts",
+const checked = {
+  changeId: "change-3", source: null, partitionCheck: null,
+  resolution: {kind: "check", run: {kind: "check", name: "values-valid", contentHash: "c".repeat(64)}},
+};
+assert.deepEqual(decodeDataDecisionInfo(checked, "decision", invalid), {ok: true, value: checked});
+assert.equal(decodeDestructiveDecisionInfo(checked, "decision", invalid).ok, false, "a check must never become destructive approval");
+assert.deepEqual(decodeDataDecisionInfo(validMigrate, "decision", invalid), migrated);
+
+for (const [relative, decoder] of [
+  ["consumers/postgres-migrations/src/preparation-artifact.ts", "decodeDestructiveDecisionInfo"],
+  ["consumers/postgres-migrations/src/resolve-conflict.ts", "decodeDataDecisionInfo"],
 ]) {
   const source = fs.readFileSync(path.join(__dirname, "..", relative), "utf8");
   assert.doesNotMatch(source, /function decodeDecision\s*\(/, `${relative} must not re-own destructive decision membership`);
-  assert.match(source, /decodeDestructiveDecisionInfo\(/, `${relative} must delegate destructive decision membership`);
+  assert.match(source, new RegExp(decoder + "\\("), `${relative} must delegate decision membership to its shared decoder`);
 }
 
 console.log("destructive decision codec tests passed");

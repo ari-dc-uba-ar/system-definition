@@ -1,5 +1,6 @@
 import {AuthoringFiles} from "../src/authoring-files";
 import {strict as assert} from "node:assert";
+import {createHash} from "node:crypto";
 import {describe, it} from "mocha";
 import type {ReleaseRefInfo, ValidationResult} from "system-definition";
 import type {AuthoringBaseInfo, StructureChangeInfo} from "../src/authoring-contract";
@@ -211,7 +212,43 @@ describe("T18 residual structure planning and compileDraft boundary", () => {
 
         assert.equal(result.ok, false);
         assert.equal(firstKey(result), "migration.authoringPending");
-        assert.deepEqual(runtime.calls, ["history:A", "load:B", "inspect"]);
+        assert.deepEqual(runtime.calls, ["history:A", "load:B"]);
+    });
+
+    it("blocks a required column even when an unrelated data migration is supplied", async () => {
+        const history = schema([table("people"), column("people", "id", false), column("people", "nickname", true)]);
+        const desired = schema([...history.objects, column("people", "code", false)]);
+        const runtime = new CompileRuntime(history, desired, history);
+        const unrelated: MigrationDraftInfo["data"][number] = {
+            id: "fill-nickname", description: "unrelated values", dependsOn: [], transformation: "nickname", arguments: {}, conservationChecks: [],
+            source: {query: {kind: "query", name: "source", contentHash: "1".repeat(64)},
+                ports: {id: {domain: {side: "from", type: "text", nullable: false}, field: {side: "from", entity: "people", field: "id"}}}, identity: ["id"], coverageChecks: []},
+            writes: [{kind: "update", entity: "people", values: [{output: "nickname", target: {side: "to", entity: "people", field: "nickname"}}], match: [{output: "id", targetField: "id"}], whenMissing: "error"}],
+        };
+        const result = await compileDraft({...draft(), data: [unrelated]}, runtime);
+        assert.equal(result.ok, false);
+        assert.equal(firstKey(result), "migration.authoringPending");
+        assert.deepEqual(runtime.calls, ["history:A", "load:B"], "unresolved changes must stop before any replay or data SQL");
+    });
+
+    it("derives readiness from the supplied check decision and preserves its before-DDL check", async () => {
+        const history = schema([table("people"), column("people", "id", false), column("people", "name", true)]);
+        const desired = schema([table("people"), column("people", "id", false), column("people", "name", false)]);
+        const changes = infer(history, desired);
+        const change = changes.find(change => change.after?.name === "name")!;
+        const text = 'SELECT NOT EXISTS (SELECT 1 FROM app.people WHERE name IS NULL) AS ok;\n';
+        const check = {kind: "check" as const, name: "name-has-values", contentHash: createHash("sha256").update(text).digest("hex")};
+        const approved: MigrationDraftInfo = {...draft(changes),
+            pending: [{id: change.id, kind: "dataRequired", subjects: [change.id], messageKey: "migration.authoringPending"}],
+            decisions: [{changeId: change.id, source: null, partitionCheck: null, resolution: {kind: "check", run: check}}],
+        };
+        const runtime = new CompileRuntime(history, desired, history);
+        assert.equal((await runtime.emitResource({ref: check, text})).ok, true);
+        const result = await compileDraft(approved, runtime);
+        if (!result.ok) assert.fail(JSON.stringify(result.problems));
+        assert.deepEqual(result.value.decisions, approved.decisions);
+        assert.ok(result.value.migration.before.some(ref => ref.name === check.name && ref.contentHash === check.contentHash));
+        assert.ok(result.value.migration.steps.some(step => runtime.resources.get(step.run.name)?.text.includes("SET NOT NULL")));
     });
 
     it("blocks unsupported residual structure instead of omitting it", async () => {
