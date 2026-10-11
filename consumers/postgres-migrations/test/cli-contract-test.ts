@@ -9,6 +9,7 @@ import {
 } from "../src/cli";
 
 type ExpectedCommand =
+    | "bootstrap"
     | "infer"
     | "add-data"
     | "add-sql"

@@ -52,7 +52,7 @@ export async function bootstrapJournal(
         `CREATE TABLE IF NOT EXISTS ${schema}.execution_attempt (
             attempt_id text PRIMARY KEY,
             deployment_id text NOT NULL,
-            installation_id text NOT NULL REFERENCES ${schema}.installation(installation_id),
+            installation_id text NOT NULL,
             plan_hash text NOT NULL,
             state text NOT NULL CHECK (state IN (${attemptStatesSql})),
             confirmed_target_system_id text NULL,
@@ -62,6 +62,9 @@ export async function bootstrapJournal(
             started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
             finished_at timestamptz NULL
         )`,
+        // A first-install attempt precedes the confirmed installation. Keep the
+        // durable attempt even when installation fails or its commit is unknown.
+        `ALTER TABLE ${schema}.execution_attempt DROP CONSTRAINT IF EXISTS execution_attempt_installation_id_fkey`,
         `CREATE TABLE IF NOT EXISTS ${schema}.preparation_attempts (
             attempt_id text PRIMARY KEY,
             installation_id text NOT NULL REFERENCES ${schema}.installation(installation_id),

@@ -129,7 +129,8 @@ class ScratchSession implements PgSession {
         if (/^CREATE TABLE\s+"app"\./i.test(sql)) return {rows: [], rowCount: null};
         if (/^ALTER TABLE\s+"app"\..+ADD CONSTRAINT/i.test(sql)) return {rows: [], rowCount: null};
         if (/^CREATE SCHEMA IF NOT EXISTS\s+"sd_journal"/i.test(sql)
-            || /^CREATE TABLE IF NOT EXISTS\s+"sd_journal"/i.test(sql)) return {rows: [], rowCount: null};
+            || /^CREATE TABLE IF NOT EXISTS\s+"sd_journal"/i.test(sql)
+            || /^ALTER TABLE "sd_journal"\.execution_attempt DROP CONSTRAINT IF EXISTS execution_attempt_installation_id_fkey$/i.test(sql)) return {rows: [], rowCount: null};
         if (/^INSERT INTO\s+"sd_journal"\.installation/i.test(sql)) {
             const baseline: ReleaseRefInfo = {systemId: String(values[3]), releaseId: String(values[4]), releaseHash: String(values[5])};
             this.currentRelease = baseline;

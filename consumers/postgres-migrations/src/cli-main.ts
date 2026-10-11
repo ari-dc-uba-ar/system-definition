@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import {randomUUID} from "node:crypto";
+import {existsSync} from "node:fs";
 import {mkdir, readFile, rename, writeFile, rm} from "node:fs/promises";
 import {dirname, resolve, relative, isAbsolute} from "node:path";
 import {pathToFileURL} from "node:url";
 import {createInterface} from "node:readline/promises";
-import {captureSystemSnapshot, isPlainObject, problem, sameReleaseRef, type ValidationResult} from "system-definition";
+import {captureSystemSnapshot, isPlainObject, problem, sameReleaseRef, type SystemSnapshotInput, type ValidationResult} from "system-definition";
 import {cliExitCode} from "./cli";
 import type {MigrationProject, CommandResult} from "./cli-project";
 import {compileDraft} from "./authoring";
@@ -24,9 +25,10 @@ import {executeMigrationPath} from "./runner";
 import {compiledArtifact} from "./compiled-artifact";
 import {promptDataMigration} from "./authoring-prompt";
 import type {AuthoredResource} from "./authoring-files";
+import {runSsotCommand} from "./ssot-runtime";
 
-const commands = ["capture", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
-const help = `postgres-migrations <command> --project <module.js> [options]
+const commands = ["bootstrap", "capture", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
+const help = `postgres-migrations <command> --ssot <module.js> | --project <module.js> [options]
 Commands: ${commands.join(", ")}
 --draft <file.json>    Read/update an unpublished draft (defaults to project.authoring.draft).
 --out <path>           Output JSON; generate writes an artifact directory.
@@ -36,6 +38,9 @@ Commands: ${commands.join(", ")}
 --non-interactive     Never ask questions (also automatic in CI or without a TTY).
 Only add-data and resolve can prompt. All failures print JSON and exit nonzero.
 Project modules export createMigrationProject(); see cli-project.ts for typed ports.
+SSOT modules export ssot = definePostgresSystem(context, definition).
+With --ssot, bootstrap manages owner/app roles; publish generates and verifies the
+initial release; install records it; verify/status check its published schema.
 Exit codes: 0 success, 2 input/configuration, 3 verification/gate, 4 execution/conflict.
 `;
 
@@ -221,7 +226,13 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
         if (result.ok && result.value.kind === "blocked") return {ok: false, problems: result.value.problems};
         return result;
     }
-    if (command === "capture") return project.capture ? captureSystemSnapshot(...project.capture) : invalid("Project lacks capture input");
+    if (command === "capture") {
+        if (!project.capture) return invalid("Project lacks capture input");
+        if (typeof project.capture === "function") return project.capture();
+        const [context, input] = project.capture;
+        // Capture validates the domain names and serializable definitions at runtime.
+        return captureSystemSnapshot(context, input as SystemSnapshotInput<typeof context>);
+    }
     if (command === "build-release") return project.release ? verifyRelease(project.release.input, project.release.scratch) : invalid("Project lacks release input");
     if (command === "publish") return project.publish ? publishReleaseArtifact(...project.publish) : invalid("Project lacks publish input");
     if (command === "plan") return project.plan ? buildMigrationPlan(...project.plan) : invalid("Project lacks plan input");
@@ -314,13 +325,15 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
 
 export async function main(argv: readonly string[]): Promise<number> {
     if (argv.length === 0 || argv.includes("--help")) { process.stdout.write(help); return 0; }
+    const envFile = resolve(".env");
+    if (existsSync(envFile)) process.loadEnvFile(envFile);
     let project: MigrationProject | undefined;
     let result: CommandResult;
     try {
         const command = argv[0]!;
         if (!commands.includes(command)) throw new Error("Unknown command: " + command);
         const flags = new Map<string, string>();
-        const allowed = new Set(["project", "draft", "out", "answers", "report", "sql", "contract", "non-interactive"]);
+        const allowed = new Set(["project", "ssot", "draft", "out", "answers", "report", "sql", "contract", "non-interactive"]);
         for (let index = 1; index < argv.length; index++) {
             const key = argv[index]!.replace(/^--/, "");
             if (!argv[index]!.startsWith("--") || !allowed.has(key) || flags.has(key)) throw new Error("Invalid or repeated option: " + argv[index]);
@@ -328,7 +341,14 @@ export async function main(argv: readonly string[]): Promise<number> {
             if (value === undefined || value.startsWith("--")) throw new Error("Missing value for --" + key);
             flags.set(key, value);
         }
-        if (!flags.has("project")) throw new Error("Missing --project");
+        if (flags.has("ssot")) {
+            if (flags.has("project")) throw new Error("Choose --ssot or --project");
+            result = await runSsotCommand(command, flags.get("ssot")!);
+            if (flags.has("out")) await atomicJson(flags.get("out")!, result);
+            process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+            return cliExitCode(result);
+        }
+        if (!flags.has("project")) throw new Error("Missing --ssot or --project");
         const module = await import(pathToFileURL(resolve(flags.get("project")!)).href);
         const factory = module.createMigrationProject ?? module.default?.createMigrationProject;
         if (typeof factory !== "function") throw new Error("Project must export createMigrationProject()");

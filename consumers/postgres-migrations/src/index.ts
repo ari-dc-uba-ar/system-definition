@@ -51,3 +51,6 @@ export * from "./postgres-authoring";
 export * from "./build-validation";
 export * from "./historical-validation";
 export * from "./compiled-artifact";
+export * from "./ssot-definition";
+export * from "./published-release";
+export * from "./ssot-runtime";
