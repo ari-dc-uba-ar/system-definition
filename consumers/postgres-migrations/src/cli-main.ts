@@ -26,6 +26,7 @@ import {compiledArtifact} from "./compiled-artifact";
 import {promptDataMigration} from "./authoring-prompt";
 import type {AuthoredResource} from "./authoring-files";
 import {loadSsot} from "./ssot";
+import {loadDatabaseSettings} from "./database-settings";
 import {publishArtifactDirectory} from "./artifact-files";
 
 const commands = ["capture", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
@@ -33,6 +34,7 @@ const help = `postgres-migrations <command> --ssot <module.js> | --project <modu
 Commands: ${commands.join(", ")}
 --draft <file.json>    Read/update an unpublished draft (defaults to project.authoring.draft).
 --out <path>           Output JSON; generate writes an artifact directory.
+--database <module.js> Load app-supplied database and role settings with --ssot.
 --answers <file.json>  Versioned answers for add-data or resolve; no stdin needed.
 --report <file.json>   Conflict report for resolve.
 --sql <file.sql> --contract <file.json>  SQL and explicit effects for add-sql.
@@ -324,7 +326,7 @@ export async function main(argv: readonly string[]): Promise<number> {
         const command = argv[0]!;
         if (!commands.includes(command)) throw new Error("Unknown command: " + command);
         const flags = new Map<string, string>();
-        const allowed = new Set(["project", "ssot", "draft", "out", "answers", "report", "sql", "contract", "non-interactive"]);
+        const allowed = new Set(["project", "ssot", "database", "draft", "out", "answers", "report", "sql", "contract", "non-interactive"]);
         for (let index = 1; index < argv.length; index++) {
             const key = argv[index]!.replace(/^--/, "");
             if (!argv[index]!.startsWith("--") || !allowed.has(key) || flags.has(key)) throw new Error("Invalid or repeated option: " + argv[index]);
@@ -336,10 +338,21 @@ export async function main(argv: readonly string[]): Promise<number> {
             if (flags.has("project")) throw new Error("Choose --ssot or --project");
             if (command !== "capture") throw new Error("--ssot currently supports capture only");
             result = await loadSsot(flags.get("ssot")!);
+            if (result.ok && flags.has("database")) {
+                const loaded = await loadDatabaseSettings(flags.get("database")!);
+                if (!loaded.ok) result = loaded;
+                else {
+                    const {database, owner, appUser} = loaded.value;
+                    result = {ok: true, value: {ssot: result.value, database: {
+                        database: {host: database.host, port: database.port, database: database.database}, owner, appUser,
+                    }}};
+                }
+            }
             if (flags.has("out")) await atomicJson(flags.get("out")!, result);
             process.stdout.write(JSON.stringify(result, null, 2) + "\n");
             return cliExitCode(result);
         }
+        if (flags.has("database")) throw new Error("--database requires --ssot");
         if (!flags.has("project")) throw new Error("Missing --ssot or --project");
         const module = await import(pathToFileURL(resolve(flags.get("project")!)).href);
         const factory = module.createMigrationProject ?? module.default?.createMigrationProject;

@@ -39,6 +39,10 @@
       "types": "./dist/src/ssot.d.ts",
       "default": "./dist/src/ssot.js"
     },
+    "./database": {
+      "types": "./dist/src/database-settings.d.ts",
+      "default": "./dist/src/database-settings.js"
+    },
     "./package.json": "./package.json"
   }
 }
