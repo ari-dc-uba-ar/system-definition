@@ -36,8 +36,8 @@
       "default": "./dist/src/historical-validation.js"
     },
     "./ssot": {
-      "types": "./dist/src/ssot-definition.d.ts",
-      "default": "./dist/src/ssot-definition.js"
+      "types": "./dist/src/ssot.d.ts",
+      "default": "./dist/src/ssot.js"
     },
     "./package.json": "./package.json"
   }

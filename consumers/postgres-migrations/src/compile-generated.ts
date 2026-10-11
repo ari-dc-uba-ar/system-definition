@@ -24,7 +24,7 @@ export async function compileGenerated(
     inspected: PgSchemaInfo, desired: PgSchemaInfo,
     residual: readonly StructureChangeInfo[], initial: CompiledAuthoringInfo,
 ): Promise<ValidationResult<CompiledAuthoringInfo>> {
-    if (residual.length === 0 && draft.data.length === 0 && initial.migration.steps.length === 0) return {ok: true, value: initial};
+    if (residual.length === 0 && draft.data.length === 0 && initial.migration.steps.length === 0 && !runtime.finalSteps?.length) return {ok: true, value: initial};
     if (runtime.emitResource === undefined || runtime.inspectCompiled === undefined) {
         return failed("SQL generation requires an artifact sink and owned scratch replay");
     }
@@ -182,7 +182,8 @@ export async function compileGenerated(
         capture.push(preflight.value);
         operations.unshift({id: "validation:source", stepIds: [preflight.value.id], changeIds: [], dataMigrationIds: []});
     }
-    const allSteps = [...capture, ...initial.migration.steps, ...prepare, ...write, ...finish];
+    const allSteps = [...capture, ...initial.migration.steps, ...prepare, ...write, ...finish, ...(runtime.finalSteps ?? [])];
+    for (const step of runtime.finalSteps ?? []) operations.push({id: step.id, stepIds: [step.id], changeIds: [], dataMigrationIds: []});
     if (data !== undefined) {
         // Query complete entities, including untouched fields, using their historical codecs.
         for (const side of ["from", "to"] as const satisfies readonly SnapshotSide[]) {

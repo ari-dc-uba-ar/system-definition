@@ -6,9 +6,11 @@ import type {ValidationArtifactInfo} from "./validation-artifact";
 
 /** Bundle the entry and its imports together so later source edits cannot alter historical checks. */
 export async function buildValidationArtifact(
-    entry: string, side: SnapshotSide, snapshot: SystemSnapshotInfo, snapshotHash: string,
+    entry: string | {contents: string; resolveDir: string}, side: SnapshotSide, snapshot: SystemSnapshotInfo, snapshotHash: string,
 ): Promise<{info: ValidationArtifactInfo; bytes: Uint8Array}> {
-    const result = await build({entryPoints: [entry], bundle: true, write: false, platform: "node", format: "esm", target: "node24", packages: "bundle"});
+    const result = await build({...typeof entry === "string" ? {entryPoints: [entry]} : {stdin: {...entry, loader: "js" as const}},
+        bundle: true, write: false, platform: "node", format: "esm", target: "node24", packages: "bundle",
+        ...(typeof entry === "string" ? {} : {minify: true})});
     if (result.outputFiles.length !== 1) throw new Error("Validation build must produce exactly one self-contained module");
     const bytes = result.outputFiles[0]!.contents;
     const contentHash = createHash("sha256").update(bytes).digest("hex");

@@ -23,6 +23,8 @@ export type PostgresAuthoringOptions = {
     data: NonNullable<AuthoringRuntime["loadDataContext"]>;
     /** Representative source data belongs only in owned scratch, never in the desired clean create. */
     fixture(session: PgSession): Promise<ValidationResult<true>>;
+    /** Artifact-backed adapters execute frozen release bytes instead of regenerating old DDL. */
+    buildRelease?(session: PgSession, release: ReleaseVerificationInput): Promise<ValidationResult<true>>;
 };
 
 function fail(reason: string): ValidationResult<never> {
@@ -34,6 +36,7 @@ export function createPostgresAuthoringRuntime(options: PostgresAuthoringOptions
     const journal = {schema: "sd_authoring_journal"};
     const scope = {systemId: source.ref.systemId, schemas: source.inspection.schemas};
     const clean = new Map<string, PgSchemaInfo>();
+    const buildRelease = options.buildRelease ?? buildReleaseOnScratch;
 
     async function owned<T>(body: (session: PgSession, id: string) => Promise<ValidationResult<T>>): Promise<ValidationResult<T>> {
         const created = await scratch.create("upgrade-source");
@@ -58,7 +61,7 @@ export function createPostgresAuthoringRuntime(options: PostgresAuthoringOptions
         const cached = clean.get(release.ref.releaseHash);
         if (cached !== undefined) return {ok: true, value: cached};
         const result = await owned(async session => {
-            const built = await buildReleaseOnScratch(session, release);
+            const built = await buildRelease(session, release);
             if (!built.ok) return built;
             return inspect(session, release);
         });
@@ -69,7 +72,7 @@ export function createPostgresAuthoringRuntime(options: PostgresAuthoringOptions
     async function history(session: PgSession, id: string): Promise<ValidationResult<PgSchemaInfo>> {
         if (!sameReleaseRef(options.history.path.from, options.history.baseline.ref)
             || !sameReleaseRef(options.history.path.to, source.ref)) return fail("Historical path does not reach the source release");
-        const built = await buildReleaseOnScratch(session, options.history.baseline);
+        const built = await buildRelease(session, options.history.baseline);
         if (!built.ok) return built;
         const bootstrapped = await bootstrapJournal(session, journal);
         if (!bootstrapped.ok) return bootstrapped;

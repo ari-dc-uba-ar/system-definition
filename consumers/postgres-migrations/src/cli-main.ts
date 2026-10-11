@@ -2,7 +2,7 @@
 import {randomUUID} from "node:crypto";
 import {existsSync} from "node:fs";
 import {mkdir, readFile, rename, writeFile, rm} from "node:fs/promises";
-import {dirname, resolve, relative, isAbsolute} from "node:path";
+import {dirname, resolve} from "node:path";
 import {pathToFileURL} from "node:url";
 import {createInterface} from "node:readline/promises";
 import {captureSystemSnapshot, isPlainObject, problem, sameReleaseRef, type SystemSnapshotInput, type ValidationResult} from "system-definition";
@@ -25,9 +25,10 @@ import {executeMigrationPath} from "./runner";
 import {compiledArtifact} from "./compiled-artifact";
 import {promptDataMigration} from "./authoring-prompt";
 import type {AuthoredResource} from "./authoring-files";
-import {runSsotCommand} from "./ssot-runtime";
+import {loadSsot} from "./ssot";
+import {publishArtifactDirectory} from "./artifact-files";
 
-const commands = ["bootstrap", "capture", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
+const commands = ["capture", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
 const help = `postgres-migrations <command> --ssot <module.js> | --project <module.js> [options]
 Commands: ${commands.join(", ")}
 --draft <file.json>    Read/update an unpublished draft (defaults to project.authoring.draft).
@@ -38,9 +39,8 @@ Commands: ${commands.join(", ")}
 --non-interactive     Never ask questions (also automatic in CI or without a TTY).
 Only add-data and resolve can prompt. All failures print JSON and exit nonzero.
 Project modules export createMigrationProject(); see cli-project.ts for typed ports.
-SSOT modules export ssot = definePostgresSystem(context, definition).
-With --ssot, bootstrap manages owner/app roles; publish generates and verifies the
-initial release; install records it; verify/status check its published schema.
+capture --ssot loads the module's exported SystemSnapshotInfo using the core decoder.
+Other commands use --project while their SSOT integration is being refactored.
 Exit codes: 0 success, 2 input/configuration, 3 verification/gate, 4 execution/conflict.
 `;
 
@@ -174,22 +174,13 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
         if (!result.ok || command === "validate") return result;
         // A new directory is the publication boundary. Existing output is never replaced.
         const destination = resolve(required("out"));
-        const temporary = destination + "." + randomUUID() + ".tmp";
         const artifact = compiledArtifact(result.value, authoring.files, authoring.context);
-        await mkdir(temporary);
-        try {
-            for (const [path, bytes] of authoring.files.files) {
-                const target = resolve(temporary, path);
-                const relativePath = relative(temporary, target);
-                if (relativePath.startsWith("..") || isAbsolute(relativePath)) return invalid("Artifact path escapes output");
-                await mkdir(dirname(target), {recursive: true});
-                await writeFile(target, bytes, {flag: "wx"});
-            }
-            await atomicJson(resolve(temporary, "compiled.json"), result.value);
-            await atomicJson(resolve(temporary, "migration.json"), artifact.manifest);
-            await atomicJson(resolve(temporary, "resources.json"), [...authoring.files.resources.values()].map(resource => ({ref: resource.ref, text: resource.text})));
-            await rename(temporary, destination);
-        } finally { await rm(temporary, {recursive: true, force: true}); }
+        const files = new Map(authoring.files.files);
+        const encodeJson = (value: unknown) => new TextEncoder().encode(JSON.stringify(value, null, 2) + "\n");
+        files.set("compiled.json", encodeJson(result.value));
+        files.set("migration.json", encodeJson(artifact.manifest));
+        files.set("resources.json", encodeJson([...authoring.files.resources.values()]));
+        await publishArtifactDirectory(destination, files);
         return result;
     }
     if (command === "resolve") {
@@ -343,7 +334,8 @@ export async function main(argv: readonly string[]): Promise<number> {
         }
         if (flags.has("ssot")) {
             if (flags.has("project")) throw new Error("Choose --ssot or --project");
-            result = await runSsotCommand(command, flags.get("ssot")!);
+            if (command !== "capture") throw new Error("--ssot currently supports capture only");
+            result = await loadSsot(flags.get("ssot")!);
             if (flags.has("out")) await atomicJson(flags.get("out")!, result);
             process.stdout.write(JSON.stringify(result, null, 2) + "\n");
             return cliExitCode(result);

@@ -1,14 +1,4 @@
-import {createHash, randomBytes} from "node:crypto";
-import {
-    lstat,
-    mkdir,
-    readFile,
-    realpath,
-    rename,
-    rm,
-    writeFile,
-} from "node:fs/promises";
-import {isAbsolute, join, relative, resolve, sep} from "node:path";
+import {join} from "node:path";
 import {
     canonicalJson,
     decodeMigration,
@@ -29,7 +19,10 @@ import {
     type ResourceRefInfo,
     type SystemSnapshotInfo,
 } from "system-definition";
-import {canonicalJsonSha256, omitJsonObjectKeys} from "./canonical-hash";
+import {canonicalJsonSha256, omitJsonObjectKeys, sha256Hex} from "./canonical-hash";
+export {sha256Hex} from "./canonical-hash";
+import {artifactExists, isSafeArtifactPath, openArtifactDirectory, publishArtifactDirectory,
+    verifyArtifactPaths as verifyPathSet, type ArtifactDirectory} from "./artifact-files";
 import {matchesPostgresSupport, POSTGRES_SUPPORT} from "./postgres-support";
 
 export type EnvironmentInfo = {
@@ -186,10 +179,6 @@ function canonicalBytes(value: unknown): ArtifactResult<{value: JsonValue, bytes
     };
 }
 
-export function sha256Hex(bytes: Uint8Array): string {
-    return createHash("sha256").update(bytes).digest("hex");
-}
-
 function hashableReleaseManifest(manifest: ReleaseManifestInfo): JsonValue {
     const converted = toJsonValue(manifest);
     if (!converted.ok || !isObject(converted.value) || !isObject(converted.value.release)) {
@@ -223,27 +212,6 @@ function isSafeOpaqueId(value: string): boolean {
         && !value.includes("/")
         && !value.includes("\\")
         && !value.includes("\0");
-}
-
-function isSafeArtifactPath(path: string): boolean {
-    if (path.length === 0 || path.includes("\0") || path.includes("\\") || isAbsolute(path)) return false;
-    if (/^[A-Za-z]:/.test(path) || path.startsWith("/")) return false;
-    const pieces = path.split("/");
-    return pieces.every(piece => piece.length > 0 && piece !== "." && piece !== "..");
-}
-
-function verifyPathSet(paths: readonly string[]): ArtifactResult<true> {
-    const lower = new Map<string, string>();
-    for (const path of paths) {
-        if (!isSafeArtifactPath(path)) return failure("migration.invalidReference", {path, reason: "unsafe artifact path"});
-        const key = path.toLowerCase();
-        const existing = lower.get(key);
-        if (existing !== undefined) {
-            return failure("migration.invalidReference", {path, reason: "case-colliding artifact path", existing});
-        }
-        lower.set(key, path);
-    }
-    return {ok: true, value: true};
 }
 
 function verifySqlBytes(text: string, path: string): ArtifactResult<Uint8Array> {
@@ -394,37 +362,8 @@ function prepareArtifact(draft: ReleaseArtifactDraft): ArtifactResult<PreparedAr
     };
 }
 
-async function pathExists(path: string): Promise<boolean> {
-    try {
-        await lstat(path);
-        return true;
-    } catch (error) {
-        return isNodeError(error) && error.code === "ENOENT" ? false : Promise.reject(error);
-    }
-}
-
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
     return error instanceof Error && "code" in error;
-}
-
-async function writePreparedDirectory(directory: string, prepared: PreparedArtifact): Promise<void> {
-    await mkdir(directory, {recursive: false});
-    try {
-        for (const file of prepared.fixedFiles) {
-            const fullPath = join(directory, ...file.path.split("/"));
-            await mkdir(resolve(fullPath, ".."), {recursive: true});
-            await writeFile(fullPath, file.bytes, {flag: "wx"});
-        }
-        for (const resource of Object.values(prepared.resources)) {
-            const fullPath = join(directory, ...resource.draft.path.split("/"));
-            await mkdir(resolve(fullPath, ".."), {recursive: true});
-            await writeFile(fullPath, resource.bytes, {flag: "wx"});
-        }
-        await writeFile(join(directory, "manifest.json"), prepared.manifestBytes, {flag: "wx"});
-    } catch (error) {
-        await rm(directory, {recursive: true, force: true});
-        throw error;
-    }
 }
 
 /** Complete the immutable identity before verification, without writing files. */
@@ -439,9 +378,8 @@ export async function publishReleaseArtifact(root: string, draft: ReleaseArtifac
 
     try {
         const releasesDirectory = join(root, "releases");
-        await mkdir(releasesDirectory, {recursive: true});
         const finalDirectory = join(releasesDirectory, prepared.value.manifest.release.releaseId);
-        if (await pathExists(finalDirectory)) {
+        if (await artifactExists(finalDirectory)) {
             const existing = await loadReleaseArtifact(finalDirectory);
             if (existing.ok && existing.value.manifest.release.releaseHash === prepared.value.manifest.release.releaseHash) {
                 return existing;
@@ -452,15 +390,12 @@ export async function publishReleaseArtifact(root: string, draft: ReleaseArtifac
             });
         }
 
-        const tempDirectory = join(
-            releasesDirectory,
-            "." + prepared.value.manifest.release.releaseId + ".tmp-" + process.pid + "-" + randomBytes(8).toString("hex"),
-        );
-        await writePreparedDirectory(tempDirectory, prepared.value);
+        const files = new Map<string, Uint8Array>(prepared.value.fixedFiles.map(file => [file.path, file.bytes]));
+        for (const resource of Object.values(prepared.value.resources)) files.set(resource.draft.path, resource.bytes);
+        files.set("manifest.json", prepared.value.manifestBytes);
         try {
-            await rename(tempDirectory, finalDirectory);
+            await publishArtifactDirectory(finalDirectory, files);
         } catch (error) {
-            await rm(tempDirectory, {recursive: true, force: true});
             if (isNodeError(error) && (error.code === "EEXIST" || error.code === "ENOTEMPTY")) {
                 const existing = await loadReleaseArtifact(finalDirectory);
                 if (existing.ok && existing.value.manifest.release.releaseHash === prepared.value.manifest.release.releaseHash) {
@@ -476,50 +411,6 @@ export async function publishReleaseArtifact(root: string, draft: ReleaseArtifac
         return loadReleaseArtifact(finalDirectory);
     } catch (error) {
         return failure("migration.invalidReference", {reason: error instanceof Error ? error.message : String(error)});
-    }
-}
-
-async function verifyRootDirectory(directory: string): Promise<ArtifactResult<string>> {
-    try {
-        const stat = await lstat(directory);
-        if (stat.isSymbolicLink() || !stat.isDirectory()) {
-            return failure("migration.invalidReference", {path: directory, reason: "release path must be a real directory"});
-        }
-        const real = await realpath(directory);
-        if (resolve(real) !== resolve(directory)) {
-            return failure("migration.invalidReference", {path: directory, reason: "release directory must not traverse a symlink"});
-        }
-        return {ok: true, value: real};
-    } catch (error) {
-        return failure("migration.invalidReference", {path: directory, reason: error instanceof Error ? error.message : String(error)});
-    }
-}
-
-async function readSafeFile(rootReal: string, path: string): Promise<ArtifactResult<Uint8Array>> {
-    if (!isSafeArtifactPath(path)) return failure("migration.invalidReference", {path, reason: "unsafe artifact path"});
-    let current = rootReal;
-    const parts = path.split("/");
-    try {
-        for (let index = 0; index < parts.length; index++) {
-            current = join(current, parts[index]);
-            const stat = await lstat(current);
-            if (stat.isSymbolicLink()) {
-                return failure("migration.invalidReference", {path, reason: "artifact path traverses a symlink"});
-            }
-            if (index < parts.length - 1 && !stat.isDirectory()) {
-                return failure("migration.invalidReference", {path, reason: "artifact parent is not a directory"});
-            }
-            if (index === parts.length - 1 && !stat.isFile()) {
-                return failure("migration.invalidReference", {path, reason: "artifact is not a regular file"});
-            }
-        }
-        const rel = relative(rootReal, current);
-        if (rel.startsWith(".." + sep) || rel === ".." || isAbsolute(rel)) {
-            return failure("migration.invalidReference", {path, reason: "artifact path escapes release directory"});
-        }
-        return {ok: true, value: await readFile(current)};
-    } catch (error) {
-        return failure("migration.invalidReference", {path, reason: error instanceof Error ? error.message : String(error)});
     }
 }
 
@@ -774,20 +665,17 @@ function decodeManifest(value: JsonValue): ArtifactResult<ReleaseManifestInfo> {
     };
 }
 
-async function loadVerifiedJsonFile(root: string, info: FileInfo): Promise<ArtifactResult<JsonValue>> {
-    const bytes = await readSafeFile(root, info.path);
+async function loadVerifiedJsonFile(root: ArtifactDirectory, info: FileInfo): Promise<ArtifactResult<JsonValue>> {
+    const bytes = await root.readVerified(info);
     if (!bytes.ok) return bytes;
-    if (bytes.value.byteLength !== info.byteLength || sha256Hex(bytes.value) !== info.contentHash) {
-        return failure("migration.checksumMismatch", {path: info.path});
-    }
     return parseJsonBytes(bytes.value, info.path);
 }
 
 export async function loadReleaseArtifact(directory: string): Promise<ArtifactResult<ReleaseArtifact>> {
-    const root = await verifyRootDirectory(directory);
+    const root = await openArtifactDirectory(directory);
     if (!root.ok) return root;
 
-    const manifestBytes = await readSafeFile(root.value, "manifest.json");
+    const manifestBytes = await root.value.read("manifest.json");
     if (!manifestBytes.ok) return manifestBytes;
     const manifestJson = parseJsonBytes(manifestBytes.value, "manifest.json");
     if (!manifestJson.ok) return manifestJson;
@@ -820,7 +708,7 @@ export async function loadReleaseArtifact(directory: string): Promise<ArtifactRe
     const createPlanJson = await loadVerifiedJsonFile(root.value, manifest.value.createPlan);
     if (!createPlanJson.ok) return createPlanJson;
 
-    const environmentBytes = await readSafeFile(root.value, "environment.json");
+    const environmentBytes = await root.value.read("environment.json");
     if (!environmentBytes.ok) return environmentBytes;
     const environmentExpected = canonicalBytes(manifest.value.environment);
     if (!environmentExpected.ok) return environmentExpected;
@@ -834,11 +722,8 @@ export async function loadReleaseArtifact(directory: string): Promise<ArtifactRe
     const resources: Record<string, ResolvedArtifactResource> = Object.create(null);
     for (const name of Object.keys(manifest.value.resources).sort()) {
         const info = manifest.value.resources[name];
-        const bytes = await readSafeFile(root.value, info.file.path);
+        const bytes = await root.value.readVerified(info.file);
         if (!bytes.ok) return bytes;
-        if (bytes.value.byteLength !== info.file.byteLength || sha256Hex(bytes.value) !== info.file.contentHash) {
-            return failure("migration.checksumMismatch", {path: info.file.path, name});
-        }
         let text: string;
         try {
             text = decoder.decode(bytes.value);

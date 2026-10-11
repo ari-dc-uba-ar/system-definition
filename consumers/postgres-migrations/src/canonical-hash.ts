@@ -6,6 +6,11 @@ export function canonicalJsonSha256(value: JsonValue): string {
     return createHash("sha256").update(canonicalJson(value), "utf8").digest("hex");
 }
 
+/** Exact bytes, shared by filesystem and in-memory artifact storage. */
+export function sha256Hex(bytes: Uint8Array): string {
+    return createHash("sha256").update(bytes).digest("hex");
+}
+
 /** Copy a strict JSON object while omitting domain-selected fields. */
 export function omitJsonObjectKeys(
     value: JsonValue,

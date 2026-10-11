@@ -228,6 +228,8 @@ export type AuthoringReleaseBundle = {
 };
 
 export interface AuthoringRuntime {
+    /** Consumer policy applied after all generated DDL/data, before target invariants. */
+    finalSteps?: MigrationInfo["steps"];
     loadRelease(ref: ReleaseRefInfo): Promise<ValidationResult<AuthoringReleaseBundle>>;
     reconstructHistory(head: ReleaseRefInfo): Promise<ValidationResult<PgSchemaInfo>>;
     readQuery(ref: QueryRefInfo): Promise<ValidationResult<string>>;

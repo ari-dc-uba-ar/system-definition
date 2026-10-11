@@ -1,4 +1,5 @@
 export * from "./artifact";
+export * from "./artifact-files";
 export * from "./pg-schema";
 export * from "./generate-create";
 export * from "./inspect-schema";
@@ -51,6 +52,5 @@ export * from "./postgres-authoring";
 export * from "./build-validation";
 export * from "./historical-validation";
 export * from "./compiled-artifact";
-export * from "./ssot-definition";
 export * from "./published-release";
-export * from "./ssot-runtime";
+export * from "./ssot";

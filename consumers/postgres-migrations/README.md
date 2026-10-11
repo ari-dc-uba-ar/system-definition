@@ -4,6 +4,8 @@
 
 Consumer package for immutable migration/release artifacts and PostgreSQL integration. It is built and tested separately from the root TypeScript program; production code imports the public `system-definition` package API rather than private root sources.
 
+The `capture --ssot` entry loads the application's exported core model. See [the SSOT guide](LEEME-SSOT.md). PostgreSQL configuration and migration orchestration are separate from this loading interface; existing `--project` commands retain their implementation.
+
 ## Verification commands
 
 From the repository root:
@@ -38,7 +40,7 @@ The checkout declares `system-definition` as a local package dependency. `prebui
 
 ## Executable CLI and examples
 
-The package registers `postgres-migrations` at `dist/src/cli-main.js`. Each application exports `createMigrationProject()` from a JS or compiled TypeScript module. The typed `MigrationProject` interface supplies contexts, artifact inputs and I/O adapters; the command implementation calls the existing compiler, verifier, resolver, journal and runner. It does not delegate command dispatch to the application.
+The package registers `postgres-migrations` at `dist/src/cli-main.js`. Applications using the advanced adapter export `createMigrationProject()` from a JS or compiled TypeScript module. The typed `MigrationProject` interface supplies contexts, artifact inputs and I/O adapters; the command implementation calls the existing compiler, verifier, resolver, journal and runner. It does not delegate command dispatch to the application.
 
 From the repository root, after `npm test`:
 
