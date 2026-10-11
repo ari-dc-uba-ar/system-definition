@@ -27,9 +27,10 @@ import {promptDataMigration} from "./authoring-prompt";
 import type {AuthoredResource} from "./authoring-files";
 import {loadSsot} from "./ssot";
 import {loadDatabaseSettings} from "./database-settings";
+import {assessDatabase} from "./assessment";
 import {publishArtifactDirectory} from "./artifact-files";
 
-const commands = ["capture", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
+const commands = ["capture", "assess", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
 const help = `postgres-migrations <command> --ssot <module.js> | --project <module.js> [options]
 Commands: ${commands.join(", ")}
 --draft <file.json>    Read/update an unpublished draft (defaults to project.authoring.draft).
@@ -42,6 +43,7 @@ Commands: ${commands.join(", ")}
 Only add-data and resolve can prompt. All failures print JSON and exit nonzero.
 Project modules export createMigrationProject(); see cli-project.ts for typed ports.
 capture --ssot loads the module's exported SystemSnapshotInfo using the core decoder.
+assess --ssot <module.js> --database <module.js> compares the current schema to the SSOT.
 Other commands use --project while their SSOT integration is being refactored.
 Exit codes: 0 success, 2 input/configuration, 3 verification/gate, 4 execution/conflict.
 `;
@@ -336,16 +338,19 @@ export async function main(argv: readonly string[]): Promise<number> {
         }
         if (flags.has("ssot")) {
             if (flags.has("project")) throw new Error("Choose --ssot or --project");
-            if (command !== "capture") throw new Error("--ssot currently supports capture only");
-            result = await loadSsot(flags.get("ssot")!);
-            if (result.ok && flags.has("database")) {
+            if (command !== "capture" && command !== "assess") throw new Error("--ssot supports capture and assess");
+            if (command === "assess" && !flags.has("database")) throw new Error("assess requires --database");
+            const ssot = await loadSsot(flags.get("ssot")!);
+            result = ssot;
+            if (ssot.ok && flags.has("database")) {
                 const loaded = await loadDatabaseSettings(flags.get("database")!);
                 if (!loaded.ok) result = loaded;
                 else {
                     const {database, owner, appUser} = loaded.value;
-                    result = {ok: true, value: {ssot: result.value, database: {
-                        database: {host: database.host, port: database.port, database: database.database}, owner, appUser,
-                    }}};
+                    result = command === "assess" ? await assessDatabase(ssot.value, loaded.value)
+                        : {ok: true, value: {ssot: ssot.value, database: {
+                            database: {host: database.host, port: database.port, database: database.database, schema: database.schema}, owner, appUser,
+                        }}};
                 }
             }
             if (flags.has("out")) await atomicJson(flags.get("out")!, result);

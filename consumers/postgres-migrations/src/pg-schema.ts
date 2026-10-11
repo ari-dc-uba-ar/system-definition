@@ -207,8 +207,7 @@ function fkDefinition(
         + quotePgQualified(schema, targetTable) + " (" + pairs.map(one => quotePgIdentifier(one.target)).join(", ") + ")";
 }
 
-function environmentProblem(storage: StorageContext): Problem | null {
-    const environment = storage.environment;
+function environmentProblem(environment: StorageContext["environment"]): Problem | null {
     if (!matchesPostgresSupport(environment)) {
         return problem(null, "migration.environmentMismatch", "blocking", {
             expected: `${POSTGRES_SUPPORT.engine} ${POSTGRES_SUPPORT.version} / ${POSTGRES_SUPPORT.serverVersionNum}`,
@@ -221,7 +220,7 @@ function environmentProblem(storage: StorageContext): Problem | null {
 function resolvePhysicalTypes(
     snapshot: SystemSnapshotInfo,
     persistence: PersistenceInfo,
-    storage: StorageContext,
+    storage: Pick<StorageContext, "representation" | "physicalTypes">,
 ): ValidationResult<Readonly<Record<string, PgTypeInfo>>> {
     const representation = persistence.representations[storage.representation];
     if (representation === undefined) {
@@ -273,9 +272,9 @@ function resolvePhysicalTypes(
 export function projectSchema(
     snapshot: SystemSnapshotInfo,
     persistence: PersistenceInfo,
-    storage: StorageContext,
+    storage: Pick<StorageContext, "schema" | "representation" | "physicalTypes"> & Partial<Pick<StorageContext, "environment">>,
 ): ValidationResult<ProjectedPgSchemaInfo> {
-    const mismatch = environmentProblem(storage);
+    const mismatch = storage.environment ? environmentProblem(storage.environment) : null;
     if (mismatch !== null) return {ok: false, problems: [mismatch]};
     if (!isPgNonEmptyText(storage.schema)) {
         return fail("migration.unsupportedFormat", {schema: storage.schema, reason: "invalid PostgreSQL schema name"});

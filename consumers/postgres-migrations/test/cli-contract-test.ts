@@ -9,6 +9,7 @@ import {
 } from "../src/cli";
 
 type ExpectedCommand =
+    | "assess"
     | "infer"
     | "add-data"
     | "add-sql"

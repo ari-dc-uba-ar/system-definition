@@ -55,3 +55,4 @@ export * from "./compiled-artifact";
 export * from "./published-release";
 export * from "./ssot";
 export * from "./database-settings";
+export * from "./assessment";
