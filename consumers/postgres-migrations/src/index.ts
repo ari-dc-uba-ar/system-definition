@@ -56,3 +56,4 @@ export * from "./published-release";
 export * from "./ssot";
 export * from "./database-settings";
 export * from "./assessment";
+export * from "./classify-schema";

@@ -198,6 +198,32 @@ function schemaWithObjects(objects: readonly PgObjectInfo[]): PgSchemaInfo {
 }
 
 describe("PostgreSQL schema inspection and semantic comparison", () => {
+    it("distinguishes an empty existing schema from a missing schema in the inventory query", async () => {
+        const result = await inspectSchema(sessionWithRows([{schema_name: "app", object_kind: null}]), {
+            schemas: ["app", "missing"], excluded: [],
+        });
+        assert.equal(result.ok, true);
+        if (!result.ok) return;
+        assert.deepEqual(result.value.schema.schemas, ["app"]);
+        assert.deepEqual(result.value.schema.objects, []);
+        const missing = await inspectSchema(sessionWithRows([]), scope);
+        assert.equal(missing.ok, true);
+        if (missing.ok) assert.deepEqual(missing.value.schema.schemas, []);
+    });
+
+    it("ignores property order while preserving array ordering in differences", () => {
+        const object: PgObjectInfo = {
+            kind: "view", identity: {schema: "app", kind: "view", name: "v", parentName: null, signature: []},
+            definition: "SELECT 1", columns: ["a", "b"], options: {one: "1", two: "2"},
+        };
+        const inspection = {schema: schemaWithObjects([{...object, options: {two: "2", one: "1"}}]), unknown: [], excluded: []};
+        assert.deepEqual(compareSchemas(schemaWithObjects([object]), inspection), {ok: true, value: {equal: true, differences: []}});
+        inspection.schema = schemaWithObjects([{...object, columns: ["b", "a"]}]);
+        assert.deepEqual(compareSchemas(schemaWithObjects([object]), inspection), {ok: true, value: {equal: false, differences: [{
+            path: ["objects", "app", "view", "v", "columns"], change: "change", before: ["a", "b"], after: ["b", "a"],
+        }]}});
+    });
+
     it("inspects through the supplied session, so uncommitted DDL in that session is visible", async () => {
         const session = sessionWithRows([]);
         await session.query("BEGIN", []);

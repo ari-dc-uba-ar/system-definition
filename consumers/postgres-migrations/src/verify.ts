@@ -134,11 +134,7 @@ function projectionRelevantInspection(
     createResources: readonly CreateResourceInfo[],
 ): InspectionInfo {
     const authored = authoredObjectKeys(createResources);
-    const objects = inspection.schema.objects.filter((object): boolean => {
-        if (authored.has(pgIdentityKey(object.identity))) return false;
-        if (object.kind === "index" && object.ownerConstraint !== null) return false;
-        return true;
-    });
+    const objects = inspection.schema.objects.filter(object => !authored.has(pgIdentityKey(object.identity)));
     return {
         schema: {...inspection.schema, objects},
         unknown: inspection.unknown,

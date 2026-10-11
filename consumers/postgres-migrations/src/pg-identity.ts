@@ -18,6 +18,11 @@ export function pgIdentityKey(identity: PgObjectIdentity): string {
     ]);
 }
 
+export function pgIdentityPath(identity: PgObjectIdentity): readonly string[] {
+    return ["objects", identity.schema, identity.kind,
+        ...(identity.parentName === null ? [] : [identity.parentName]), identity.name, ...identity.signature];
+}
+
 export function samePgIdentity(left: PgObjectIdentity, right: PgObjectIdentity): boolean {
     return pgIdentityKey(left) === pgIdentityKey(right);
 }

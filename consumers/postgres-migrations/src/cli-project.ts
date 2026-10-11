@@ -1,4 +1,4 @@
-import type {AnyEntityDef, RecordCollection, SystemEntityContext, SystemSnapshotInfo, ValidationResult} from "system-definition";
+import type {ValidationResult} from "system-definition";
 import type {AuthoringRuntime, MigrationDraftInfo} from "./authoring-contract";
 import type {AuthoringFiles} from "./authoring-files";
 import type {AuthoringContext} from "./migration-authoring";
@@ -23,11 +23,6 @@ export interface MigrationProject {
         files: AuthoringFiles;
         context: AuthoringContext;
     };
-    capture?: (() => ValidationResult<SystemSnapshotInfo>) | readonly [SystemEntityContext, {
-        systemId: string;
-        entities: Readonly<Record<string, AnyEntityDef>>;
-        records?: RecordCollection;
-    }];
     release?: {input: ReleaseVerificationInput; scratch: ScratchProvider};
     publish?: Parameters<typeof publishReleaseArtifact>;
     plan?: Parameters<typeof buildMigrationPlan>;

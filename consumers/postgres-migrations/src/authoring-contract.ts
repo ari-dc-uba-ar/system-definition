@@ -15,6 +15,7 @@ import {
     type ValidationResult,
 } from "system-definition";
 import type {PgObjectIdentity, PgSchemaInfo} from "./pg-schema";
+import type {SchemaDifferenceInfo} from "./compare-schema";
 import type {DataMigrationInfo, FieldRefInfo, QueryRefInfo} from "./migration-authoring";
 import type {AuthoringContext} from "./migration-authoring";
 import type {StorageContext} from "./pg-schema";
@@ -36,11 +37,7 @@ export type AuthoringBaseInfo = {
 
 export type ChangeImpact = "preserving" | "requiresDataCheck" | "destructive" | "unsupported";
 
-export type StructureDifferenceInfo = {
-    path: readonly string[];
-    before: JsonValue;
-    after: JsonValue;
-};
+export type StructureDifferenceInfo = Pick<SchemaDifferenceInfo, "path" | "before" | "after">;
 
 export type StructureChangeInfo = {
     id: string;

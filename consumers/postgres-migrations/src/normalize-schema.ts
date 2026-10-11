@@ -5,7 +5,8 @@ import {quotePgQualified, quotePgIdentifier} from "./pg-sql";
 /** PostgreSQL's printer omits unnecessary identifier quotes; compare parsed definitions. */
 export async function normalizePgSchema(schema: PgSchemaInfo): Promise<PgSchemaInfo> {
     await loadModule();
-    return {...schema, objects: schema.objects.map(object => {
+    // Constraint backing indexes are represented by their owning constraints.
+    return {...schema, objects: schema.objects.filter(object => object.kind !== "index" || object.ownerConstraint === null).map(object => {
         if (object.kind === "column" && object.type.collation === "pg_catalog.default") {
             return {...object, type: {...object.type, collation: null}};
         }

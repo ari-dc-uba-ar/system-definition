@@ -133,7 +133,7 @@ class CopySession implements PgSession {
         if (/\bFROM\s+"sd_journal"\.migration_history\b/i.test(text) && !/WITH\s+current_installation/i.test(text)) {
             return {rows: this.history, rowCount: this.history.length};
         }
-        if (/pg_catalog/i.test(text)) return {rows: [], rowCount: 0};
+        if (/pg_catalog/i.test(text)) return {rows: [{schema_name: "app", object_kind: null}], rowCount: 1};
         if (/SELECT true AS ok/i.test(sql)) return {rows: [{ok: true}], rowCount: 1};
         if (/SELECT 1 \/\* step-(ab|bc) \*\//i.test(sql)) {
             const marker = /step-(ab|bc)/i.exec(sql)?.[0] ?? "";

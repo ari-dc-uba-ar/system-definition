@@ -1,13 +1,9 @@
 import {isPlainObject, isSha256, problem, type ResourceRefInfo, type ValidationResult} from "system-definition";
 import type {ReleaseArtifact} from "./artifact";
 import {sha256Hex} from "./artifact";
-import {checkManagedData} from "./managed-data";
-import {inspectSchema} from "./inspect-schema";
-import {compareSchemas} from "./compare-schema";
-import {normalizePgSchema} from "./normalize-schema";
-import {prepareCreateResources, validateExpectedObjects} from "./create-resources";
-import {executePreparedSqlResource, prepareSqlResource, runCheckResource} from "./sql-resource";
-import type {CreateResourceInfo, PgObjectIdentity, PgSchemaInfo, PgSession, StorageContext} from "./pg-schema";
+import {prepareCreateResources} from "./create-resources";
+import {executePreparedSqlResource, prepareSqlResource} from "./sql-resource";
+import type {CreateResourceInfo, PgObjectIdentity, PgSession, StorageContext} from "./pg-schema";
 
 function failure(reason: string): ValidationResult<never> {
     return {ok: false, problems: [problem(null, "migration.invalidReference", "blocking", {reason})]};
@@ -65,46 +61,6 @@ export async function executePublishedRelease(session: PgSession, artifact: Rele
         if (!prepared.ok) return prepared;
         const executed = await executePreparedSqlResource(session, prepared.value);
         if (!executed.ok) return executed;
-    }
-    return {ok: true, value: true};
-}
-
-/** Verify a live installation using its published schema; no scratch database needed. */
-export async function verifyPublishedRelease(session: PgSession, artifact: ReleaseArtifact): Promise<ValidationResult<true>> {
-    const encoding = await session.query("SHOW server_encoding", []);
-    if (encoding.rows[0]?.server_encoding !== artifact.manifest.environment.encoding) {
-        return {ok: false, problems: [problem(null, "migration.environmentMismatch", "blocking", {reason: "database encoding differs from the published environment"})]};
-    }
-    const storage = storageOf(artifact);
-    if (!storage.ok) return storage;
-    const expected = artifact.schema;
-    if (!isPlainObject(expected) || expected.formatVersion !== 1 || !strings(expected.schemas) || !Array.isArray(expected.objects)) {
-        return failure("invalid published schema");
-    }
-    const extras = prepareCreateResources(storage.value);
-    if (!extras.ok) return extras;
-    const observed = await inspectSchema(session, {schemas: expected.schemas, excluded: []});
-    if (!observed.ok) return observed;
-    const declared = validateExpectedObjects(extras.value, observed.value);
-    if (!declared.ok) return declared;
-    // PostgreSQL creates these indexes as part of the declared constraints.
-    const relevant = {...observed.value, schema: {...observed.value.schema,
-        objects: observed.value.schema.objects.filter(object => object.kind !== "index" || object.ownerConstraint === null)}};
-    const compared = await compareSchemas(await normalizePgSchema(expected as unknown as PgSchemaInfo), {
-        ...relevant, schema: await normalizePgSchema(relevant.schema),
-    });
-    if (!compared.ok) return compared;
-    if (!compared.value.equal) return {ok: false, problems: [problem(null, "migration.schemaDrift", "blocking", {
-        differences: JSON.stringify(compared.value.differences),
-    })]};
-    const data = await checkManagedData(session, storage.value.managedData);
-    if (!data.ok) return data;
-    const checks = new Map([...artifact.createPlan.after, ...storage.value.invariantChecks].map(ref => [ref.name, ref]));
-    for (const ref of checks.values()) {
-        const loaded = resource(artifact, ref);
-        if (!loaded.ok) return loaded;
-        const checked = await runCheckResource(session, loaded.value);
-        if (!checked.ok) return checked;
     }
     return {ok: true, value: true};
 }

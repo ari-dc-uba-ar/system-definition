@@ -34,7 +34,8 @@ describe("read-only schema assessment", () => {
         if (result.ok) {
             assert.equal(result.value.equal, false);
             assert.ok(result.value.differences.some(difference => difference.change === "add" && difference.path.includes("items")));
+            assert.ok(result.value.differences.every(difference => difference.impact === "preserving"));
         }
-        assert.equal(queries.length, 2);
+        assert.equal(queries.length, 1);
     });
 });

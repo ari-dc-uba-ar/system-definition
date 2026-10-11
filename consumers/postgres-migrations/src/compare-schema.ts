@@ -1,11 +1,12 @@
 import {
     problem,
+    canonicalJson,
     toJsonValue,
     type JsonValue,
     type ValidationResult,
 } from "system-definition";
 import type {PgObjectInfo, PgSchemaInfo} from "./pg-schema";
-import {pgIdentityKey, type PgObjectIdentity} from "./pg-identity";
+import {pgIdentityKey, pgIdentityPath} from "./pg-identity";
 import type {InspectionInfo} from "./inspect-schema";
 import {POSTGRES_SUPPORT} from "./postgres-support";
 
@@ -28,45 +29,23 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function identityParts(identity: PgObjectIdentity): readonly string[] {
-    const parts = ["objects", identity.schema, identity.kind];
-    if (identity.parentName !== null) parts.push(identity.parentName);
-    parts.push(identity.name);
-    if (identity.signature.length > 0) parts.push(...identity.signature);
-    return parts;
-}
-
 function jsonValue(value: unknown): JsonValue {
     const converted = toJsonValue(value);
     if (!converted.ok) throw new TypeError("schema comparison value is not strict JSON");
     return converted.value;
 }
 
-function plainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+function plainRecord(value: JsonValue): value is Readonly<Record<string, JsonValue>> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function sameJson(left: unknown, right: unknown): boolean {
-    if (Object.is(left, right)) return true;
-    if (Array.isArray(left) && Array.isArray(right)) {
-        return left.length === right.length && left.every((one, index) => sameJson(one, right[index]));
-    }
-    if (plainRecord(left) && plainRecord(right)) {
-        const leftKeys = Object.keys(left).sort();
-        const rightKeys = Object.keys(right).sort();
-        return leftKeys.length === rightKeys.length
-            && leftKeys.every((key, index) => key === rightKeys[index] && sameJson(left[key], right[key]));
-    }
-    return false;
-}
-
 function compareValue(
-    expected: unknown,
-    actual: unknown,
+    expected: JsonValue,
+    actual: JsonValue,
     path: readonly string[],
     differences: SchemaDifferenceInfo[],
 ): void {
-    if (sameJson(expected, actual)) return;
+    if (Object.is(expected, actual)) return;
 
     if (plainRecord(expected) && plainRecord(actual)) {
         const keys = [...new Set([...Object.keys(expected), ...Object.keys(actual)])].sort();
@@ -74,29 +53,33 @@ function compareValue(
             const hasExpected = Object.prototype.hasOwnProperty.call(expected, key);
             const hasActual = Object.prototype.hasOwnProperty.call(actual, key);
             if (!hasExpected) {
-                differences.push({path: [...path, key], change: "add", before: null, after: jsonValue(actual[key])});
+                differences.push({path: [...path, key], change: "add", before: null, after: jsonValue(actual[key]!)});
             } else if (!hasActual) {
-                differences.push({path: [...path, key], change: "remove", before: jsonValue(expected[key]), after: null});
+                differences.push({path: [...path, key], change: "remove", before: jsonValue(expected[key]!), after: null});
             } else {
-                compareValue(expected[key], actual[key], [...path, key], differences);
+                compareValue(expected[key]!, actual[key]!, [...path, key], differences);
             }
         }
         return;
     }
 
     // Arrays carry semantic ordering for keys, FK pairs/signatures, etc.; report them as one value.
+    if (Array.isArray(expected) && Array.isArray(actual) && canonicalJson(expected) === canonicalJson(actual)) return;
     differences.push({path, change: "change", before: jsonValue(expected), after: jsonValue(actual)});
 }
 
-function normalizeObject(object: PgObjectInfo): PgObjectInfo {
-    // The inspector already strips OIDs.  A strict JSON round trip detaches data and gives us
-    // deterministic enumerable shapes without altering array order inside semantic fields.
-    return jsonValue(object) as unknown as PgObjectInfo;
+export function compareSchemaValues(before: JsonValue, after: JsonValue): readonly SchemaDifferenceInfo[] {
+    const differences: SchemaDifferenceInfo[] = [];
+    compareValue(before, after, [], differences);
+    return differences;
 }
 
-function objectMap(objects: readonly PgObjectInfo[]): ValidationResult<Map<string, PgObjectInfo>> {
+export function schemaObjectMap(schema: PgSchemaInfo): ValidationResult<Map<string, PgObjectInfo>> {
+    if (schema.formatVersion !== 1 || schema.engineVersion !== POSTGRES_SUPPORT.version) {
+        return fail("migration.unsupportedFormat", {reason: "schema format or PostgreSQL engine version mismatch"});
+    }
     const result = new Map<string, PgObjectInfo>();
-    for (const object of objects) {
+    for (const object of schema.objects) {
         if (object.identity.kind !== object.kind) {
             return fail("migration.unsupportedSchemaFeature", {
                 object: pgIdentityKey(object.identity),
@@ -107,7 +90,7 @@ function objectMap(objects: readonly PgObjectInfo[]): ValidationResult<Map<strin
         if (result.has(key)) {
             return fail("migration.unsupportedSchemaFeature", {object: key, reason: "duplicate schema object identity"});
         }
-        result.set(key, normalizeObject(object));
+        result.set(key, object);
     }
     return {ok: true, value: result};
 }
@@ -123,19 +106,15 @@ export function compareSchemas(
             object: first === undefined ? "unknown" : pgIdentityKey(first.object),
         });
     }
-    if (expected.formatVersion !== 1 || actual.schema.formatVersion !== 1
-        || expected.engineVersion !== POSTGRES_SUPPORT.version || actual.schema.engineVersion !== POSTGRES_SUPPORT.version) {
-        return fail("migration.unsupportedFormat", {reason: "schema format or PostgreSQL engine version mismatch"});
-    }
 
     const expectedSchemas = [...expected.schemas].sort();
     const actualSchemas = [...actual.schema.schemas].sort();
     const differences: SchemaDifferenceInfo[] = [];
     compareValue(expectedSchemas, actualSchemas, ["schemas"], differences);
 
-    const expectedMap = objectMap(expected.objects);
+    const expectedMap = schemaObjectMap(expected);
     if (!expectedMap.ok) return expectedMap;
-    const actualMap = objectMap(actual.schema.objects);
+    const actualMap = schemaObjectMap(actual.schema);
     if (!actualMap.ok) return actualMap;
 
     const keys = [...new Set([...expectedMap.value.keys(), ...actualMap.value.keys()])].sort();
@@ -144,20 +123,20 @@ export function compareSchemas(
         const after = actualMap.value.get(key);
         if (before === undefined && after !== undefined) {
             differences.push({
-                path: identityParts(after.identity),
+                path: pgIdentityPath(after.identity),
                 change: "add",
                 before: null,
                 after: jsonValue(after),
             });
         } else if (before !== undefined && after === undefined) {
             differences.push({
-                path: identityParts(before.identity),
+                path: pgIdentityPath(before.identity),
                 change: "remove",
                 before: jsonValue(before),
                 after: null,
             });
         } else if (before !== undefined && after !== undefined) {
-            compareValue(before, after, identityParts(before.identity), differences);
+            compareValue(before, after, pgIdentityPath(before.identity), differences);
         }
     }
 

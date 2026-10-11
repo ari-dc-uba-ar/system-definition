@@ -19,6 +19,14 @@ function failed(messageKey: string): ValidationResult<unknown> {
 }
 
 describe("migration CLI boundary", () => {
+    it("requires the app's SSOT module for loading and assessment", () => {
+        for (const command of ["capture", "assess"]) {
+            const result = spawnSync(process.execPath, [resolve(__dirname, "../src/cli-main.js"), command, "--project", "unused-project.js"], {encoding: "utf8"});
+            assert.equal(result.status, 2);
+            assert.match(result.stdout, new RegExp(command + " requires --ssot"));
+        }
+    });
+
     it("ships a runnable postgres-migrations command with offline help", () => {
         const root = resolve(__dirname, "../..");
         const manifest: {bin?: Record<string, string>} = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));

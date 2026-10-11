@@ -5,7 +5,7 @@ import {mkdir, readFile, rename, writeFile, rm} from "node:fs/promises";
 import {dirname, resolve} from "node:path";
 import {pathToFileURL} from "node:url";
 import {createInterface} from "node:readline/promises";
-import {captureSystemSnapshot, isPlainObject, problem, sameReleaseRef, type SystemSnapshotInput, type ValidationResult} from "system-definition";
+import {isPlainObject, problem, sameReleaseRef, type ValidationResult} from "system-definition";
 import {cliExitCode} from "./cli";
 import type {MigrationProject, CommandResult} from "./cli-project";
 import {compileDraft} from "./authoring";
@@ -221,13 +221,6 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
         if (result.ok && result.value.kind === "blocked") return {ok: false, problems: result.value.problems};
         return result;
     }
-    if (command === "capture") {
-        if (!project.capture) return invalid("Project lacks capture input");
-        if (typeof project.capture === "function") return project.capture();
-        const [context, input] = project.capture;
-        // Capture validates the domain names and serializable definitions at runtime.
-        return captureSystemSnapshot(context, input as SystemSnapshotInput<typeof context>);
-    }
     if (command === "build-release") return project.release ? verifyRelease(project.release.input, project.release.scratch) : invalid("Project lacks release input");
     if (command === "publish") return project.publish ? publishReleaseArtifact(...project.publish) : invalid("Project lacks publish input");
     if (command === "plan") return project.plan ? buildMigrationPlan(...project.plan) : invalid("Project lacks plan input");
@@ -346,10 +339,11 @@ export async function main(argv: readonly string[]): Promise<number> {
                 const loaded = await loadDatabaseSettings(flags.get("database")!);
                 if (!loaded.ok) result = loaded;
                 else {
-                    const {database, owner, appUser} = loaded.value;
+                    const {database, initialUser, owner, appUser} = loaded.value;
                     result = command === "assess" ? await assessDatabase(ssot.value, loaded.value)
                         : {ok: true, value: {ssot: ssot.value, database: {
-                            database: {host: database.host, port: database.port, database: database.database, schema: database.schema}, owner, appUser,
+                            database: {host: database.host, port: database.port, database: database.database, schema: database.schema},
+                            initialUser: {user: initialUser.user}, owner, appUser,
                         }}};
                 }
             }
@@ -358,6 +352,7 @@ export async function main(argv: readonly string[]): Promise<number> {
             return cliExitCode(result);
         }
         if (flags.has("database")) throw new Error("--database requires --ssot");
+        if (command === "capture" || command === "assess") throw new Error(command + " requires --ssot");
         if (!flags.has("project")) throw new Error("Missing --ssot or --project");
         const module = await import(pathToFileURL(resolve(flags.get("project")!)).href);
         const factory = module.createMigrationProject ?? module.default?.createMigrationProject;

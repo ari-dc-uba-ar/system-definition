@@ -428,7 +428,7 @@ WITH managed_schemas AS (
       JOIN pg_catalog.pg_class AS c ON c.oid = t.tgrelid
       JOIN managed_schemas AS n ON n.oid = c.relnamespace
      WHERE NOT t.tgisinternal
-)
+), inventory AS (
 SELECT * FROM relations
 UNION ALL SELECT * FROM columns_inventory
 UNION ALL SELECT * FROM constraints_inventory
@@ -437,7 +437,11 @@ UNION ALL SELECT * FROM views_inventory
 UNION ALL SELECT * FROM routines_inventory
 UNION ALL SELECT * FROM unsupported_routines
 UNION ALL SELECT * FROM unsupported_triggers
-ORDER BY schema_name, object_kind, parent_name NULLS FIRST, object_name
+)
+SELECT inventory.*, n.nspname AS schema_name
+  FROM managed_schemas AS n
+  LEFT JOIN inventory ON inventory.schema_name = n.nspname
+ORDER BY n.nspname, inventory.object_kind, inventory.parent_name NULLS FIRST, inventory.object_name
 `;
 }
 
@@ -462,13 +466,21 @@ export async function inspectSchema(
     }
 
     const objects: PgObjectInfo[] = [];
+    const schemas = new Set<string>();
     const unknown: {object: PgObjectIdentity; feature: string}[] = [];
     const excluded: {object: PgObjectIdentity; reason: string}[] = [];
     const seen = new Set<string>();
 
     for (const row of queried.rows) {
+        const schema = stringValue(row, "schema_name");
+        if (schema === null || !scope.schemas.includes(schema)) {
+            return fail("migration.unsupportedSchemaFeature", {reason: "catalog inventory row has an invalid schema"});
+        }
+        schemas.add(schema);
+        // The left join preserves existing schemas that contain no objects.
+        if (row.object_kind === null) continue;
         const identity = identityFromRow(row);
-        if (identity === null || !scope.schemas.includes(identity.schema)) {
+        if (identity === null) {
             return fail("migration.unsupportedSchemaFeature", {reason: "catalog inventory row has an invalid identity"});
         }
         const exclusion = scope.excluded.find(one => samePgIdentity(one.object, identity));
@@ -506,7 +518,7 @@ export async function inspectSchema(
             schema: {
                 formatVersion: 1,
                 engineVersion: POSTGRES_SUPPORT.version,
-                schemas: [...scope.schemas].sort(compareUtf16),
+                schemas: [...schemas].sort(compareUtf16),
                 objects,
             },
             unknown,
