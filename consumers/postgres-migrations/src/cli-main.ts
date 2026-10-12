@@ -10,7 +10,8 @@ import {cliExitCode} from "./cli";
 import type {MigrationProject, CommandResult} from "./cli-project";
 import {compileDraft} from "./authoring";
 import type {MigrationDraftInfo} from "./authoring-contract";
-import {computeDraftRevisionHash, runAddDataSession, runAddSqlSession, type AuthoringDraftStore, type AddSqlContractInfo} from "./authoring-cli";
+import {runAddDataSession, runAddSqlSession, type AuthoringDraftStore, type AddSqlContractInfo} from "./authoring-cli";
+import {computeDraftRevisionHash} from "./draft-revision";
 import {inferStructureChanges} from "./infer";
 import {resolveConflict} from "./resolve-conflict";
 import {createConflictReport, decodeConflictReport} from "./conflict-report";
@@ -28,7 +29,7 @@ import type {AuthoredResource} from "./authoring-files";
 import {loadSsot} from "./ssot";
 import {loadDatabaseSettings} from "./database-settings";
 import {assessDatabase} from "./assessment";
-import {assessMigrationDecisions} from "./migration-decisions";
+import {assessMigrationDecisions, collectMigrationDecisions} from "./migration-decisions";
 import {publishArtifactDirectory} from "./artifact-files";
 
 const commands = ["capture", "assess", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
@@ -37,7 +38,7 @@ Commands: ${commands.join(", ")}
 --draft <file.json>    Read/update an unpublished draft (defaults to project.authoring.draft).
 --out <path>           Output JSON; generate writes an artifact directory.
 --database <module.js> Load app-supplied database and role settings with --ssot.
---answers <file.json>  Versioned answers for add-data or resolve; no stdin needed.
+--answers <file.json>  Draft-bound decisions or versioned report answers; no stdin needed.
 --report <file.json>   Conflict report for resolve.
 --sql <file.sql> --contract <file.json>  SQL and explicit effects for add-sql.
 --non-interactive     Never ask questions (also automatic in CI or without a TTY).
@@ -45,7 +46,8 @@ Only add-data and resolve can prompt. All failures print JSON and exit nonzero.
 Project modules export createMigrationProject(); see cli-project.ts for typed ports.
 capture --ssot loads the module's exported SystemSnapshotInfo using the core decoder.
 assess --ssot <module.js> --database <module.js> compares the current schema to the SSOT.
-Other commands use --project while their SSOT integration is being refactored.
+Other commands use --project while their SSOT integration is being refactored, except direct decision collection below.
+resolve --draft <file.json> --answers <file.json> collects decisions without --project or --report.
 Exit codes: 0 success, 2 input/configuration, 3 verification/gate, 4 execution/conflict.
 `;
 
@@ -341,6 +343,18 @@ export async function main(argv: readonly string[]): Promise<number> {
                         }}};
                 }
             }
+            if (flags.has("out")) await atomicJson(flags.get("out")!, result);
+            process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+            return cliExitCode(result);
+        }
+        if (command === "resolve" && !flags.has("project") && !flags.has("report")) {
+            const draftPath = flags.get("draft"), answersPath = flags.get("answers");
+            if (!draftPath || !answersPath) throw new Error("resolve requires --draft and --answers");
+            if ([...flags.keys()].some(key => !["draft", "answers", "out", "non-interactive"].includes(key))) throw new Error("Decision collection accepts --draft, --answers and --out");
+            if (flags.has("out") && [draftPath, answersPath].some(path => resolve(path) === resolve(flags.get("out")!))) throw new Error("--out must differ from the draft and answers files");
+            const draft = draftValue(await json(draftPath));
+            result = draft.ok ? collectMigrationDecisions(draft.value, await json(answersPath)) : draft;
+            if (result.ok) await atomicJson(draftPath, result.value);
             if (flags.has("out")) await atomicJson(flags.get("out")!, result);
             process.stdout.write(JSON.stringify(result, null, 2) + "\n");
             return cliExitCode(result);

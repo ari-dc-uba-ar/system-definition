@@ -1,6 +1,34 @@
-import {problem, type ValidationResult} from "system-definition";
-import type {DataDecisionInfo, FieldRefInfo, MigrationDraftInfo, PendingQuestionInfo, StructureChangeInfo} from "./authoring-contract";
+import {exactKeys, isPlainObject, problem, toJsonValue, type ValidationResult} from "system-definition";
+import {decodeDataDecisionInfo, type DataDecisionInfo, type FieldRefInfo, type MigrationDraftInfo, type PendingQuestionInfo, type StructureChangeInfo} from "./authoring-contract";
 import type {DataMigrationInfo} from "./migration-authoring";
+import {computeDraftRevisionHash} from "./draft-revision";
+
+/** Collect choices for one draft revision; callers persist the returned draft. */
+export function collectMigrationDecisions(draft: MigrationDraftInfo, input: unknown): ValidationResult<MigrationDraftInfo> {
+    const invalid = (reason: string) => fail(reason, draft.id);
+    const copied = toJsonValue(input);
+    if (!copied.ok) return copied;
+    const answers = copied.value;
+    if (!isPlainObject(answers)) return invalid("Expected migration decisions");
+    const shape = exactKeys(answers, ["id", "revisionHash", "decisions"], "$", (_path, reason) => invalid(reason));
+    if (!shape.ok) return shape;
+    if (answers.id !== draft.id || answers.revisionHash !== draft.revisionHash) return invalid("Decisions belong to another migration or draft revision");
+    const current = computeDraftRevisionHash(draft);
+    if (!current.ok) return current;
+    if (current.value !== draft.revisionHash) return invalid("Draft revision is stale");
+    if (!Array.isArray(answers.decisions)) return invalid("Expected a decision array");
+    const decisions = [...draft.decisions];
+    for (const [index, raw] of answers.decisions.entries()) {
+        const decoded = decodeDataDecisionInfo(raw, `decisions[${index}]`, (_path, reason) => invalid(reason));
+        if (!decoded.ok) return decoded;
+        decisions.push(decoded.value);
+    }
+    const next = {...draft, decisions};
+    const pending = assessMigrationDecisions(draft.changes, next);
+    if (!pending.ok) return pending;
+    const revision = computeDraftRevisionHash(next);
+    return revision.ok ? {ok: true, value: {...next, pending: pending.value, revisionHash: revision.value}} : revision;
+}
 
 function fail(reason: string, changeId: string, key = "migration.authoringInvalid"): ValidationResult<never> {
     return {ok: false, problems: [problem(null, key, "blocking", {changeId, reason})]};

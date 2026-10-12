@@ -27,6 +27,7 @@ export * from "./migration-authoring";
 export * from "./source-selection";
 
 export * from "./authoring-cli";
+export * from "./draft-revision";
 
 export * from "./validation-artifact";
 

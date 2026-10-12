@@ -182,6 +182,48 @@ interactivo actual conserva las decisiones destructivas; los demás casos usan e
 archivo de respuestas. La carga por `--ssot` sigue limitada al modelo y assessment;
 la composición completa del draft con esa entrada se integrará por separado.
 
+## Recoger decisiones de una migración
+
+`collectMigrationDecisions(draft, answers)` usa los tipos existentes del draft y de
+sus decisiones. Las respuestas contienen solamente `id`, `revisionHash` y
+`decisions`: identifican la migración y la revisión exacta que el usuario leyó.
+Se reutilizan el decoder de decisiones, el validador de readiness y el hash del
+draft. El mismo collector también se usa desde el resolver anterior con reports.
+
+```sh
+postgres-migrations resolve --draft migration-draft.json --answers answers.json
+```
+
+Esta entrada no requiere `--project` ni `--report`. Ejemplo de `answers.json` para
+una columna eliminada; los IDs/hash y campos se toman del draft existente:
+
+```json
+{
+  "id": "migration-id",
+  "revisionHash": "<draft.revisionHash>",
+  "decisions": [{
+    "changeId": "<change.id>",
+    "source": {"side": "from", "entity": "people", "field": "legacy"},
+    "partitionCheck": null,
+    "resolution": {"kind": "discard", "reason": "Datos que ya no se necesitan"}
+  }]
+}
+```
+
+También admite las resoluciones `migrate` (referencia a una transformación en
+`draft.data` y sus outputs) y `check` (recurso de comprobación para datos requeridos).
+Un check no autoriza pérdida de datos. Los renames siguen siendo declaraciones
+`RenameInfo` del draft, que la inferencia evalúa antes de recoger estas decisiones.
+La creación automática del draft desde `--ssot` se integrará en el paso de
+ensamblar migraciones; este paso trabaja sobre un draft existente.
+
+Las respuestas válidas se agregan y el draft se guarda atómicamente con una nueva
+revisión. Las parciales dejan las demás diferencias en `pending`; exit 0 significa
+que se guardaron las decisiones, no que la migración esté lista para aplicar.
+Respuestas de otra migración/revisión, duplicadas o con referencias inválidas se
+rechazan sin cambiar el archivo. La función pura retorna el nuevo draft y no
+consulta la base ni ejecuta SQL. La generación vuelve a evaluar readiness.
+
 ## Historial mínimo
 
 El catálogo ordenado usa `MigrationCatalogInfo` del core: releases y migraciones

@@ -11,8 +11,8 @@ import {
     type ReleaseRefInfo,
     type ValidationResult,
 } from "system-definition";
-import {computeDraftRevisionHash} from "./authoring-cli";
-import {assessMigrationDecisions} from "./migration-decisions";
+import {computeDraftRevisionHash} from "./draft-revision";
+import {collectMigrationDecisions} from "./migration-decisions";
 import {canonicalJsonSha256} from "./canonical-hash";
 import {
     decodeDataDecisionInfo,
@@ -186,12 +186,8 @@ function validateDraftBinding(
 function applyDataDecisionAnswers(
     report: ConflictReportInfo,
     answers: ResolutionAnswersInfo,
+    draft: MigrationDraftInfo,
 ): ValidationResult<ResolutionResultInfo> {
-    if (answers.answers.length === 0) return failure("At least one pending answer is required");
-    const bound = validateDraftBinding(report, answers);
-    if (!bound.ok) return bound;
-    const draft = bound.value;
-    const decisions = [...draft.decisions];
     for (const answer of answers.answers) {
         const question = draft.pending.find(one => one.id === answer.questionId);
         if (question === undefined || question.kind !== answer.kind) return failure("Answer does not match a pending data decision");
@@ -201,20 +197,15 @@ function applyDataDecisionAnswers(
         const identity = change.before ?? change.after;
         const subject = identity === null ? "" : [identity.schema, identity.parentName, identity.name].filter(one => one !== null).join(".");
         if (!question.subjects.includes(change.id) && !question.subjects.includes(subject)) return failure("Answer does not address this question's subject");
-        decisions.push(answer.decision);
     }
-    const readiness = assessMigrationDecisions(draft.changes, {...draft, decisions});
-    if (!readiness.ok) return failure(readiness.problems.map(problem => problem.details.reason ?? problem.messageKey).join("; "));
-    const pending = readiness.value.map(question => draft.pending.find(previous => previous.id === question.id
+    const collected = collectMigrationDecisions(draft, {id: draft.id, revisionHash: draft.revisionHash, decisions: answers.answers.map(answer => answer.decision)});
+    if (!collected.ok) return failure(collected.problems.map(problem => problem.details.reason ?? problem.messageKey).join("; "));
+    const pending = collected.value.pending.map(question => draft.pending.find(previous => previous.id === question.id
         || previous.subjects.includes(question.id)
         || answers.answers.some(answer => answer.decision.changeId === question.id && answer.questionId === previous.id)) ?? question);
-    const nextWithoutRevision: MigrationDraftInfo = {...draft, decisions, pending};
-    const revision = computeDraftRevisionHash(nextWithoutRevision);
-    if (!revision.ok) return revision;
-    const next: MigrationDraftInfo = {...nextWithoutRevision, revisionHash: revision.value};
     return {
         ok: true,
-        value: {kind: "draftUpdated", reportHash: report.reportHash, draft: next},
+        value: {kind: "draftUpdated", reportHash: report.reportHash, draft: {...collected.value, pending}},
     };
 }
 
@@ -270,9 +261,11 @@ export async function resolveConflict(
 
     // Validate report/draft binding before any installation reads. Stale answer
     // files must be rejected without consulting mutable target state.
+    let draft: MigrationDraftInfo | null = null;
     if (answers.value.answers.length > 0) {
         const bound = validateDraftBinding(report.value, answers.value);
         if (!bound.ok) return bound;
+        draft = bound.value;
     }
 
     const fresh = await validateInstallationFreshness(report.value, runtime);
@@ -285,8 +278,8 @@ export async function resolveConflict(
         return blocked(report.value.reportHash, "commit outcome was reconciled; produce a fresh report before retry");
     }
 
-    if (report.value.kind === "authoringDecision" && answers.value.answers.length > 0) {
-        return applyDataDecisionAnswers(report.value, answers.value);
+    if (report.value.kind === "authoringDecision" && draft !== null) {
+        return applyDataDecisionAnswers(report.value, answers.value, draft);
     }
 
     if (report.value.kind === "historyIntegrity" || report.value.kind === "artifactIntegrity") {

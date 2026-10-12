@@ -12,10 +12,8 @@ import {
 } from "../src/authoring";
 import {inferStructureChanges} from "../src/infer";
 import * as authoringCli from "../src/authoring-cli";
-import {
-    computeDraftRevisionHash,
-    type AuthoringDraftStore,
-} from "../src/authoring-cli";
+import {computeDraftRevisionHash} from "../src/draft-revision";
+import type {AuthoringDraftStore} from "../src/authoring-cli";
 import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo} from "../src/pg-schema";
 
 const fixedHash = (digit: string): string => digit.repeat(64);

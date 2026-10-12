@@ -8,6 +8,7 @@ import {
     type ValidationResult,
 } from "system-definition";
 import {canonicalJsonSha256} from "./canonical-hash";
+import {computeDraftRevisionHash} from "./draft-revision";
 import type {ManualStepInfo, MigrationDraftInfo, PendingQuestionInfo} from "./authoring-contract";
 import {
     decodeDataMigration,
@@ -84,40 +85,12 @@ function report(
     };
 }
 
-function stableHash(value: unknown): ValidationResult<string> {
-    const json = toJsonValue(value);
-    if (!json.ok) return json;
+function addDataQuestion(draft: MigrationDraftInfo): PendingQuestionInfo {
     return {
-        ok: true,
-        value: canonicalJsonSha256(json.value),
-    };
-}
-
-/**
- * Per the authoring contract, revisionHash deliberately excludes revisionHash,
- * derived changes/pending and reports.  It covers only authored authority.
- */
-export function computeDraftRevisionHash(draft: MigrationDraftInfo): ValidationResult<string> {
-    return stableHash({
-        base: draft.base,
-        renames: draft.renames,
-        data: draft.data,
-        decisions: draft.decisions,
-        manual: draft.manual,
-    });
-}
-
-function addDataQuestion(draft: MigrationDraftInfo): ValidationResult<PendingQuestionInfo> {
-    const id = stableHash({kind: "add-data", draftHash: draft.revisionHash, draftId: draft.id});
-    if (!id.ok) return id;
-    return {
-        ok: true,
-        value: {
-            id: id.value,
-            kind: "dataRequired",
-            subjects: [draft.id],
-            messageKey: "migration.authoringPending",
-        },
+        id: canonicalJsonSha256({kind: "add-data", draftHash: draft.revisionHash, draftId: draft.id}),
+        kind: "dataRequired",
+        subjects: [draft.id],
+        messageKey: "migration.authoringPending",
     };
 }
 
@@ -182,7 +155,6 @@ function draftWithData(draft: MigrationDraftInfo, dataMigration: DataMigrationIn
     }
     const withoutRevision: MigrationDraftInfo = {
         ...draft,
-        revisionHash: draft.revisionHash,
         data: [...draft.data, dataMigration],
     };
     const revision = computeDraftRevisionHash(withoutRevision);
@@ -201,9 +173,7 @@ export async function runAddDataSession(options: AddDataSessionOptions): Promise
     if (!loaded.ok) return report(options, "", "failed", [], loaded.problems);
     const draft = loaded.value;
 
-    const questionResult = addDataQuestion(draft);
-    if (!questionResult.ok) return report(options, draft.revisionHash, "failed", [], questionResult.problems);
-    const question = questionResult.value;
+    const question = addDataQuestion(draft);
 
     let answer: AddDataAnswerInfo | null = null;
     if (options.answers !== undefined) {

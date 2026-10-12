@@ -4,7 +4,7 @@
 
 Consumer package for immutable migration/release artifacts and PostgreSQL integration. It is built and tested separately from the root TypeScript program; production code imports the public `system-definition` package API rather than private root sources.
 
-The `capture --ssot` entry loads the application's exported core model. See [the SSOT guide](LEEME-SSOT.md). PostgreSQL configuration and migration orchestration are separate from this loading interface; other commands still use `--project` while their integration is refactored.
+The `capture --ssot` entry loads the application's exported core model. See [the SSOT guide](LEEME-SSOT.md). PostgreSQL configuration and migration orchestration are separate from this loading interface; other commands still use `--project` while their integration is refactored. Direct decision collection also supports resolve --draft --answers without a project or report; see the SSOT guide for the draft-bound answers format.
 
 ## Verification commands
 

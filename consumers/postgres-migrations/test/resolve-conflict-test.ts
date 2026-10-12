@@ -7,7 +7,7 @@ import {
     type ReleaseRefInfo,
     type ValidationResult,
 } from "system-definition";
-import {computeDraftRevisionHash} from "../src/authoring-cli";
+import {computeDraftRevisionHash} from "../src/draft-revision";
 import {
     createConflictReport,
     type ConflictReportInfo,
