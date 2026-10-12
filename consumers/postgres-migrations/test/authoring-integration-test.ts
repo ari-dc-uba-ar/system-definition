@@ -36,14 +36,13 @@ describe("T22 final CLI/CI and PostgreSQL authoring integration contract", () =>
         );
     });
 
-    it("keeps the real matrix on the existing plan, artifact resolver, runner and deployment gate", () => {
+    it("keeps the real matrix on the existing plan, artifact resolver, runner and transaction engine", () => {
         const path = resolve(consumerRoot, "scripts/test-authoring-integration.js");
         assert.ok(existsSync(path), "T22 requires a dedicated real-PostgreSQL authoring integration harness");
         const script = readFileSync(path, "utf8");
         assert.match(script, /buildMigrationPlan/);
         assert.match(script, /resolveMigrationExecutionContext/);
         assert.match(script, /executeMigrationPath/);
-        assert.match(script, /checkDeploymentReady/);
         assert.doesNotMatch(script, /expectedSchema\s*:\s*observed/i, "the harness must not fake the SSOT oracle");
     });
 
@@ -101,8 +100,7 @@ describe("T22 final CLI/CI and PostgreSQL authoring integration contract", () =>
         assert.match(script, /inferred/);
         assert.match(script, /manual/);
         assert.match(script, /destructive/);
-        assert.match(script, /rollback/);
-        assert.match(script, /zero activations|activationCount|activations/u);
+        assert.match(script, /all DDL rolled back/);
     });
 
     it("keeps CI non-interactive and generated documentation explicit about pending authoring", () => {
@@ -115,6 +113,6 @@ describe("T22 final CLI/CI and PostgreSQL authoring integration contract", () =>
         assert.match(generator, /manual/);
         assert.match(generator, /mixed/);
         assert.match(generator, /non-interactive/i);
-        assert.match(generator, /migration\.authoringPending/);
+        assert.match(generator, /Ambiguous changes remain pending/);
     });
 });

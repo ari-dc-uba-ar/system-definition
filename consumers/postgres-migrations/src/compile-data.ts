@@ -1,4 +1,4 @@
-import {createHash} from "node:crypto";
+import {sha256Hex} from "./canonical-hash";
 import {compareUtf16, isSha256, problem, sameContentRef, type PersistenceInfo, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
 import {
     sameDomainRef,
@@ -65,14 +65,10 @@ function failure<T>(reason: string, details: Readonly<Record<string, string>> = 
     };
 }
 
-function hashText(text: string): string {
-    return createHash("sha256").update(text, "utf8").digest("hex");
-}
-
 function queryMatches(resolved: ResolvedQuery): boolean {
     return resolved.ref.kind === "query"
         && isSha256(resolved.ref.contentHash)
-        && hashText(resolved.text) === resolved.ref.contentHash;
+        && sha256Hex(resolved.text) === resolved.ref.contentHash;
 }
 
 function stripFinalSemicolon(text: string): string {
@@ -81,16 +77,7 @@ function stripFinalSemicolon(text: string): string {
 }
 
 function tempStem(migration: DataMigrationInfo, context: CompileDataContext): string {
-    const hash = createHash("sha256")
-        .update(context.migrationId, "utf8")
-        .update("\0", "utf8")
-        .update(migration.id, "utf8")
-        .update("\0", "utf8")
-        .update(context.transformation.name, "utf8")
-        .update("\0", "utf8")
-        .update(context.transformation.version, "utf8")
-        .digest("hex")
-        .slice(0, 16);
+    const hash = sha256Hex([context.migrationId, migration.id, context.transformation.name, context.transformation.version].join("\0")).slice(0, 16);
     return `__migration_${hash}`;
 }
 
@@ -742,7 +729,7 @@ type PreservedEntity = {
 };
 
 function preservationTableName(stem: string, entity: string): string {
-    const suffix = createHash("sha256").update(entity, "utf8").digest("hex").slice(0, 10);
+    const suffix = sha256Hex(entity).slice(0, 10);
     return `${stem}_before_${suffix}`;
 }
 

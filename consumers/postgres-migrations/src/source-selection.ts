@@ -1,4 +1,4 @@
-import {createHash} from "node:crypto";
+import {sha256Hex} from "./canonical-hash";
 import {
     decodeResourceRefInfo,
     type ResourceRefInfo,
@@ -65,10 +65,6 @@ function failure<T>(reason: string, details: Readonly<Record<string, unknown>> =
 
 function fieldSql(ref: SourceFieldSelection): string {
     return quotePgQualified(ref.alias, ref.field);
-}
-
-function hashSql(sql: string): string {
-    return createHash("sha256").update(sql, "utf8").digest("hex");
 }
 
 function isNonEmpty(value: string): boolean {
@@ -254,7 +250,7 @@ export function buildSourceSelection(
         ok: true,
         value: {
             selection: {
-                query: {name: def.queryName, kind: "query", contentHash: hashSql(sql)},
+                query: {name: def.queryName, kind: "query", contentHash: sha256Hex(sql)},
                 ports,
                 identity,
                 coverageChecks: coverage.value,

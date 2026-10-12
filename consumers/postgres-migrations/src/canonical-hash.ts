@@ -3,11 +3,11 @@ import {canonicalJson, type JsonValue} from "system-definition";
 
 /** Hash already-validated strict JSON using the repository's canonical JSON encoding. */
 export function canonicalJsonSha256(value: JsonValue): string {
-    return createHash("sha256").update(canonicalJson(value), "utf8").digest("hex");
+    return sha256Hex(canonicalJson(value));
 }
 
-/** Exact bytes, shared by filesystem and in-memory artifact storage. */
-export function sha256Hex(bytes: Uint8Array): string {
+/** Exact bytes or UTF-8 text, shared by filesystem and in-memory artifact storage. */
+export function sha256Hex(bytes: Uint8Array | string): string {
     return createHash("sha256").update(bytes).digest("hex");
 }
 

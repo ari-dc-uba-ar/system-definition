@@ -1,5 +1,6 @@
 import {
     canonicalJson,
+    decodeFileInfo,
     hasExactKeys,
     isPlainObject,
     isSha256,
@@ -21,7 +22,7 @@ import {
     type ArtifactResult,
     type MigrationManifestInfo,
 } from "./artifact";
-import {canonicalJsonSha256} from "./canonical-hash";
+import {canonicalJsonSha256, omitJsonObjectKeys} from "./canonical-hash";
 import type {CompiledAuthoringInfo} from "./authoring";
 
 type JsonObject = {readonly [key: string]: JsonValue};
@@ -61,19 +62,9 @@ function sameJson(left: unknown, right: unknown): boolean {
     return canonicalJson(jsonOf(left)) === canonicalJson(jsonOf(right));
 }
 
-function hashablePlan(plan: MigrationPlanInfo): JsonValue {
-    const converted = jsonOf(plan);
-    if (!isObject(converted)) throw new TypeError("migration plan is not a JSON object");
-    const result = Object.create(null) as Record<string, JsonValue>;
-    for (const [key, value] of Object.entries(converted)) {
-        if (key !== "planHash") result[key] = value;
-    }
-    return result;
-}
-
 /** Hash the complete serialized migration plan except for its own hash field. */
 export function computePlanHash(plan: MigrationPlanInfo): string {
-    return canonicalJsonSha256(hashablePlan(plan));
+    return canonicalJsonSha256(omitJsonObjectKeys(jsonOf(plan), ["planHash"]));
 }
 
 function decodeReleaseRef(value: JsonValue, label: string): ArtifactResult<ReleaseRefInfo> {
@@ -107,6 +98,7 @@ function decodeAuthoring(value: JsonValue): ArtifactResult<CompiledAuthoringInfo
         "checkpoints",
         "queryResources",
         "validationArtifacts",
+        ...(Object.hasOwn(value, "states") ? ["states"] : []),
     ].sort();
     if (!hasExactKeys(value, expected) || value.formatVersion !== 1) {
         return failure("migration.unsupportedFormat", {reason: "invalid authoring artifact shape"});
@@ -145,6 +137,14 @@ function decodeAuthoring(value: JsonValue): ArtifactResult<CompiledAuthoringInfo
         return failure("migration.unsupportedFormat", {reason: "invalid authoring payload shape"});
     }
 
+    let states: CompiledAuthoringInfo["states"];
+    if (Object.hasOwn(value, "states")) {
+        if (!isObject(value.states) || !hasExactKeys(value.states, ["from", "to"])) return failure("migration.unsupportedFormat", {reason: "Invalid saved state references"});
+        const fromFile = decodeFileInfo(value.states.from, "states.from", () => failure("migration.invalidReference"));
+        const toFile = decodeFileInfo(value.states.to, "states.to", () => failure("migration.invalidReference"));
+        if (!fromFile.ok || !toFile.ok) return failure("migration.invalidReference", {reason: "Invalid saved state file"});
+        states = {from: fromFile.value, to: toFile.value};
+    }
     // T22 slice 2 needs a strict, detached JSON boundary and the exact endpoint
     // identity. Deeper authoring resources are resolved by later T22 slices.
     return {
@@ -166,6 +166,7 @@ function decodeAuthoring(value: JsonValue): ArtifactResult<CompiledAuthoringInfo
             checkpoints: value.checkpoints,
             queryResources: value.queryResources as unknown as CompiledAuthoringInfo["queryResources"],
             validationArtifacts: value.validationArtifacts,
+            ...(states === undefined ? {} : {states}),
         },
     };
 }

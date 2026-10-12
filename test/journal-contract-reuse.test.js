@@ -3,7 +3,6 @@ const {
     finishAttempt,
     installBaseline,
     startAttempt,
-    readConfirmedPreparation,
     readHistory,
 } = require("../consumers/postgres-migrations/dist/src/journal.js");
 
@@ -139,25 +138,6 @@ const validBaseline = {systemId: "system", releaseId: "r1", releaseHash: hash};
     assert.equal(result.ok, false);
     assert.equal(result.problems[0].details.reason, "problem details must be strings");
     assert.equal(db.state.calls, 0);
-
-    // Preparation-history release refs use the same package-owned release contract.
-    db = rowSession({
-        installation_id: "installation-1",
-        ordinal: 1,
-        preparation_id: "prep-1",
-        artifact_hash: hash,
-        head_system_id: "system",
-        head_release_id: "   ",
-        head_release_hash: hash,
-        before_fingerprint: hash,
-        after_fingerprint: hash,
-        report_hash: hash,
-        committed_at: "2026-10-06T00:00:00Z",
-    });
-    result = await readConfirmedPreparation(db, {schema: "journal"}, "installation-1", "prep-1");
-    assert.equal(result.ok, false);
-    assert.equal(result.problems[0].details.reason, "invalid release reference");
-    assert.equal(db.state.calls, 1);
 
     console.log("journal package-contract/refinement tests passed");
 })().catch(error => { console.error(error); process.exitCode = 1; });

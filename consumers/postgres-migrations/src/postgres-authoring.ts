@@ -1,6 +1,6 @@
 import {problem, sameReleaseRef, type MigrationPathInfo, type ValidationResult} from "system-definition";
-import {canonicalJson, toJsonValue} from "system-definition";
-import {createHash} from "node:crypto";
+import {toJsonValue, sameContentRef, type ContentRefInfo} from "system-definition";
+import {canonicalJsonSha256, sha256Hex} from "./canonical-hash";
 import {AuthoringFiles} from "./authoring-files";
 import type {AuthoringRuntime, CompiledAuthoringInfo} from "./authoring-contract";
 import {compiledArtifact} from "./compiled-artifact";
@@ -93,10 +93,10 @@ export function createPostgresAuthoringRuntime(options: PostgresAuthoringOptions
         return observed;
     }
 
-    async function resource(ref: {name: string; kind: string; contentHash: string}): Promise<ValidationResult<string>> {
+    async function resource(ref: ContentRefInfo<string>): Promise<ValidationResult<string>> {
         const found = files.resources.get(ref.name);
-        if (found === undefined || found.ref.kind !== ref.kind || found.ref.contentHash !== ref.contentHash
-            || createHash("sha256").update(found.text, "utf8").digest("hex") !== ref.contentHash) return fail("Missing or mismatched authored resource: " + ref.name);
+        if (found === undefined || !sameContentRef(found.ref, ref)
+            || sha256Hex(found.text) !== ref.contentHash) return fail("Missing or mismatched authored resource: " + ref.name);
         return {ok: true, value: found.text};
     }
 
@@ -121,7 +121,7 @@ export function createPostgresAuthoringRuntime(options: PostgresAuthoringOptions
             for (const [value, expected] of bindings) {
                 const json = toJsonValue(value);
                 if (!json.ok) return json;
-                if (createHash("sha256").update(canonicalJson(json.value), "utf8").digest("hex") !== expected) return fail("Draft snapshot or persistence binding is stale");
+                if (canonicalJsonSha256(json.value) !== expected) return fail("Draft snapshot or persistence binding is stale");
             }
             return owned(async (session, id) => {
                 const sourceState = await history(session, id);

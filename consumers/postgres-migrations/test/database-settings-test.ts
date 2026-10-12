@@ -9,7 +9,7 @@ import {loadDatabaseSettings, type DatabaseSettings} from "../src/database-setti
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Expect<T extends true> = T;
-type SettingsContract = Expect<Equal<DatabaseSettings, {database: ClientConfig & {database: string; schema: string}; initialUser: ClientConfig & {user: string}; owner: string; appUser: string}>>;
+type SettingsContract = Expect<Equal<DatabaseSettings, {database: ClientConfig & {database: string; schema: string}; initialUser: ClientConfig & {user: string}; owner: ClientConfig & {user: string}; appUser: ClientConfig & {user: string}}>>;
 type LoaderContract = Expect<Equal<typeof loadDatabaseSettings, (file: string) => Promise<ValidationResult<DatabaseSettings>>>>;
 const contracts: [SettingsContract, LoaderContract] = [true, true];
 
@@ -23,18 +23,18 @@ async function fixture(settings: unknown, body: (file: string) => Promise<void>)
 }
 
 describe("database settings", () => {
-    it("receives the database, provisioning connection and role identities from the application", () => fixture({database: {database: "example", schema: "app", host: "db.example", port: 5432}, initialUser: {user: "admin", password: "fixture-secret"}, owner: "schema_owner", appUser: "app_user"}, async file => {
+    it("receives the database, provisioning connection and role identities from the application", () => fixture({database: {database: "example", schema: "app", host: "db.example", port: 5432}, initialUser: {user: "admin", password: "fixture-secret"}, owner: {user: "schema_owner"}, appUser: {user: "app_user"}}, async file => {
         assert.deepEqual(contracts, [true, true]);
-        assert.deepEqual(await loadDatabaseSettings(file), {ok: true, value: {database: {database: "example", schema: "app", host: "db.example", port: 5432}, initialUser: {user: "admin", password: "fixture-secret"}, owner: "schema_owner", appUser: "app_user"}});
+        assert.deepEqual(await loadDatabaseSettings(file), {ok: true, value: {database: {database: "example", schema: "app", host: "db.example", port: 5432}, initialUser: {user: "admin", password: "fixture-secret"}, owner: {user: "schema_owner"}, appUser: {user: "app_user"}}});
     }));
     it("requires database, provisioning user, owner and app user", async () => {
-        for (const settings of [null, {database: {database: "example"}, owner: "schema_owner"}, {database: {database: ""}, owner: "schema_owner", appUser: "app_user"},
-            {database: {database: "example", schema: "app"}, owner: "schema_owner", appUser: "app_user"},
-            {database: {database: "example", schema: "app"}, initialUser: {user: " "}, owner: "schema_owner", appUser: "app_user"}]) {
+        for (const settings of [null, {database: {database: "example"}, owner: {user: "schema_owner"}}, {database: {database: ""}, owner: {user: "schema_owner"}, appUser: {user: "app_user"}},
+            {database: {database: "example", schema: "app"}, owner: {user: "schema_owner"}, appUser: {user: "app_user"}},
+            {database: {database: "example", schema: "app"}, initialUser: {user: " "}, owner: {user: "schema_owner"}, appUser: {user: "app_user"}}]) {
             await fixture(settings, async file => {assert.equal((await loadDatabaseSettings(file)).ok, false);});
         }
     });
-    it("rejects an app user that is also the owner", () => fixture({database: {database: "example", schema: "app"}, initialUser: {user: "admin"}, owner: "same_role", appUser: "same_role"}, async file => {
+    it("rejects an app user that is also the owner", () => fixture({database: {database: "example", schema: "app"}, initialUser: {user: "admin"}, owner: {user: "same_role"}, appUser: {user: "same_role"}}, async file => {
         assert.equal((await loadDatabaseSettings(file)).ok, false);
     }));
 });

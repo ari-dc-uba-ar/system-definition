@@ -35,8 +35,6 @@ type ExpectedInfo = {
     state: CommitOutcomeState;
     confirmedHead: ReleaseRefInfo | null;
     retryAllowed: boolean;
-    deploymentBlocked: boolean;
-    keepMaintenance: true;
     problems: readonly Problem[];
 };
 type _infoExact = Assert<Equal<CommitOutcomeInfo, ExpectedInfo>>;

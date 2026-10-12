@@ -8,25 +8,7 @@ import {
     type CliExitCode,
 } from "../src/cli";
 
-type ExpectedCommand =
-    | "assess"
-    | "infer"
-    | "add-data"
-    | "add-sql"
-    | "validate"
-    | "generate"
-    | "capture"
-    | "build-release"
-    | "verify"
-    | "publish"
-    | "plan"
-    | "status"
-    | "install"
-    | "apply"
-    | "deployment-gate"
-    | "resolve"
-    | "verify-resolution"
-    | "apply-resolution";
+type ExpectedCommand = "capture" | "assess" | "infer" | "generate" | "data" | "resolve" | "status" | "apply";
 
 type ExpectedExitCode = 0 | 2 | 3 | 4;
 

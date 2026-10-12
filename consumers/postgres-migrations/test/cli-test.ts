@@ -21,7 +21,7 @@ function failed(messageKey: string): ValidationResult<unknown> {
 describe("migration CLI boundary", () => {
     it("requires the app's SSOT module for loading and assessment", () => {
         for (const command of ["capture", "assess"]) {
-            const result = spawnSync(process.execPath, [resolve(__dirname, "../src/cli-main.js"), command, "--project", "unused-project.js"], {encoding: "utf8"});
+            const result = spawnSync(process.execPath, [resolve(__dirname, "../src/cli-main.js"), command], {encoding: "utf8"});
             assert.equal(result.status, 2);
             assert.match(result.stdout, new RegExp(command + " requires --ssot"));
         }
@@ -40,7 +40,7 @@ describe("migration CLI boundary", () => {
         });
         assert.equal(help.error, undefined);
         assert.equal(help.status, 0, help.stderr);
-        for (const command of ["infer", "add-data", "resolve", "verify", "apply"]) {
+        for (const command of ["infer", "data", "resolve", "status", "apply"]) {
             assert.ok(help.stdout.includes(command), `help must document ${command}`);
         }
     });
@@ -49,13 +49,13 @@ describe("migration CLI boundary", () => {
         assert.equal(cliExitCode({ok: true, value: {id: "ok"}}), 0);
         assert.equal(cliExitCode(failed("migration.invalidReference")), 2);
         assert.equal(cliExitCode(failed("migration.environmentMismatch")), 2);
-        assert.equal(cliExitCode(failed("deployment.blocked")), 3);
+        assert.equal(cliExitCode(failed("migration.schemaDrift")), 3);
         assert.equal(cliExitCode(failed("migration.unknownCommitOutcome")), 4);
     });
 
     it("delegates a command exactly once and returns the same library result", async () => {
         const calls: {command: CliCommand; args: readonly string[]}[] = [];
-        const libraryResult = failed("deployment.verificationFailed");
+        const libraryResult = failed("migration.checkFailed");
         const execute: CliCommandExecutor = async (
             command: CliCommand,
             args: readonly string[],
@@ -66,13 +66,13 @@ describe("migration CLI boundary", () => {
 
         const execution = await runCliCommand(
             "apply",
-            ["--deployment", "deployment-17"],
+            ["--directory", "migrations"],
             execute,
         );
 
         assert.deepEqual(calls, [{
             command: "apply",
-            args: ["--deployment", "deployment-17"],
+            args: ["--directory", "migrations"],
         }]);
         assert.equal(execution.result, libraryResult);
         assert.equal(execution.exitCode, 3);

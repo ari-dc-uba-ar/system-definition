@@ -1,4 +1,3 @@
-import {createHash} from "node:crypto";
 import {
     decodeFileInfo,
     exactKeys,
@@ -11,7 +10,7 @@ import {
     type Problem,
     type ValidationResult,
 } from "system-definition";
-import {canonicalJsonSha256} from "./canonical-hash";
+import {canonicalJsonSha256, sha256Hex} from "./canonical-hash";
 import type {PortInfo, SnapshotSide} from "./migration-authoring";
 
 export type ValidationArtifactInfo = {
@@ -189,7 +188,7 @@ export async function loadValidationModule(
         });
     }
 
-    const actualHash = createHash("sha256").update(bytes).digest("hex");
+    const actualHash = sha256Hex(bytes);
     if (bytes.byteLength !== artifact.entry.byteLength || actualHash !== artifact.entry.contentHash) {
         return invalid("validation entry checksum mismatch", {
             path: artifact.entry.path,

@@ -21,6 +21,8 @@ import {pgIdentityKey, samePgIdentity} from "./pg-identity";
 import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo} from "./pg-schema";
 import {prepareManualSqlResource} from "./sql-resource";
 import {validateMigrationDecisions} from "./migration-decisions";
+import {orderDependencies} from "./dependency-order";
+import {isFieldRename} from "./authoring-contract";
 
 export * from "./authoring-contract";
 
@@ -41,13 +43,6 @@ function hasField(schema: PgSchemaInfo, entity: string, field: string): boolean 
 function hasEntity(schema: PgSchemaInfo, entity: string): boolean {
     return schema.objects.some((object: PgObjectInfo): boolean => object.kind === "table"
         && object.identity.name === entity);
-}
-
-type FieldRenameInfo = RenameInfo & {before: FieldRefInfo; after: FieldRefInfo};
-
-function isFieldRename(rename: RenameInfo): rename is FieldRenameInfo {
-    return Object.prototype.hasOwnProperty.call(rename.before, "field")
-        && Object.prototype.hasOwnProperty.call(rename.after, "field");
 }
 
 /**
@@ -89,8 +84,6 @@ type ValidatedManualInfo = {
 
 function orderedManualSteps(manual: readonly ManualStepInfo[]): ValidationResult<readonly ManualStepInfo[]> {
     const byId = new Map(manual.map(step => [step.id, step] as const));
-    const indegree = new Map<string, number>();
-    const dependents = new Map<string, string[]>();
 
     for (const step of manual) {
         const seen = new Set<string>();
@@ -110,35 +103,11 @@ function orderedManualSteps(manual: readonly ManualStepInfo[]): ValidationResult
                 });
             }
             seen.add(dependency);
-            const targets = dependents.get(dependency) ?? [];
-            targets.push(step.id);
-            dependents.set(dependency, targets);
-        }
-        indegree.set(step.id, seen.size);
-    }
-
-    const ready = [...manual]
-        .filter(step => (indegree.get(step.id) ?? 0) === 0)
-        .map(step => step.id)
-        .sort();
-    const ordered: ManualStepInfo[] = [];
-
-    while (ready.length > 0) {
-        const id = ready.shift() as string;
-        const step = byId.get(id);
-        if (step === undefined) continue;
-        ordered.push(step);
-        for (const dependent of [...(dependents.get(id) ?? [])].sort()) {
-            const next = (indegree.get(dependent) ?? 0) - 1;
-            indegree.set(dependent, next);
-            if (next === 0) {
-                ready.push(dependent);
-                ready.sort();
-            }
         }
     }
 
-    if (ordered.length !== manual.length) {
+    const ordered = orderDependencies(manual);
+    if (ordered === null) {
         return fail("migration.authoringInvalid", {
             reason: "manual dependency graph contains a cycle",
         });

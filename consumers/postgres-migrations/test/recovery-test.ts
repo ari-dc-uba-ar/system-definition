@@ -158,8 +158,6 @@ describe("commit outcome recovery", () => {
         assert.equal(recovered.value.state, "succeeded");
         assert.deepEqual(recovered.value.confirmedHead, B);
         assert.equal(recovered.value.retryAllowed, false);
-        assert.equal(recovered.value.deploymentBlocked, false);
-        assert.equal(recovered.value.keepMaintenance, true);
         assert.deepEqual(recovered.value.problems, []);
         assert.equal(freshRunnerSession.calls.some(mutatingApplicationSql), false, "recovery must not replay migration SQL");
     });
@@ -172,8 +170,6 @@ describe("commit outcome recovery", () => {
         assert.equal(recovered.value.state, "failed");
         assert.deepEqual(recovered.value.confirmedHead, A);
         assert.equal(recovered.value.retryAllowed, true);
-        assert.equal(recovered.value.deploymentBlocked, true);
-        assert.equal(recovered.value.keepMaintenance, true);
         assert.equal(freshRunnerSession.calls.some(mutatingApplicationSql), false);
     });
 
@@ -191,8 +187,6 @@ describe("commit outcome recovery", () => {
         assert.equal(recovered.value.state, "unknown");
         assert.deepEqual(recovered.value.confirmedHead, C);
         assert.equal(recovered.value.retryAllowed, false);
-        assert.equal(recovered.value.deploymentBlocked, true);
-        assert.equal(recovered.value.keepMaintenance, true);
         assert.ok(recovered.value.problems.some((one: Problem) => one.messageKey === "migration.unknownCommitOutcome"));
         assert.equal(freshRunnerSession.calls.some(mutatingApplicationSql), false);
     });
@@ -220,7 +214,5 @@ describe("commit outcome recovery", () => {
         assert.equal(bc.value.state, "failed");
         assert.deepEqual(bc.value.confirmedHead, B);
         assert.equal(bc.value.retryAllowed, true);
-        assert.equal(bc.value.deploymentBlocked, true);
-        assert.equal(bc.value.keepMaintenance, true, "maintenance stays active after the failed B→C segment");
     });
 });

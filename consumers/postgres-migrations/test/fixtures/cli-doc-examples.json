@@ -1,10 +1,12 @@
 [
   {
-    "title": "status success",
+    "title": "Read applied and pending migrations",
     "command": "status",
     "args": [
-      "--project",
-      "migration-project.js"
+      "--ssot",
+      "system.js",
+      "--database",
+      "database.js"
     ],
     "result": {
       "ok": true,
@@ -13,41 +15,42 @@
     "exitCode": 0
   },
   {
-    "title": "environment mismatch blocks verification",
-    "command": "verify",
+    "title": "Unsupported database environment",
+    "command": "apply",
     "args": [
-      "--project",
-      "migration-project.js"
+      "--ssot",
+      "system.js",
+      "--database",
+      "database.js"
     ],
     "result": {
       "ok": false,
       "problems": [
         {
-          "messageKey": "migration.environmentMismatch",
           "field": null,
+          "messageKey": "migration.environmentMismatch",
           "severity": "blocking",
-          "details": {
-            "expected": "18.6",
-            "actual": "18.5"
-          }
+          "details": {}
         }
       ]
     },
     "exitCode": 2
   },
   {
-    "title": "deployment gate blocks activation",
-    "command": "deployment-gate",
+    "title": "Database drift blocks apply",
+    "command": "apply",
     "args": [
-      "--project",
-      "migration-project.js"
+      "--ssot",
+      "system.js",
+      "--database",
+      "database.js"
     ],
     "result": {
       "ok": false,
       "problems": [
         {
-          "messageKey": "deployment.blocked",
           "field": null,
+          "messageKey": "migration.schemaDrift",
           "severity": "blocking",
           "details": {}
         }
@@ -56,18 +59,20 @@
     "exitCode": 3
   },
   {
-    "title": "unknown commit outcome is operational failure",
+    "title": "Uncertain commit remains blocked",
     "command": "apply",
     "args": [
-      "--project",
-      "migration-project.js"
+      "--ssot",
+      "system.js",
+      "--database",
+      "database.js"
     ],
     "result": {
       "ok": false,
       "problems": [
         {
-          "messageKey": "migration.unknownCommitOutcome",
           "field": null,
+          "messageKey": "migration.commitUnknown",
           "severity": "blocking",
           "details": {}
         }
@@ -76,43 +81,13 @@
     "exitCode": 4
   },
   {
-    "title": "resolve an explicit conflict report",
+    "title": "Collect draft-bound data decisions",
     "command": "resolve",
     "args": [
-      "--project",
-      "migration-project.js",
-      "--report",
-      "reports/failure.json",
-      "--answers",
-      "answers.json",
       "--draft",
-      "draft.json"
-    ],
-    "result": {
-      "ok": true,
-      "value": null
-    },
-    "exitCode": 0
-  },
-  {
-    "title": "verify a preparation on an identified copy",
-    "command": "verify-resolution",
-    "args": [
-      "--project",
-      "migration-project.js"
-    ],
-    "result": {
-      "ok": true,
-      "value": null
-    },
-    "exitCode": 0
-  },
-  {
-    "title": "apply a verified preparation non-interactively",
-    "command": "apply-resolution",
-    "args": [
-      "--project",
-      "migration-project.js"
+      "draft.json",
+      "--answers",
+      "answers.json"
     ],
     "result": {
       "ok": true,

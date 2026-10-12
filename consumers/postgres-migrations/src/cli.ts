@@ -1,24 +1,7 @@
 import type {ValidationResult} from "system-definition";
 
-export type CliCommand =
-    | "assess"
-    | "infer"
-    | "add-data"
-    | "add-sql"
-    | "validate"
-    | "generate"
-    | "capture"
-    | "build-release"
-    | "verify"
-    | "publish"
-    | "plan"
-    | "status"
-    | "install"
-    | "apply"
-    | "deployment-gate"
-    | "resolve"
-    | "verify-resolution"
-    | "apply-resolution";
+export const CLI_COMMANDS = ["capture", "assess", "infer", "generate", "data", "resolve", "status", "apply"] as const;
+export type CliCommand = typeof CLI_COMMANDS[number];
 
 export type CliExitCode = 0 | 2 | 3 | 4;
 
@@ -50,13 +33,7 @@ const verificationOrGateProblems = new Set([
     "migration.unsupportedSchemaFeature",
     "migration.checkFailed",
     "migration.headMismatch",
-    "deployment.verificationMissing",
-    "deployment.verificationFailed",
-    "deployment.verificationIncomplete",
-    "deployment.evidenceMismatch",
-    "deployment.maintenanceRequired",
-    "deployment.targetNotReady",
-    "deployment.blocked",
+    "migration.permissionsInvalid",
 ]);
 
 function problemExitCode(messageKey: string): Exclude<CliExitCode, 0> {

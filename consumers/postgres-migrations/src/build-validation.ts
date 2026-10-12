@@ -1,5 +1,5 @@
 import {build} from "esbuild";
-import {createHash} from "node:crypto";
+import {sha256Hex} from "./canonical-hash";
 import type {SystemSnapshotInfo} from "system-definition";
 import type {SnapshotSide} from "./migration-authoring";
 import type {ValidationArtifactInfo} from "./validation-artifact";
@@ -13,7 +13,7 @@ export async function buildValidationArtifact(
         ...(typeof entry === "string" ? {} : {minify: true})});
     if (result.outputFiles.length !== 1) throw new Error("Validation build must produce exactly one self-contained module");
     const bytes = result.outputFiles[0]!.contents;
-    const contentHash = createHash("sha256").update(bytes).digest("hex");
+    const contentHash = sha256Hex(bytes);
     const info: ValidationArtifactInfo = {
         formatVersion: 1, side, snapshotHash,
         entry: {path: `validators/${contentHash}.mjs`, contentHash, byteLength: bytes.length},

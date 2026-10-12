@@ -20,7 +20,7 @@ export async function assessSchema(ssot: SqlSsotInfo, schema: string, session: P
 }
 
 export async function assessDatabase(ssot: SqlSsotInfo, settings: DatabaseSettings): Promise<ValidationResult<SchemaClassificationInfo>> {
-    const session = await connectPostgres({...settings.database, user: settings.appUser});
+    const session = await connectPostgres({...settings.database, ...settings.appUser});
     try { return await assessSchema(ssot, settings.database.schema, session); }
     finally { await session.close(); }
 }

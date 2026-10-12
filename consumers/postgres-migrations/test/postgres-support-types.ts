@@ -1,5 +1,4 @@
 import type {EnvironmentInfo} from "../src/artifact";
-import type {DeploymentBindingInfo} from "../src/evidence";
 import type {PgSchemaInfo} from "../src/pg-schema";
 import {POSTGRES_SUPPORT} from "../src/postgres-support";
 
@@ -13,7 +12,6 @@ type _EnvironmentEngine = Assert<Equal<EnvironmentInfo["engine"], typeof POSTGRE
 type _EnvironmentVersion = Assert<Equal<EnvironmentInfo["version"], typeof POSTGRES_SUPPORT.version>>;
 type _EnvironmentServerVersion = Assert<Equal<EnvironmentInfo["serverVersionNum"], typeof POSTGRES_SUPPORT.serverVersionNum>>;
 type _SchemaVersion = Assert<Equal<PgSchemaInfo["engineVersion"], typeof POSTGRES_SUPPORT.version>>;
-type _BindingVersion = Assert<Equal<DeploymentBindingInfo["engineVersion"], typeof POSTGRES_SUPPORT.version>>;
 
 // @ts-expect-error unsupported versions must not type-check as environment metadata
 const invalidEnvironmentVersion: EnvironmentInfo["version"] = "18.7";

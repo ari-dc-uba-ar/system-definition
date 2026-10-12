@@ -1,0 +1,12 @@
+import type {FieldRefInfo, RenameInfo, StructureChangeInfo} from "../src/authoring-contract";
+import type {PgObjectIdentity} from "../src/pg-schema";
+type Assignable<A, B> = [A] extends [B] ? true : false;
+type Expect<T extends true> = T;
+type Reject<T extends false> = T;
+type AddRequiresDestination = Reject<Assignable<Omit<Extract<StructureChangeInfo, {action: "add"}>, "after"> & {after: null}, StructureChangeInfo>>;
+type DropRequiresSource = Reject<Assignable<Omit<Extract<StructureChangeInfo, {action: "remove"}>, "before"> & {before: null}, StructureChangeInfo>>;
+type AlterHasBoth = Expect<Assignable<Extract<StructureChangeInfo, {action: "alter"}>["before"], PgObjectIdentity>>;
+type MixedRenameRejected = Reject<Assignable<{before: FieldRefInfo; after: {entity: string}}, RenameInfo>>;
+type ReversedSidesRejected = Reject<Assignable<{before: FieldRefInfo & {side: "to"}; after: FieldRefInfo & {side: "from"}}, RenameInfo>>;
+const contracts: [AddRequiresDestination, DropRequiresSource, AlterHasBoth, MixedRenameRejected, ReversedSidesRejected] = [false, false, true, false, false];
+void contracts;

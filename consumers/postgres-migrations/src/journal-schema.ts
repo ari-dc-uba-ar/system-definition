@@ -1,28 +1,12 @@
 import {historySchemaStatements} from "./history-schema";
 import type {ValidationResult} from "system-definition";
 import {quotePgIdentifier, type PgSession} from "./pg-schema";
-import {
-    ATTEMPT_STATES,
-    DEPLOYMENT_READINESS_STATES,
-    VERIFICATION_STATUSES,
-    type JournalConfig,
-} from "./journal-contracts";
-import {safeQuery, sqlAttemptStates, sqlTextLiterals, validateConfig} from "./journal-internal";
+import {ATTEMPT_STATES, type JournalConfig} from "./journal-contracts";
+import {safeQuery, sqlAttemptStates, validateConfig} from "./journal-internal";
 
-export async function bootstrapJournal(
-    session: PgSession,
-    config: JournalConfig,
-): Promise<ValidationResult<true>> {
-    const checked = validateConfig(config);
-    if (!checked.ok) return checked;
-    const schema = quotePgIdentifier(checked.value.schema);
-
+function executionAttemptTable(schema: string): string {
     const attemptStatesSql = sqlAttemptStates(ATTEMPT_STATES);
-    const verificationStatusesSql = sqlTextLiterals(VERIFICATION_STATUSES);
-    const readinessStatesSql = sqlTextLiterals(DEPLOYMENT_READINESS_STATES);
-    const statements = [
-        ...historySchemaStatements(checked.value.schema),
-        `CREATE TABLE IF NOT EXISTS ${schema}.execution_attempt (
+    return `CREATE TABLE IF NOT EXISTS ${schema}.execution_attempt (
             attempt_id text PRIMARY KEY,
             deployment_id text NOT NULL,
             installation_id text NOT NULL,
@@ -34,66 +18,19 @@ export async function bootstrapJournal(
             problems jsonb NOT NULL DEFAULT '[]'::jsonb,
             started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
             finished_at timestamptz NULL
-        )`,
-        // A first-install attempt precedes the confirmed installation. Keep the
-        // durable attempt even when installation fails or its commit is unknown.
-        `ALTER TABLE ${schema}.execution_attempt DROP CONSTRAINT IF EXISTS execution_attempt_installation_id_fkey`,
-        `CREATE TABLE IF NOT EXISTS ${schema}.preparation_attempts (
-            attempt_id text PRIMARY KEY,
-            installation_id text NOT NULL REFERENCES ${schema}.installation(installation_id),
-            preparation_id text NOT NULL,
-            artifact_hash text NOT NULL,
-            state text NOT NULL CHECK (state IN (${attemptStatesSql})),
-            before_fingerprint text NOT NULL,
-            after_fingerprint text NULL,
-            report_hash text NOT NULL,
-            problems jsonb NOT NULL DEFAULT '[]'::jsonb,
-            started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-            finished_at timestamptz NULL
-        )`,
-        `CREATE TABLE IF NOT EXISTS ${schema}.preparations (
-            installation_id text NOT NULL REFERENCES ${schema}.installation(installation_id),
-            ordinal integer NOT NULL CHECK (ordinal > 0),
-            preparation_id text NOT NULL,
-            artifact_hash text NOT NULL,
-            head_system_id text NOT NULL,
-            head_release_id text NOT NULL,
-            head_release_hash text NOT NULL,
-            before_fingerprint text NOT NULL,
-            after_fingerprint text NOT NULL,
-            report_hash text NOT NULL,
-            committed_at text NOT NULL,
-            PRIMARY KEY (installation_id, ordinal),
-            UNIQUE (installation_id, preparation_id),
-            UNIQUE (installation_id, artifact_hash)
-        )`,
-        `CREATE TABLE IF NOT EXISTS ${schema}.verification_run (
-            verification_id text PRIMARY KEY,
-            deployment_id text NOT NULL,
-            ordinal integer NOT NULL CHECK (ordinal > 0),
-            binding jsonb NOT NULL,
-            status text NOT NULL CHECK (status IN (${verificationStatusesSql})),
-            checks jsonb NOT NULL,
-            created_at text NOT NULL,
-            UNIQUE (deployment_id, ordinal)
-        )`,
-        `CREATE TABLE IF NOT EXISTS ${schema}.deployment_readiness (
-            deployment_id text PRIMARY KEY,
-            installation_id text NOT NULL,
-            binding jsonb NOT NULL,
-            state text NOT NULL CHECK (state IN (${readinessStatesSql})),
-            verification_id text NULL,
-            apply_attempt_id text NULL,
-            confirmed_target_system_id text NULL,
-            confirmed_target_release_id text NULL,
-            confirmed_target_release_hash text NULL,
-            problems jsonb NOT NULL DEFAULT '[]'::jsonb,
-            updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
-        )`,
-    ];
+        )`;
+}
 
-    for (const statement of statements) {
-        const result = await safeQuery(session, statement, []);
+/** Only pointer, committed history and execution failures are migration journal state. */
+export async function bootstrapJournal(session: PgSession, config: JournalConfig): Promise<ValidationResult<true>> {
+    const checked = validateConfig(config);
+    if (!checked.ok) return checked;
+    const existing = await safeQuery(session, "SELECT EXISTS (SELECT FROM pg_namespace WHERE nspname = $1) AS present", [checked.value.schema]);
+    if (!existing.ok) return existing;
+    const history = historySchemaStatements(checked.value.schema);
+    const statements = existing.value.rows[0]?.present === true ? history.slice(1) : history;
+    for (const sql of [...statements, executionAttemptTable(quotePgIdentifier(checked.value.schema))]) {
+        const result = await safeQuery(session, sql, []);
         if (!result.ok) return result;
     }
     return {ok: true, value: true};

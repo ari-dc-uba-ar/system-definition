@@ -11,6 +11,7 @@ import type {
     AuthoringBaseInfo,
     ChangeImpact,
     FieldRefInfo,
+    EntityRefInfo,
     RenameInfo,
     StructureChangeInfo,
     StructureDifferenceInfo,
@@ -28,7 +29,7 @@ type Correspondence = {
     authoredRename: boolean;
 };
 
-type ChangeWithoutId = Omit<StructureChangeInfo, "id">;
+type ChangeWithoutId = {[TAction in StructureChangeInfo["action"]]: Omit<Extract<StructureChangeInfo, {action: TAction}>, "id">}[StructureChangeInfo["action"]];
 
 function fail<T>(
     messageKey: string,
@@ -47,7 +48,7 @@ function cloneIdentity(identity: PgObjectIdentity): PgObjectIdentity {
     };
 }
 
-function isFieldRef(value: RenameInfo["before"]): value is FieldRefInfo {
+function isFieldRef(value: FieldRefInfo | EntityRefInfo): value is FieldRefInfo {
     return Object.prototype.hasOwnProperty.call(value, "field");
 }
 
@@ -305,16 +306,19 @@ function makeChange(
     from: ObjectMap,
     to: ObjectMap,
 ): ChangeWithoutId {
-    return {
-        action,
+    const common = {
         origin,
         impact: changeImpact(before, after, differences),
-        before: before === null ? null : cloneIdentity(before.identity),
-        after: after === null ? null : cloneIdentity(after.identity),
         differences: differences.map(one => ({path: [...one.path], before: one.before, after: one.after})),
         affectedFields: affectedFields(before, after, from, to),
         dependsOn: [],
     };
+    switch (action) {
+    case "add": return {...common, action, before: null, after: cloneIdentity(after!.identity)};
+    case "remove": return {...common, action, before: cloneIdentity(before!.identity), after: null};
+    case "alter": return {...common, action, before: cloneIdentity(before!.identity), after: cloneIdentity(after!.identity)};
+    case "rename": return {...common, action, before: cloneIdentity(before!.identity), after: cloneIdentity(after!.identity)};
+    }
 }
 
 export function inferStructureChanges(

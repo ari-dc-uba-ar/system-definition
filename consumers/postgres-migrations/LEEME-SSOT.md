@@ -37,10 +37,9 @@ los contratos existentes `SystemSnapshotInfo` y `PersistenceInfo` del core.
 El loader usa `decodeSystemSnapshot` y `decodePersistence` y rechaza mappings
 ausentes, incompletos, extra o desconocidos antes de conectarse a PostgreSQL.
 No hay defaults por nombre lógico ni inferencia desde los tipos de TypeScript.
-Este paso carga el modelo y permite conocer sus entidades. La integración
-de creación, permisos, generación y ejecución de migraciones se refactorizará
-por separado. `capture` y `assess` requieren `--ssot`; el adaptador anterior de
-captura con `--project` fue eliminado. Los demás comandos conservan su implementación.
+Este paso carga el modelo y permite conocer sus entidades. Todos los comandos
+de autoría, estado y aplicación usan estos inputs; no requieren un adaptador
+`MigrationProject`. `resolve` sólo necesita el draft y sus respuestas.
 
 ## Base y usuarios provistos por la aplicación
 
@@ -51,19 +50,19 @@ import type {DatabaseSettings} from '@system-definition/postgres-migrations/data
 export const databaseSettings = {
     database: {host: 'localhost', port: 5432, database: 'mi-base', schema: 'app'},
     initialUser: {user: 'provisioning_admin', password: process.env['PROVISIONING_PASSWORD']},
-    owner: 'schema_owner',
-    appUser: 'app_user',
+    owner: {user: 'schema_owner', password: process.env['OWNER_PASSWORD']},
+    appUser: {user: 'app_user', password: process.env['APP_PASSWORD']},
 } satisfies DatabaseSettings;
 ```
 
 `database` usa el `ClientConfig` del driver PostgreSQL, con base y schema
-requeridos. `owner` y `appUser` son identidades distintas; la aplicación determina
+requeridos. `owner` y `appUser` también usan `ClientConfig`, con `user` requerido; sus identidades son distintas. La aplicación determina
 sus nombres. `initialUser` usa el mismo `ClientConfig`, con `user` requerido:
 la aplicación suministra la conexión y credenciales para crear inicialmente los
 roles y sus permisos. Se combinará con `database` para ese paso; el consumidor
 no lee variables de entorno específicas de la aplicación.
 `loadDatabaseSettings` carga este valor sin conectarse ni modificar
-roles. El usuario owner se usará para migraciones y el appUser para datos.
+roles. El usuario owner ejecuta migraciones y el appUser opera los datos.
 
 ```sh
 postgres-migrations capture --ssot dist/system.js --database dist/database.js
@@ -179,41 +178,13 @@ incluir el objeto afectado. Declarar un DROP no sustituye la decisión sobre los
 datos eliminados. El compilador conserva las verificaciones de SQL real y replay;
 esta validación comprueba las decisiones y sus referencias, no ejecuta recursos.
 
-El flujo existente `infer --project ... --out draft.json` guarda preguntas para
-`destructive` y `dataRequired`. Se responden mediante `resolve --draft draft.json
---report draft.json.conflict.json --answers answers.json`. Las respuestas están
-ligadas al hash del draft y del reporte. Para un check, una respuesta puede ser:
-
-```json
-{
-  "questionId": "<ID del cambio>",
-  "kind": "dataRequired",
-  "decision": {
-    "changeId": "<ID del cambio>",
-    "source": null,
-    "partitionCheck": null,
-    "resolution": {
-      "kind": "check",
-      "run": {"kind": "check", "name": "datos-validos", "contentHash": "<SHA-256 del recurso>"}
-    }
-  }
-}
-```
-
-Ese objeto va en `answers` del archivo existente, con `formatVersion`, `reportHash`,
-`draftHash` y `draft`. El recurso SQL debe estar registrado en los recursos de la
-migración; una descripción sin recurso no autoriza aplicar el cambio. El prompt
-interactivo actual conserva las decisiones destructivas; los demás casos usan el
-archivo de respuestas. La carga por `--ssot` sigue limitada al modelo y assessment;
-la composición completa del draft con esa entrada se integrará por separado.
-
 ## Recoger decisiones de una migración
 
 `collectMigrationDecisions(draft, answers)` usa los tipos existentes del draft y de
 sus decisiones. Las respuestas contienen solamente `id`, `revisionHash` y
 `decisions`: identifican la migración y la revisión exacta que el usuario leyó.
 Se reutilizan el decoder de decisiones, el validador de readiness y el hash del
-draft. El mismo collector también se usa desde el resolver anterior con reports.
+draft. Inference, resolución y compilación comparten esta validación.
 
 ```sh
 postgres-migrations resolve --draft migration-draft.json --answers answers.json
@@ -286,9 +257,9 @@ canónica cubierta por el hash del manifiesto; se eliminó la copia redundante
 sus hashes y el orden capture → prepare → write → finish del ensamblador existente.
 Los checkpoints tipan sus checks con `ResourceRefInfo` en el contrato ya existente.
 
-La creación del manifiesto se comparte con replay. El comando `generate --project`
-conserva el compiler/verificador y usa el mismo saver; la nueva API permite sólo
-ensamblar/guardar cuando la verificación se hace por separado. Guardar no equivale
+La creación del manifiesto se comparte con replay. `generate --ssot` reutiliza
+el ensamblador y saver, y liga los estados origen/destino al manifiesto. La API de
+biblioteca permite ensamblar/guardar con verificación separada. Guardar no equivale
 a verificar ni aplicar. Los readers existentes siguen validando los artifacts.
 
 ## Verificar los archivos de una migración
@@ -381,3 +352,60 @@ const pending = state.value.migrations.filter(migration => !migration.applied);
 Se eliminaron los wrappers sin callers que reconstruían historia mediante un
 replay completo de verificación y que sólo comprobaban presencia de una release.
 El replay y sus garantías siguen en el ejecutor/verificador cuando corresponden.
+
+
+## Autoría directa desde el SSOT
+
+`infer` y `generate` aceptan los módulos de SSOT/base sin `MigrationProject`.
+`infer --id <id> --directory <dir> --draft <file>` guarda el draft y sus estados.
+`generate --draft <file>` valida decisiones/bindings, ensambla y publica la migración.
+El catálogo es una secuencia explícita; cada migración nueva contiene sus estados
+origen/destino como `FileInfo` ligados al authoring. Los readers verifican sus bytes.
+`--baseline <release-dir>` importa una release inicial publicada sin reescribirla.
+Los estados guardan el schema SQL proyectado; la comparación normaliza ambos lados.
+
+`data --id <id> --sql <file> --contract <file>` genera una migración independiente
+con schema sin cambios y efectos SQL declarados mediante `AddSqlContractInfo`.
+Los checks y transformaciones adicionales pueden usar el export opcional
+`migrationAuthoring: SsotAuthoringRuntime`, que reutiliza solamente `readSql`,
+`readQuery` y `loadDataContext` del runtime existente. No exige callbacks de releases,
+historia, deployment o replay. Guardar SQL no lo ejecuta.
+
+`provisionDatabase(session, settings)` usa la conexión administrativa inicial para
+crear roles faltantes y el schema del owner, con privilegios de datos para app.
+`grantAppPermissions` y `verifyDatabasePermissions` son pasos separados: el verifier
+lee ownership y privilegios de todas las tablas esperadas y rechaza app administrativo,
+miembro de owner o con CREATE en el schema. Owner/app incluyen sus credenciales
+en los settings; el CLI sólo expone nombres.
+
+## Aplicar y consultar estado
+
+```sh
+postgres-migrations apply --ssot dist/system.js --database dist/database.js
+postgres-migrations status --ssot dist/system.js --database dist/database.js
+```
+
+`apply` reutiliza inferencia y generación cuando el SSOT cambia. Si falta una
+resolución, guarda el draft y devuelve los cambios pendientes sin aplicar SQL.
+Después de completar las decisiones con `resolve`, se puede repetir `apply`.
+Para una base que ya tenga una release inicial publicada, suministrar
+`--baseline <release-dir>` al importar el catálogo; sus archivos se conservan.
+
+La conexión `initialUser` crea inicialmente roles y schemas del owner, incluido
+el journal. El owner no necesita CREATE sobre toda la base. Las operaciones y
+el historial usan conexiones del owner; la aplicación sólo recibe permisos CRUD
+sobre las tablas esperadas. El journal contiene installation, migration_history
+y execution_attempt. Se conservaron sus formatos, sin borrar historial existente.
+
+La aplicación valida los archivos, el prefijo aplicado y el drift del head guardado
+antes de ejecutar. Un lock de sesión evita ejecuciones concurrentes. Cada migración
+verifica schema/constraints, checks de datos declarados y permisos dentro de su
+transacción, antes de registrar éxito y avanzar el puntero atómicamente.
+Los fallos revierten SQL y dejan una tentativa registrada. Los resultados inciertos
+de commit/rollback se reconcilian con el puntero; una conexión anterior todavía
+activa bloquea esa reconciliación. `status` lee el historial y comprueba drift.
+
+Se eliminaron activación de deployments, readiness, política de rehearsal y
+preparaciones correctivas con historial separado. El drift sigue requiriendo
+reconciliación explícita del usuario; no se corrige automáticamente. Los documentos
+T01–T23 describen el diseño histórico y no son el contrato del CLI actual.

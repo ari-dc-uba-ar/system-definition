@@ -2,14 +2,14 @@
    This uses an owned scratch database: generation never changes an installation. */
 import {resolve} from "node:path";
 import {AuthoringFiles, buildValidationArtifact, createPostgresAuthoringRuntime, createPostgresScratch,
-    type MigrationProject, type ReleaseVerificationInput, type ValidationArtifactInfo} from "@system-definition/postgres-migrations";
+    type ReleaseVerificationInput, type ValidationArtifactInfo} from "@system-definition/postgres-migrations";
 import {copyEmail, emailSource, copyEmailSql, conservationCheck, conservationSql, manualRef, manualSql,
     destructiveDraft, inferredDraft, dataOnlyDraft, manualDraft, legacyRelease, expandedRelease, populatedRelease, currentRelease} from "./student-migrations";
 import {studentPersistence, studentStorage} from "./student-storage";
 import {valueOf} from "./support";
 
 export type StudentExample = "inferred" | "data" | "destructive" | "manual";
-export async function studentProject(kind: StudentExample = "destructive"): Promise<MigrationProject> {
+export async function studentProject(kind: StudentExample = "destructive") {
     const draft = {inferred: inferredDraft, data: dataOnlyDraft, destructive: destructiveDraft, manual: manualDraft}[kind];
     const source = kind === "data" ? expandedRelease : legacyRelease;
     const target = kind === "data" ? populatedRelease : kind === "destructive" ? currentRelease : expandedRelease;
@@ -49,6 +49,4 @@ export async function studentProject(kind: StudentExample = "destructive"): Prom
     return {authoring: {draft, context, files, runtime}};
 }
 
-// Runnable CLI module: postgres-migrations generate --project <this compiled file> --out <new directory>.
 // Other scenarios are selected by importing studentProject("inferred" | "data" | "manual").
-export const createMigrationProject = () => studentProject("destructive");

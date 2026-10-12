@@ -35,8 +35,6 @@ export type CommitOutcomeInfo = {
     state: CommitOutcomeState;
     confirmedHead: ReleaseRefInfo | null;
     retryAllowed: boolean;
-    deploymentBlocked: boolean;
-    keepMaintenance: true;
     problems: readonly Problem[];
 };
 
@@ -109,8 +107,6 @@ function outcome(
         state,
         confirmedHead,
         retryAllowed: state === "failed",
-        deploymentBlocked: state !== "succeeded",
-        keepMaintenance: true,
         problems,
     };
 }

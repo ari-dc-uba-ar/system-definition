@@ -14,11 +14,7 @@ assert.throws(() => omitJsonObjectKeys([], ["x"]), /strict JSON object/);
 
 for (const file of [
   "artifact.ts",
-  "conflict-report.ts",
-  "preparation-artifact.ts",
-  "preparation-history.ts",
   "validation-artifact.ts",
-  "resolve-conflict.ts",
 ]) {
   const source = fs.readFileSync(`consumers/postgres-migrations/src/${file}`, "utf8");
   assert.equal(/createHash\("sha256"\)\.update\(canonicalJson\(/.test(source), false, `${file} must delegate canonical JSON hashing`);

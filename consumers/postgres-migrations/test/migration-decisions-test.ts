@@ -21,7 +21,7 @@ const collectorContract: CollectorContract = true;
 type GateContract = Expect<Equal<typeof validateMigrationDecisions, (changes: readonly StructureChangeInfo[], draft: Pick<MigrationDraftInfo, "decisions" | "data" | "manual">) => ValidationResult<true>>>;
 const gateContract: GateContract = true;
 const column = (name: string) => ({schema: "app", kind: "column", name, parentName: "people", signature: []});
-const required = (id: string, name: string): StructureChangeInfo => ({id, action: "add", origin: "inferred", impact: "requiresDataCheck",
+const required = (id: string, name: string): Extract<StructureChangeInfo, {action: "add"}> => ({id, action: "add", origin: "inferred", impact: "requiresDataCheck",
     before: null, after: column(name), differences: [], affectedFields: [{side: "to", entity: "people", field: name}], dependsOn: []});
 const code = required("migration-A:code", "code"), name = required("migration-A:name", "name");
 const fill: DataMigrationInfo = {

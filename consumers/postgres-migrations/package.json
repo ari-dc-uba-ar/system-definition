@@ -9,7 +9,7 @@
     "build": "tsc",
     "test": "tsc && mocha --exit --node-option enable-source-maps \"dist/test/*-test.js\"",
     "test-ci": "tsc && c8 mocha --exit --node-option enable-source-maps \"dist/test/*-test.js\"",
-    "test-integration": "npm run build && npm --prefix ../.. run build:examples && node scripts/test-integration.js && node scripts/test-authoring-integration.js && node scripts/test-conflict-resolution-integration.js && node scripts/test-cli-integration.js && node scripts/test-first-install-integration.js",
+    "test-integration": "npm run build && npm --prefix ../.. run build:examples && node scripts/test-integration.js && node scripts/test-authoring-integration.js && node scripts/test-permissions-integration.js && node scripts/test-ssot-apply-integration.js",
     "docs:generate": "node scripts/generate-readme.js",
     "docs:check": "node scripts/generate-readme.js --check",
     "prebuild": "npm run bootstrap-repository",

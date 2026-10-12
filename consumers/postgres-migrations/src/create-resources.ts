@@ -1,11 +1,11 @@
 import {
-    compareUtf16,
     problem,
     sameContentRef,
     type ValidationResult,
 } from "system-definition";
 import type {InspectionInfo} from "./inspect-schema";
 import {pgIdentityKey} from "./pg-identity";
+import {orderDependencies} from "./dependency-order";
 import type {
     CreateResourceInfo,
     PgObjectIdentity,
@@ -82,50 +82,14 @@ export function prepareCreateResources(
         }
     }
 
-    const indegree = new Map<string, number>();
-    const dependents = new Map<string, string[]>();
-    for (const resource of storage.createResources) {
-        indegree.set(resource.id, resource.dependsOn.length);
-        dependents.set(resource.id, []);
-    }
-    for (const resource of storage.createResources) {
-        for (const dependency of resource.dependsOn) {
-            dependents.get(dependency)?.push(resource.id);
-        }
-    }
-    for (const values of dependents.values()) values.sort(compareUtf16);
-
-    const ready = [...indegree.entries()]
-        .filter(([, count]) => count === 0)
-        .map(([id]) => id)
-        .sort(compareUtf16);
-    const ordered: CreateResourceInfo[] = [];
-
-    while (ready.length > 0) {
-        const id = ready.shift();
-        if (id === undefined) break;
-        const resource = byId.get(id);
-        if (resource === undefined) continue;
-        ordered.push({
-            id: resource.id,
-            run: {...resource.run},
-            dependsOn: [...resource.dependsOn],
-            expectedObjects: resource.expectedObjects.map(object => ({...object, signature: [...object.signature]})),
-        });
-        for (const dependent of dependents.get(id) ?? []) {
-            const next = (indegree.get(dependent) ?? 0) - 1;
-            indegree.set(dependent, next);
-            if (next === 0) {
-                ready.push(dependent);
-                ready.sort(compareUtf16);
-            }
-        }
-    }
-
-    if (ordered.length !== storage.createResources.length) {
+    const ordered = orderDependencies(storage.createResources);
+    if (ordered === null) {
         return fail("migration.invalidReference", {reason: "create resource dependency graph contains a cycle"});
     }
-    return {ok: true, value: ordered};
+    return {ok: true, value: ordered.map(resource => ({
+        id: resource.id, run: {...resource.run}, dependsOn: [...resource.dependsOn],
+        expectedObjects: resource.expectedObjects.map(object => ({...object, signature: [...object.signature]})),
+    }))};
 }
 
 export function validateExpectedObjects(

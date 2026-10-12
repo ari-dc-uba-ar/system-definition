@@ -6,7 +6,7 @@ const {randomUUID} = require("node:crypto");
 const {
     compileDraft, compiledArtifact, createPostgresScratch, buildReleaseOnScratch, inspectSchema,
     bootstrapJournal, installBaseline, resolveMigrationExecutionContext, executeMigrationPath, buildMigrationPlan,
-    readInstallation, checkDeploymentReady, recordVerification, checkApplyEligibility,
+    readInstallation,
 } = require("../dist/src/index.js");
 const {studentProject} = require("../../../examples/postgres-migrations/dist/student-runtime.js");
 const {legacyRelease, currentRelease} = require("../../../examples/postgres-migrations/dist/student-migrations.js");
@@ -54,19 +54,6 @@ async function lateFailure(compiled, files) {
         const rows = await source.session.query('SELECT "legacyEmail", "legacyNote" FROM app.students', []);
         assert.deepEqual(rows.rows, [{legacyEmail: "original@example.org", legacyNote: "Keep until commit"}], "all data preserved");
         assert.deepEqual(value(await readInstallation(source.session, journal, scope)).current, legacyRelease.ref);
-        const binding = {deploymentId: randomUUID(), installationId: source.id, candidateApplicationHash: textHash("candidate"),
-            planHash: plan.planHash, operation: "upgrade", from: legacyRelease.ref, to: currentRelease.ref,
-            engineVersion: "18.6", schemas: ["app"], configurationHash: textHash("configuration"), maintenanceId: "maintenance", production: false};
-        // A failed run supersedes any previous success and blocks both entry points.
-        value(await recordVerification(source.session, journal, {verificationId: randomUUID(), binding,
-            createdAt: new Date().toISOString(), checks: [{id: "rollback-check", kind: "structure", status: "failed", reportId: randomUUID(), problems: execution.problems}]}));
-        assert.equal((await checkApplyEligibility(binding, {session: source.session, journal})).ok, false);
-        let activations = 0;
-        const gate = await checkDeploymentReady(binding, {session: source.session, journal,
-            maintenance: {async isActive() { return true; }}, async finalChecks() { return {ok: true, value: true}; }});
-        if (gate.ok) activations++;
-        assert.equal(gate.ok, false);
-        assert.equal(activations, 0);
     } finally {
         value(await scratch.destroy(source));
         value(await scratch.destroy(target));

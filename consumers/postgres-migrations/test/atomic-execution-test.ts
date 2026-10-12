@@ -342,6 +342,29 @@ describe("atomic migration execution", () => {
         assert.equal(session.calls.some(one => /WITH\s+current_installation/i.test(one.text)), false);
     });
 
+    it("rolls back a permission failure before recording success", async () => {
+        const session = new AtomicSession(true);
+        const ctx = context();
+        ctx.to.verifyPermissions = async () => ({ok: false, problems: [{field: null, messageKey: "migration.permissionsInvalid", severity: "blocking", details: {}}]});
+        const result = await executeMigration(session, published, ctx);
+        assert.equal(result.ok, false);
+        assert.equal(session.tagPresent, false);
+        assert.equal(session.dataChanged, false);
+        assert.equal(session.journalAdvanced, false);
+        assert.equal(countCalls(session, /^COMMIT$/i), 0);
+        assert.equal(countCalls(session, /^ROLLBACK$/i), 1);
+    });
+    it("reports an unconfirmed rollback separately from a known failed migration", async () => {
+        const backing = new AtomicSession(false);
+        const session: PgSession = {async query(sql, params) {
+            if (sql === "ROLLBACK") throw new Error("connection lost during rollback");
+            return backing.query(sql, params);
+        }, close: () => backing.close()};
+        const result = await executeMigration(session, published, context());
+        assert.equal(result.ok, false);
+        if (!result.ok) assert.ok(result.problems.some(one => one.messageKey === "migration.rollbackUnknown"));
+        assert.equal(countCalls(backing, /^COMMIT$/i), 0);
+    });
     it("blocks source drift before migration resources and confirms history/head before the single commit on success", async () => {
         const drifted = new AtomicSession(true, true);
         const blocked = await executeMigration(drifted, published, context());

@@ -12,9 +12,6 @@ assert.equal(sameReleaseRef(base, {...base, releaseHash: "b".repeat(64)}), false
 for (const relative of [
     "consumers/postgres-migrations/src/journal-internal.ts",
     "consumers/postgres-migrations/src/recovery.ts",
-    "consumers/postgres-migrations/src/deployment-gate.ts",
-    "consumers/postgres-migrations/src/evidence.ts",
-    "consumers/postgres-migrations/src/resolve-conflict.ts",
 ]) {
     const source = fs.readFileSync(path.join(__dirname, "..", relative), "utf8");
     assert.doesNotMatch(
@@ -24,19 +21,6 @@ for (const relative of [
     );
 }
 
-const evidence = fs.readFileSync(
-    path.join(__dirname, "../consumers/postgres-migrations/src/evidence.ts"),
-    "utf8",
-);
-assert.match(evidence, /\bsameOptionalReleaseRef\(/);
-assert.doesNotMatch(evidence, /function sameOptionalRelease/);
-
-const resolver = fs.readFileSync(
-    path.join(__dirname, "../consumers/postgres-migrations/src/resolve-conflict.ts"),
-    "utf8",
-);
-assert.match(resolver, /\bsameOptionalReleaseRef\(/);
-assert.doesNotMatch(resolver, /function sameOptionalRelease/);
 assert.equal(sameOptionalReleaseRef(null, null), true);
 assert.equal(sameOptionalReleaseRef(null, base), false);
 assert.equal(sameOptionalReleaseRef(base, null), false);

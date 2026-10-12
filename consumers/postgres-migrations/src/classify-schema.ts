@@ -23,8 +23,8 @@ export function classifySchemaDifference(difference: SchemaDifferenceInfo): Chan
             return kind === "constraint" || kind === "index" || kind === "view" ? "preserving" : "unsupported";
         }
         if (kind === "column") return object.nullable === true ? "preserving" : "requiresDataCheck";
-        if (kind === "constraint" || kind === "index") return "requiresDataCheck";
-        return kind === "table" || kind === "view" || kind === "routine" ? "preserving" : "unsupported";
+        if (kind === "constraint") return object.constraintKind === "check" ? "unsupported" : "requiresDataCheck";
+        return kind === "table" ? "preserving" : "unsupported";
     }
     if (kind === "column") {
         const attribute = path[5];
@@ -34,7 +34,7 @@ export function classifySchemaDifference(difference: SchemaDifferenceInfo): Chan
         return "unsupported";
     }
     if (kind === "constraint") return "requiresDataCheck";
-    return kind === "view" || kind === "routine" ? "preserving" : "unsupported";
+    return "unsupported";
 }
 
 export function classifySchemaDifferences(comparison: SchemaComparisonInfo): SchemaClassificationInfo {

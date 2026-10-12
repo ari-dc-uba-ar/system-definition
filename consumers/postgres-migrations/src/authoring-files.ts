@@ -1,8 +1,8 @@
 import {sha256Hex} from "./canonical-hash";
-import type {FileInfo, ValidationResult} from "system-definition";
+import type {ContentRefInfo, FileInfo, ResourceRefInfo, ValidationResult} from "system-definition";
 
 export type AuthoredResource = {
-    ref: {name: string; kind: "sql" | "check" | "query"; contentHash: string};
+    ref: ContentRefInfo<ResourceRefInfo["kind"] | "query">;
     text: string;
 };
 

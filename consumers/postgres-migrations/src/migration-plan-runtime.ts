@@ -1,6 +1,5 @@
 import {
-    isPlainObject,
-    isSha256,
+    decodeFileResourceInfo,
     type FileInfo,
     type Problem,
     type PublishedMigrationInfo,
@@ -61,33 +60,18 @@ function validationFailure<T>(problems: readonly Problem[]): ArtifactResult<T> {
     };
 }
 
-function isFileInfo(value: unknown): value is FileInfo {
-    if (!isPlainObject(value)) return false;
-    const candidate = value as Partial<FileInfo>;
-    return typeof candidate.path === "string"
-        && candidate.path.length > 0
-        && typeof candidate.contentHash === "string"
-        && isSha256(candidate.contentHash)
-        && typeof candidate.byteLength === "number"
-        && Number.isSafeInteger(candidate.byteLength)
-        && candidate.byteLength >= 0;
-}
-
 function queryFile(
     name: string,
     value: QueryResourceInfo,
 ): ArtifactResult<FileInfo> {
-    if (name.length === 0
-        || value === null
-        || typeof value !== "object"
-        || value.kind !== "query"
-        || !isFileInfo(value.file)) {
+    if (name.length === 0) {
         return failure("migration.invalidReference", {
             name,
             reason: "invalid authored query resource metadata",
         });
     }
-    return {ok: true, value: value.file};
+    const decoded = decodeFileResourceInfo(value, name, "query", (path, reason) => failure("migration.invalidReference", {path, reason}));
+    return decoded.ok ? {ok: true, value: decoded.value.file} : validationFailure(decoded.problems);
 }
 
 async function resolveQueries(

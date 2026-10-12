@@ -5,7 +5,6 @@ const {
     bootstrapJournal,
     finishAttempt,
     startAttempt,
-    startPreparationAttempt,
 } = require("../consumers/postgres-migrations/dist/src/journal.js");
 
 const hash = "a".repeat(64);
@@ -34,11 +33,8 @@ function session(handler) {
     assert.equal(bootstrapped.ok, true);
     const stateSql = ATTEMPT_STATES.map(state => `'${state}'`).join(",");
     const executionDdl = ddlSession.calls.find(call => call.text.includes("CREATE TABLE IF NOT EXISTS \"journal\".execution_attempt"));
-    const preparationDdl = ddlSession.calls.find(call => call.text.includes("CREATE TABLE IF NOT EXISTS \"journal\".preparation_attempts"));
     assert.ok(executionDdl);
-    assert.ok(preparationDdl);
     assert.ok(executionDdl.text.includes(`CHECK (state IN (${stateSql}))`));
-    assert.ok(preparationDdl.text.includes(`CHECK (state IN (${stateSql}))`));
 
     const runningRow = {
         attempt_id: "attempt-1",
@@ -82,30 +78,6 @@ function session(handler) {
     assert.equal(runningFinish.ok, false);
     assert.equal(runningFinish.problems[0].details.reason, "invalid attempt finish input");
     assert.equal(finishSession.calls.length, 0);
-
-    const preparationRow = {
-        attempt_id: "prep-attempt-1",
-        installation_id: "installation-1",
-        preparation_id: "prep-1",
-        artifact_hash: hash,
-        state: ATTEMPT_STATE.running,
-        before_fingerprint: hash,
-        after_fingerprint: null,
-        report_hash: hash,
-        problems: [],
-    };
-    const preparationSession = session(async () => ({rows: [preparationRow], rowCount: 1}));
-    const preparation = await startPreparationAttempt(preparationSession, {schema: "journal"}, {
-        attemptId: "prep-attempt-1",
-        installationId: "installation-1",
-        preparationId: "prep-1",
-        artifactHash: hash,
-        beforeFingerprint: hash,
-        reportHash: hash,
-    });
-    assert.equal(preparation.ok, true);
-    assert.equal(preparation.value.state, ATTEMPT_STATE.running);
-    assert.match(preparationSession.calls[0].text, /VALUES \(\$1,\$2,\$3,\$4,'running'/);
 
     console.log("journal attempt-state SSOT tests passed");
 })().catch(error => { console.error(error); process.exitCode = 1; });

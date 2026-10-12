@@ -28,6 +28,11 @@ function classify(before: readonly PgObjectInfo[], after: readonly PgObjectInfo[
 }
 
 describe("pure migration difference classification", () => {
+    it("marks view additions and edits unsupported rather than automatically preserving", () => {
+        const view: PgObjectInfo = {kind: "view", identity: {schema: "app", kind: "view", name: "v", parentName: null, signature: []}, definition: "SELECT 1", columns: ["n"], options: {}};
+        assert.equal(classify([], [view]).differences[0]?.impact, "unsupported");
+        assert.equal(classify([view], [{...view, definition: "SELECT 2"}]).differences[0]?.impact, "unsupported");
+    });
     it("reuses comparison and impact contracts without release/history inputs", () => {
         assert.deepEqual(contracts, [true, true]);
         assert.deepEqual(classify([people, name], [people, name]), {equal: true, differences: []});

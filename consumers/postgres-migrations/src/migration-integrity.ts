@@ -55,5 +55,9 @@ export async function verifyMigrationFiles(directory: string, expected: Publishe
         const bytes = await reader.readVerified(artifact.value.entry);
         if (!bytes.ok) return bytes;
     }
+    for (const file of Object.values(authoring.states ?? {})) {
+        const read = await reader.readVerified(file);
+        if (!read.ok) return read;
+    }
     return verified;
 }

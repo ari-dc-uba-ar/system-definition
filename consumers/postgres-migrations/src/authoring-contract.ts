@@ -41,24 +41,30 @@ export type StructureDifferenceInfo = Pick<SchemaDifferenceInfo, "path" | "befor
 
 export type StructureChangeInfo = {
     id: string;
-    action: "add" | "remove" | "alter" | "rename";
     origin: "inferred" | "authored";
     impact: ChangeImpact;
-    before: PgObjectIdentity | null;
-    after: PgObjectIdentity | null;
     differences: readonly StructureDifferenceInfo[];
     affectedFields: readonly FieldRefInfo[];
     dependsOn: readonly string[];
-};
+} & (
+    | {action: "add"; before: null; after: PgObjectIdentity}
+    | {action: "remove"; before: PgObjectIdentity; after: null}
+    | {action: "alter"; before: PgObjectIdentity; after: PgObjectIdentity}
+    | {action: "rename"; before: PgObjectIdentity; after: PgObjectIdentity}
+);
 
 export type EntityRefInfo = {
     entity: string;
+    field?: never;
 };
 
-export type RenameInfo = {
-    before: FieldRefInfo | EntityRefInfo;
-    after: FieldRefInfo | EntityRefInfo;
-};
+export type RenameInfo =
+    | {before: FieldRefInfo & {side: "from"}; after: FieldRefInfo & {side: "to"}}
+    | {before: EntityRefInfo; after: EntityRefInfo};
+
+export function isFieldRename(rename: RenameInfo): rename is Extract<RenameInfo, {before: FieldRefInfo}> {
+    return Object.hasOwn(rename.before, "field");
+}
 
 export type DataDecisionInfo = {
     changeId: string;
@@ -276,4 +282,5 @@ export type CompiledAuthoringInfo = {
     checkpoints: readonly {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]}[];
     queryResources: Readonly<Record<string, QueryResourceInfo>>;
     validationArtifacts: readonly unknown[];
+    states?: {from: FileInfo; to: FileInfo};
 };

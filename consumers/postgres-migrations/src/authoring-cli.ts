@@ -1,4 +1,3 @@
-import {createHash} from "node:crypto";
 import {
     hasExactKeys,
     isPlainObject,
@@ -7,7 +6,7 @@ import {
     type Problem,
     type ValidationResult,
 } from "system-definition";
-import {canonicalJsonSha256} from "./canonical-hash";
+import {canonicalJsonSha256, sha256Hex} from "./canonical-hash";
 import {computeDraftRevisionHash} from "./draft-revision";
 import type {ManualStepInfo, MigrationDraftInfo, PendingQuestionInfo} from "./authoring-contract";
 import {
@@ -302,7 +301,7 @@ export async function runAddSqlSession(options: AddSqlSessionOptions): Promise<A
         );
     }
 
-    const contentHash = createHash("sha256").update(options.file.text, "utf8").digest("hex");
+    const contentHash = sha256Hex(options.file.text);
     const {resourceName, ...contract} = options.contract;
     const step: ManualStepInfo = {
         ...contract,

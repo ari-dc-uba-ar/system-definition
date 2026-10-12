@@ -19,7 +19,6 @@ assert.equal(matchesPostgresSupport({...POSTGRES_SUPPORT, version: "18.7"}), fal
 for (const relative of [
     "consumers/postgres-migrations/src/artifact.ts",
     "consumers/postgres-migrations/src/pg-schema.ts",
-    "consumers/postgres-migrations/src/evidence.ts",
     "consumers/postgres-migrations/src/inspect-schema.ts",
     "consumers/postgres-migrations/src/compare-schema.ts",
 ]) {
