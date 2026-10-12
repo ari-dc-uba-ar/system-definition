@@ -182,10 +182,42 @@ interactivo actual conserva las decisiones destructivas; los demás casos usan e
 archivo de respuestas. La carga por `--ssot` sigue limitada al modelo y assessment;
 la composición completa del draft con esa entrada se integrará por separado.
 
-## Pendiente: validar el estado contra el historial
+## Historial mínimo
 
-Al integrar el historial, comparar primero la base actual con el estado esperado
-por la última migración aplicada correctamente. Si difieren, bloquear la
-planificación de nuevas migraciones y reportar drift para que el usuario lo
-reconcilie. Esa diferencia no debe interpretarse automáticamente como un cambio
-del SSOT. Después de reconciliar la base, evaluar los cambios hacia el SSOT actual.
+El catálogo ordenado usa `MigrationCatalogInfo` del core: releases y migraciones
+publicadas con sus hashes. Se conserva junto a los archivos inmutables generados;
+incluye las migraciones que todavía no se aplicaron. La base sólo guarda el
+baseline, el puntero actual y la secuencia confirmada de migraciones aplicadas.
+
+`bootstrapHistory(session, {schema})` crea únicamente `installation` y
+`migration_history`. Los estados operativos de deployment/verificación no forman
+parte de esta inicialización. El formato existente se conserva: no se borra ni
+reescribe historial ya guardado. `appendCommittedMigration` agrega la entrada y
+actualiza el puntero en una misma sentencia, dentro de la transacción del caller
+que también aplica SQL. Un rollback revierte ambas cosas.
+
+`describeMigrationHistory(installation, history, catalog)` comprueba que las
+migraciones aplicadas son un prefijo sin cambios del catálogo. Devuelve la lista
+ordenada con `position` y `applied`; los elementos posteriores están pendientes.
+El baseline representa el estado inicial instalado, no una migración ficticia.
+Se rechazan gaps, reordenamientos, migraciones aplicadas desaparecidas o hashes
+distintos. SQL y recursos se cargan mediante los readers de artifacts existentes,
+que verifican sus bytes antes de ejecución.
+
+`readMigrationHistory(session, journal, scope, catalog, schemas)` lee puntero e
+historial juntos y comprueba drift contra el schema guardado para el hash del head
+actual. `schemas` contiene los schemas publicados, indexados por release hash.
+No se usa el próximo SSOT deseado como estado esperado de la base. Un drift bloquea
+el resultado y requiere reconciliación del usuario antes de planificar o aplicar.
+Para mantener también la inspección en el mismo snapshot, el caller usa una
+transacción de lectura `REPEATABLE READ` o el lock de migraciones existente.
+
+```typescript
+const state = await readMigrationHistory(session, journal, scope, catalog, schemas);
+if (!state.ok) throw new Error(JSON.stringify(state.problems));
+const pending = state.value.migrations.filter(migration => !migration.applied);
+```
+
+Se eliminaron los wrappers sin callers que reconstruían historia mediante un
+replay completo de verificación y que sólo comprobaban presencia de una release.
+El replay y sus garantías siguen en el ejecutor/verificador cuando corresponden.

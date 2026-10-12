@@ -16,7 +16,7 @@ import {prepareCreateResources, validateExpectedObjects} from "./create-resource
 import type {MigrationExecutionContext} from "./execute-migration";
 import {generateCreate} from "./generate-create";
 import {
-    bootstrapJournal,
+    bootstrapHistory,
     installBaseline,
     type InstallationScope,
     type JournalConfig,
@@ -420,7 +420,7 @@ export async function verifyUpgrade(
         const sourceBuilt = await buildReleaseOnScratch(handle.session, input.source);
         if (!sourceBuilt.ok) return sourceBuilt;
 
-        const bootstrapped = await bootstrapJournal(handle.session, input.journal);
+        const bootstrapped = await bootstrapHistory(handle.session, input.journal);
         if (!bootstrapped.ok) return bootstrapped;
         const baseline = await installBaseline(handle.session, input.journal, {
             installationId: "verify-" + handle.id,

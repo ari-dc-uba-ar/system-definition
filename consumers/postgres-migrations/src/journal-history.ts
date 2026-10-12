@@ -25,6 +25,7 @@ import {
     validateConfig,
     validateConfigForScope,
     validateRelease,
+    validateScope,
     type Row,
 } from "./journal-internal";
 
@@ -259,52 +260,52 @@ export function verifyHistory(
     installation: InstallationInfo,
     history: readonly MigrationHistoryInfo[],
 ): ValidationResult<readonly MigrationHistoryInfo[]> {
-    const decodedInstallation = decodeInstallationRow({
-        installation_id: installation.installationId,
-        system_id: installation.systemId,
-        schemas: [...installation.schemas],
-        baseline_system_id: installation.baseline.systemId,
-        baseline_release_id: installation.baseline.releaseId,
-        baseline_release_hash: installation.baseline.releaseHash,
-        current_system_id: installation.current.systemId,
-        current_release_id: installation.current.releaseId,
-        current_release_hash: installation.current.releaseHash,
-        journal_format_version: installation.journalFormatVersion,
-    });
-    if (!decodedInstallation.ok) return decodedInstallation;
-    if (!Array.isArray(history)) return failure("migration.invalidJournal", {reason: "invalid migration history"});
+    // Row readers own decoding; validate continuity directly without re-encoding rows.
+    if (installation.journalFormatVersion !== JOURNAL_FORMAT_VERSION || !isPgNonEmptyText(installation.installationId) || !Array.isArray(history)) return failure("migration.invalidJournal", {reason: "invalid history state"});
+    const scope = validateScope({systemId: installation.systemId, schemas: installation.schemas});
+    if (!scope.ok) return scope;
+    const baseline = validateRelease(installation.baseline), current = validateRelease(installation.current);
+    if (!baseline.ok) return baseline;
+    if (!current.ok) return current;
+    if (baseline.value.systemId !== scope.value.systemId || current.value.systemId !== scope.value.systemId) return failure("migration.invalidJournal", {reason: "installation system mismatch"});
+    let expected = baseline.value;
+    const ids = new Set<string>();
+    for (const [index, entry] of history.entries()) {
+        if (entry.installationId !== installation.installationId || entry.ordinal !== index + 1 || !isPgNonEmptyText(entry.migrationId)
+            || !isSha256(entry.migrationHash) || typeof entry.committedAt !== "string" || !UTC_RE.test(entry.committedAt) || ids.has(entry.migrationId)) return failure("migration.invalidJournal", {reason: "invalid or non-contiguous migration history"});
+        const from = validateRelease(entry.from), to = validateRelease(entry.to);
+        if (!from.ok) return from;
+        if (!to.ok) return to;
+        if (!sameReleaseRef(from.value, expected) || to.value.systemId !== scope.value.systemId) return failure("migration.invalidJournal", {reason: "migration history is not contiguous from baseline"});
+        ids.add(entry.migrationId);
+        expected = to.value;
+    }
+    return sameReleaseRef(expected, current.value) ? {ok: true, value: history}
+        : failure("migration.invalidJournal", {reason: "migration history does not end at installation head"});
+}
 
-    let expectedFrom = decodedInstallation.value.baseline;
-    const result: MigrationHistoryInfo[] = [];
-    for (let index = 0; index < history.length; index++) {
-        const one = history[index];
-        const decoded = decodeHistoryRow({
-            installation_id: one.installationId,
-            ordinal: one.ordinal,
-            migration_id: one.migrationId,
-            migration_hash: one.migrationHash,
-            from_system_id: one.from.systemId,
-            from_release_id: one.from.releaseId,
-            from_release_hash: one.from.releaseHash,
-            to_system_id: one.to.systemId,
-            to_release_id: one.to.releaseId,
-            to_release_hash: one.to.releaseHash,
-            committed_at: one.committedAt,
-        });
+/** Read pointer and committed rows from one database snapshot. */
+export async function readHistoryState(session: PgSession, config: JournalConfig, scope: InstallationScope): Promise<ValidationResult<{installation: InstallationInfo | null; history: readonly MigrationHistoryInfo[]}>> {
+    const checked = validateConfigForScope(config, scope);
+    if (!checked.ok) return checked;
+    const schema = quotePgIdentifier(checked.value.config.schema);
+    const queried = await safeQuery(session, `SELECT row_to_json(i) AS installation,
+        COALESCE((SELECT jsonb_agg(row_to_json(h) ORDER BY h.ordinal) FROM ${schema}.migration_history h WHERE h.installation_id = i.installation_id), '[]'::jsonb) AS history
+        FROM ${schema}.installation i WHERE i.system_id = $1 AND i.schemas = ARRAY(SELECT jsonb_array_elements_text($2::jsonb))`,
+        [checked.value.scope.systemId, JSON.stringify(checked.value.scope.schemas)]);
+    if (!queried.ok) return queried;
+    if (queried.value.rows.length === 0) return {ok: true, value: {installation: null, history: []}};
+    const row = queried.value.rows[0]!;
+    if (queried.value.rows.length !== 1 || !Array.isArray(row.history)) return failure("migration.invalidJournal", {reason: "invalid history state"});
+    const installation = decodeInstallationRow(row.installation);
+    if (!installation.ok) return installation;
+    const history: MigrationHistoryInfo[] = [];
+    for (const value of row.history) {
+        const decoded = decodeHistoryRow(value);
         if (!decoded.ok) return decoded;
-        if (decoded.value.installationId !== decodedInstallation.value.installationId
-            || decoded.value.ordinal !== index + 1
-            || !sameReleaseRef(decoded.value.from, expectedFrom)
-            || decoded.value.from.systemId !== decodedInstallation.value.systemId) {
-            return failure("migration.invalidJournal", {reason: "migration history is not contiguous from baseline"});
-        }
-        expectedFrom = decoded.value.to;
-        result.push(decoded.value);
+        history.push(decoded.value);
     }
-    if (!sameReleaseRef(expectedFrom, decodedInstallation.value.current)) {
-        return failure("migration.invalidJournal", {reason: "migration history does not end at installation head"});
-    }
-    return {ok: true, value: result};
+    return {ok: true, value: {installation: installation.value, history}};
 }
 
 export async function appendCommittedMigration(

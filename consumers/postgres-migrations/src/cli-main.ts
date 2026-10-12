@@ -18,7 +18,7 @@ import {publishReleaseArtifact} from "./artifact";
 import {buildMigrationPlan} from "./migration-plan";
 import {verifyRelease, verifyUpgrade, buildReleaseOnScratch} from "./verify";
 import {applyResolution, verifyResolution} from "./preparation";
-import {bootstrapJournal, installBaseline, readHistory, readInstallation, withMigrationLock, startAttempt, finishAttempt} from "./journal";
+import {bootstrapJournal, installBaseline, readHistoryState, withMigrationLock, startAttempt, finishAttempt} from "./journal";
 import {checkApplyEligibility, recordVerification} from "./evidence";
 import {checkDeploymentReady} from "./deployment-gate";
 import {executeMigrationPath} from "./runner";
@@ -228,11 +228,7 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
     if (!deployment) return invalid("Project lacks deployment context");
     const {binding, runtime} = deployment;
     if (command === "status") {
-        const installation = await readInstallation(runtime.session, runtime.journal, deployment.scope);
-        if (!installation.ok) return installation;
-        if (installation.value === null) return {ok: true, value: {installation: null, history: []}};
-        const history = await readHistory(runtime.session, runtime.journal, installation.value.installationId);
-        return history.ok ? {ok: true, value: {installation: installation.value, history: history.value}} : history;
+        return readHistoryState(runtime.session, runtime.journal, deployment.scope);
     }
     if (command === "deployment-gate") return checkDeploymentReady(binding, runtime);
     if (command === "verify") {

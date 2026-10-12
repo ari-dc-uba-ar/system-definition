@@ -7,7 +7,7 @@ import {compiledArtifact} from "./compiled-artifact";
 import {compareSchemas} from "./compare-schema";
 import {executeMigration, type MigrationExecutionContext} from "./execute-migration";
 import {inspectSchema} from "./inspect-schema";
-import {bootstrapJournal, installBaseline} from "./journal";
+import {bootstrapHistory, installBaseline} from "./journal";
 import {resolveMigrationExecutionContext} from "./migration-plan-runtime";
 import type {PgSchemaInfo, PgSession, ResolvedSqlResource} from "./pg-schema";
 import {executeMigrationPath} from "./runner";
@@ -74,7 +74,7 @@ export function createPostgresAuthoringRuntime(options: PostgresAuthoringOptions
             || !sameReleaseRef(options.history.path.to, source.ref)) return fail("Historical path does not reach the source release");
         const built = await buildRelease(session, options.history.baseline);
         if (!built.ok) return built;
-        const bootstrapped = await bootstrapJournal(session, journal);
+        const bootstrapped = await bootstrapHistory(session, journal);
         if (!bootstrapped.ok) return bootstrapped;
         const baseline = await installBaseline(session, journal, {installationId: id, scope, baseline: options.history.baseline.ref});
         if (!baseline.ok) return baseline;
