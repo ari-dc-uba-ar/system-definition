@@ -5,7 +5,7 @@ import {tmpdir} from "node:os";
 import {join, resolve} from "node:path";
 import {spawnSync} from "node:child_process";
 import {problem, type StructuralFailure, type ValidationResult} from "system-definition";
-import {assessMigrationDecisions, collectMigrationDecisions} from "../src/migration-decisions";
+import {assessMigrationDecisions, collectMigrationDecisions, validateMigrationDecisions} from "../src/migration-decisions";
 import {computeDraftRevisionHash} from "../src/draft-revision";
 import {decodeDataDecisionInfo, decodeDestructiveDecisionInfo, type DataDecisionInfo, type MigrationDraftInfo, type PendingQuestionInfo, type StructureChangeInfo} from "../src/authoring-contract";
 import type {DataMigrationInfo} from "../src/migration-authoring";
@@ -18,6 +18,8 @@ type DecoderContract = Expect<Equal<typeof decodeDataDecisionInfo, (value: unkno
 const decoderContract: DecoderContract = true;
 type CollectorContract = Expect<Equal<typeof collectMigrationDecisions, (draft: MigrationDraftInfo, input: unknown) => ValidationResult<MigrationDraftInfo>>>;
 const collectorContract: CollectorContract = true;
+type GateContract = Expect<Equal<typeof validateMigrationDecisions, (changes: readonly StructureChangeInfo[], draft: Pick<MigrationDraftInfo, "decisions" | "data" | "manual">) => ValidationResult<true>>>;
+const gateContract: GateContract = true;
 const column = (name: string) => ({schema: "app", kind: "column", name, parentName: "people", signature: []});
 const required = (id: string, name: string): StructureChangeInfo => ({id, action: "add", origin: "inferred", impact: "requiresDataCheck",
     before: null, after: column(name), differences: [], affectedFields: [{side: "to", entity: "people", field: name}], dependsOn: []});
@@ -94,6 +96,45 @@ describe("migration decision collection", () => {
 });
 
 describe("migration decision readiness", () => {
+    it("gates generation on supplied differences regardless of stored changes or pending flags", () => {
+        assert.equal(gateContract, true);
+        const current = {...draft(), changes: [], pending: [], decisions: [choice]};
+        const unresolved = validateMigrationDecisions([code, name], current);
+        assert.equal(unresolved.ok, false);
+        if (!unresolved.ok) assert.equal(unresolved.problems[0]?.messageKey, "migration.authoringPending");
+        const check: DataDecisionInfo = {...choice, changeId: name.id, resolution: {kind: "check", run: {kind: "check", name: "name-valid", contentHash: "7".repeat(64)}}};
+        assert.deepEqual(validateMigrationDecisions([code, name], {...current, decisions: [choice, check]}), {ok: true, value: true});
+        assert.equal(validateMigrationDecisions([{...code, id: "updated-change"}], current).ok, false);
+        const unsupported = validateMigrationDecisions([{...code, impact: "unsupported"}], input());
+        assert.equal(unsupported.ok, false);
+        if (!unsupported.ok) assert.equal(unsupported.problems[0]?.messageKey, "migration.unsupportedSchemaFeature");
+    });
+    it("rejects manual claims with unrelated effects, duplicate coverage or non-SQL resources", () => {
+        const step: MigrationDraftInfo["manual"][number] = {id: "manual-code", run: {kind: "sql", name: "fill-code", contentHash: "3".repeat(64)},
+            implementsChanges: [code.id], reads: [], writes: [code.after!], destroys: [], dependsOn: [], before: [], after: [], rowChecks: []};
+        assert.deepEqual(validateMigrationDecisions([code], {...input(), manual: [step]}), {ok: true, value: true});
+        for (const changes of [[code], [{...code, action: "alter" as const, before: code.after}]]) {
+            assert.equal(validateMigrationDecisions(changes, {...input(), manual: [{...step, writes: [name.after!]}]}).ok, false);
+        }
+        assert.equal(validateMigrationDecisions([code], {...input(), manual: [step, {...step, id: "another-step"}]}).ok, false);
+        assert.equal(validateMigrationDecisions([code], {...input(), manual: [{...step, run: {...step.run, kind: "check"}}]}).ok, false);
+    });
+    it("requires explicit data decisions even when manual SQL declares a destructive effect", () => {
+        const drop: StructureChangeInfo = {...code, action: "remove", impact: "destructive", before: code.after, after: null,
+            affectedFields: [{side: "from", entity: "people", field: "code"}]};
+        const manual: MigrationDraftInfo["manual"] = [{id: "drop-code", run: {kind: "sql", name: "drop-code", contentHash: "3".repeat(64)},
+            implementsChanges: [drop.id], reads: [], writes: [], destroys: [drop.before!], dependsOn: [], before: [], after: [], rowChecks: []}];
+        assert.equal(validateMigrationDecisions([drop], {...input(), manual}).ok, false);
+        const decision: DataDecisionInfo = {changeId: drop.id, source: drop.affectedFields[0]!, partitionCheck: null, resolution: {kind: "discard", reason: "Obsolete data"}};
+        assert.deepEqual(validateMigrationDecisions([drop], {...input([decision]), manual}), {ok: true, value: true});
+    });
+    it("requires a type transformation to consume the column being converted", () => {
+        const changed: StructureChangeInfo = {...code, action: "alter", before: code.after, differences: [{path: ["type", "name"], before: "text", after: "int4"}]};
+        assert.equal(validateMigrationDecisions([changed], input([choice], [fill])).ok, false);
+        const source = {side: "from" as const, entity: "people", field: "code"};
+        const conversion: DataMigrationInfo = {...fill, source: {...fill.source, ports: {code: {field: source, domain: {side: "from", type: "text", nullable: true}}}}};
+        assert.deepEqual(validateMigrationDecisions([changed], input([{...choice, source}], [conversion])), {ok: true, value: true});
+    });
     it("derives every unresolved change without a pending flag or database/runtime", () => {
         assert.equal(contract, true);
         assert.deepEqual(pending(assessMigrationDecisions([code, name], input())).map(question => question.id), [code.id, name.id]);

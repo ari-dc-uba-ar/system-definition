@@ -2,6 +2,7 @@ import {exactKeys, isPlainObject, problem, toJsonValue, type ValidationResult} f
 import {decodeDataDecisionInfo, type DataDecisionInfo, type FieldRefInfo, type MigrationDraftInfo, type PendingQuestionInfo, type StructureChangeInfo} from "./authoring-contract";
 import type {DataMigrationInfo} from "./migration-authoring";
 import {computeDraftRevisionHash} from "./draft-revision";
+import {samePgIdentity} from "./pg-identity";
 
 /** Collect choices for one draft revision; callers persist the returned draft. */
 export function collectMigrationDecisions(draft: MigrationDraftInfo, input: unknown): ValidationResult<MigrationDraftInfo> {
@@ -90,8 +91,19 @@ export function assessMigrationDecisions(changes: readonly StructureChangeInfo[]
             || (previous.partitionCheck.name === decision.partitionCheck.name && previous.partitionCheck.contentHash === decision.partitionCheck.contentHash))) return fail("Duplicate or overlapping decisions", change.id);
         groups.set(key, [...matching, decision]);
     }
-    const manual = new Set(draft.manual.flatMap(step => step.implementsChanges));
-    for (const id of manual) if (!byId.has(id)) return fail("Manual resolution references an unknown change", id, "migration.invalidReference");
+    const manual = new Set<string>();
+    for (const step of draft.manual) {
+        if (step.run.kind !== "sql") return fail("Manual resolution must reference SQL", step.id, "migration.invalidResourceKind");
+        for (const id of step.implementsChanges) {
+            const change = byId.get(id);
+            if (change === undefined) return fail("Manual resolution references an unknown change", id, "migration.invalidReference");
+            if (manual.has(id)) return fail("Structure change is claimed by more than one manual step", id);
+            const identity = change.action === "remove" ? change.before : change.after;
+            const effects = change.action === "remove" ? step.destroys : step.writes;
+            if (identity === null || !effects.some(effect => samePgIdentity(effect, identity))) return fail("Manual effect contract does not cover the claimed structure change", id);
+            manual.add(id);
+        }
+    }
     const pending: PendingQuestionInfo[] = [];
     for (const change of changes) {
         if (change.impact === "preserving") continue;
@@ -109,4 +121,15 @@ export function assessMigrationDecisions(changes: readonly StructureChangeInfo[]
             subjects: [change.id], messageKey: change.impact === "destructive" ? "migration.destructiveDecisionRequired" : "migration.authoringPending"});
     }
     return {ok: true, value: pending};
+}
+
+/** Gate generation/application using recomputed differences, not draft.changes/pending. */
+export function validateMigrationDecisions(changes: readonly StructureChangeInfo[], draft: Pick<MigrationDraftInfo, "decisions" | "data" | "manual">): ValidationResult<true> {
+    const assessed = assessMigrationDecisions(changes, draft);
+    if (!assessed.ok) return assessed;
+    if (assessed.value.length === 0) return {ok: true, value: true};
+    return {ok: false, problems: [problem(null, assessed.value.some(question => question.kind === "unsupported")
+        ? "migration.unsupportedSchemaFeature" : "migration.authoringPending", "blocking", {
+        changeIds: assessed.value.map(question => question.id).join(","), reason: "Migration has unresolved decisions",
+    })]};
 }

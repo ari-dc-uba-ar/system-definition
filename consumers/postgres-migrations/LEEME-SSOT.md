@@ -154,6 +154,18 @@ if (!readiness.ok) throw new Error(JSON.stringify(readiness.problems));
 const pending = readiness.value; // []: decisiones completas para estos cambios
 ```
 
+`validateMigrationDecisions(changes, draft)` es el gate estricto para generar o
+aplicar: reutiliza el mismo assessment y devuelve `true` sólo cuando no quedan
+preguntas; de lo contrario devuelve problemas bloqueantes. Recibe los cambios
+recalculados, no confía en `draft.changes` ni en `draft.pending`. El compilador usa
+este gate antes de replay. Recoger respuestas sigue admitiendo decisiones parciales.
+
+Las declaraciones de SQL manual también se validan aquí: el recurso debe ser SQL,
+cada cambio sólo puede ser reclamado por un paso, y sus `writes`/`destroys` deben
+incluir el objeto afectado. Declarar un DROP no sustituye la decisión sobre los
+datos eliminados. El compilador conserva las verificaciones de SQL real y replay;
+esta validación comprueba las decisiones y sus referencias, no ejecuta recursos.
+
 El flujo existente `infer --project ... --out draft.json` guarda preguntas para
 `destructive` y `dataRequired`. Se responden mediante `resolve --draft draft.json
 --report draft.json.conflict.json --answers answers.json`. Las respuestas están

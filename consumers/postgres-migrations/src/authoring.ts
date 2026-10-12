@@ -21,7 +21,7 @@ import {inferStructureChanges} from "./infer";
 import {pgIdentityKey, samePgIdentity} from "./pg-identity";
 import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo} from "./pg-schema";
 import {prepareManualSqlResource} from "./sql-resource";
-import {assessMigrationDecisions} from "./migration-decisions";
+import {validateMigrationDecisions} from "./migration-decisions";
 
 export * from "./authoring-contract";
 
@@ -87,17 +87,6 @@ type ValidatedManualInfo = {
     before: readonly ResourceRefInfo[];
     checkpoints: readonly {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]}[];
 };
-
-function manualEffectCoversChange(step: ManualStepInfo, change: StructureChangeInfo): boolean {
-    if (change.action === "add" && change.after !== null) {
-        return step.writes.some(identity => samePgIdentity(identity, change.after as PgObjectIdentity));
-    }
-    if (change.action === "remove" && change.before !== null) {
-        return step.destroys.some(identity => samePgIdentity(identity, change.before as PgObjectIdentity));
-    }
-    return true;
-}
-
 
 function orderedManualSteps(manual: readonly ManualStepInfo[]): ValidationResult<readonly ManualStepInfo[]> {
     const byId = new Map(manual.map(step => [step.id, step] as const));
@@ -227,12 +216,10 @@ function manualCheckpoints(steps: readonly ManualStepInfo[]): {
 }
 
 async function validateManualSteps(
-    changes: readonly StructureChangeInfo[],
     desired: PgSchemaInfo,
     manual: readonly ManualStepInfo[],
     runtime: AuthoringRuntime,
 ): Promise<ValidationResult<ValidatedManualInfo>> {
-    const changeById = new Map(changes.map(change => [change.id, change] as const));
     const stepIds = new Set<string>();
     for (const step of manual) {
         if (step.id.length === 0 || stepIds.has(step.id)) {
@@ -251,13 +238,6 @@ async function validateManualSteps(
 
     const claimedChangeIds = new Set<string>();
     for (const step of ordered.value) {
-        if (step.run.kind !== "sql") {
-            return fail("migration.invalidResourceKind", {
-                stepId: step.id,
-                expected: "sql",
-                actual: step.run.kind,
-            });
-        }
         if (step.before.some(ref => ref.kind !== "check") || step.after.some(ref => ref.kind !== "check")) {
             return fail("migration.invalidResourceKind", {
                 stepId: step.id,
@@ -288,31 +268,7 @@ async function validateManualSteps(
             }
         }
 
-        for (const changeId of step.implementsChanges) {
-            const change = changeById.get(changeId);
-            if (change === undefined) {
-                return fail("migration.invalidReference", {
-                    stepId: step.id,
-                    changeId,
-                    reason: "manual step claims a change outside the reconstructed diff",
-                });
-            }
-            if (claimedChangeIds.has(changeId)) {
-                return fail("migration.authoringInvalid", {
-                    stepId: step.id,
-                    changeId,
-                    reason: "structure change is claimed by more than one manual step",
-                });
-            }
-            if (!manualEffectCoversChange(step, change)) {
-                return fail("migration.authoringInvalid", {
-                    stepId: step.id,
-                    changeId,
-                    reason: "manual effect contract does not cover the claimed structure change",
-                });
-            }
-            claimedChangeIds.add(changeId);
-        }
+        for (const changeId of step.implementsChanges) claimedChangeIds.add(changeId);
     }
 
     for (const step of ordered.value) {
@@ -400,16 +356,10 @@ export async function compileDraft(
     );
     if (!historical.ok) return historical;
 
-    const decisions = assessMigrationDecisions(historical.value, draft);
+    const decisions = validateMigrationDecisions(historical.value, draft);
     if (!decisions.ok) return decisions;
-    const unsupportedQuestion = decisions.value.find(question => question.kind === "unsupported");
-    if (unsupportedQuestion !== undefined) return unsupported(historical.value.find(change => change.id === unsupportedQuestion.id)!);
-    if (decisions.value.length > 0) return fail("migration.authoringPending", {
-        changeIds: decisions.value.map(question => question.id).join(","), reason: "Migration has unresolved data decisions",
-    });
 
     const manual = await validateManualSteps(
-        historical.value,
         loadedDesired.value.expectedSchema,
         draft.manual,
         runtime,
