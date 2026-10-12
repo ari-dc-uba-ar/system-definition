@@ -19,6 +19,7 @@ export * from "./evidence";
 export * from "./deployment-gate";
 
 export * from "./migration-history";
+export * from "./migration-catalog";
 export * from "./infer";
 
 export * from "./authoring";

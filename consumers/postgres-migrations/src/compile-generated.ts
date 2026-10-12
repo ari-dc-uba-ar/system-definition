@@ -213,9 +213,8 @@ export async function compileGenerated(
         const stored = await emit({ref, text: text.value});
         if (!stored.ok) return stored;
     }
-    const compiled: CompiledAuthoringInfo = {
+    return {ok: true, value: {
         ...initial, operations, checkpoints, queryResources, validationArtifacts,
         migration: {...initial.migration, before, steps: allSteps},
-    };
-    return {ok: true, value: compiled};
+    }};
 }

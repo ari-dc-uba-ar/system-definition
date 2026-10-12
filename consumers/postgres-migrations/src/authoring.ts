@@ -84,7 +84,7 @@ type ValidatedManualInfo = {
     steps: readonly ManualStepInfo[];
     claimedChangeIds: ReadonlySet<string>;
     before: readonly ResourceRefInfo[];
-    checkpoints: readonly {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]}[];
+    checkpoints: CompiledAuthoringInfo["checkpoints"];
 };
 
 function orderedManualSteps(manual: readonly ManualStepInfo[]): ValidationResult<readonly ManualStepInfo[]> {
@@ -192,14 +192,11 @@ function validateManualWriterOrder(steps: readonly ManualStepInfo[]): Validation
     return {ok: true, value: true};
 }
 
-function manualCheckpoints(steps: readonly ManualStepInfo[]): {
-    before: readonly ResourceRefInfo[];
-    checkpoints: readonly {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]}[];
-} {
+function manualCheckpoints(steps: readonly ManualStepInfo[]): Pick<MigrationInfo, "before"> & Pick<CompiledAuthoringInfo, "checkpoints"> {
     if (steps.length === 0) return {before: [], checkpoints: []};
 
     const before = [...(steps[0]?.before ?? [])];
-    const checkpoints: {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]}[] = [];
+    const checkpoints: CompiledAuthoringInfo["checkpoints"][number][] = [];
     for (let index = 0; index < steps.length; index++) {
         const current = steps[index] as ManualStepInfo;
         const next = steps[index + 1];

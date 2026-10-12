@@ -1,8 +1,18 @@
 import {problem, sameContentRef, type PublishedMigrationInfo, type ValidationResult} from "system-definition";
-import {canonicalBytes, computeMigrationHash, decodeMigrationManifest, sha256Hex, type ArtifactResult, type MigrationManifestInfo} from "./artifact";
+import {canonicalBytes, computeMigrationHash, decodeMigrationManifest, parseJsonBytes, sha256Hex, type ArtifactResult, type MigrationManifestInfo} from "./artifact";
 import type {CompiledAuthoringInfo} from "./authoring-contract";
 import type {AuthoringFiles} from "./authoring-files";
-import {publishArtifactDirectory} from "./artifact-files";
+import {openArtifactDirectory, publishArtifactDirectory} from "./artifact-files";
+
+export async function loadMigrationManifest(directory: string): Promise<ArtifactResult<MigrationManifestInfo>> {
+    const reader = await openArtifactDirectory(directory);
+    if (!reader.ok) return reader;
+    const loaded = await reader.value.read("migration.json");
+    if (!loaded.ok) return loaded;
+    // Manifest identity hashes its JSON value; earlier publishers used pretty JSON.
+    const parsed = parseJsonBytes(loaded.value, "migration.json", false);
+    return parsed.ok ? decodeMigrationManifest(parsed.value) : parsed;
+}
 
 /** The same canonical authoring bytes bind replay and saved migrations. */
 export function createMigrationManifest(compiled: CompiledAuthoringInfo, files: AuthoringFiles): ArtifactResult<MigrationManifestInfo> {

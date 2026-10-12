@@ -414,7 +414,7 @@ export async function publishReleaseArtifact(root: string, draft: ReleaseArtifac
     }
 }
 
-function parseJsonBytes(bytes: Uint8Array, path: string): ArtifactResult<JsonValue> {
+export function parseJsonBytes(bytes: Uint8Array, path: string, requireCanonical = true): ArtifactResult<JsonValue> {
     let text: string;
     try {
         text = decoder.decode(bytes);
@@ -430,7 +430,7 @@ function parseJsonBytes(bytes: Uint8Array, path: string): ArtifactResult<JsonVal
     }
     const converted = toJsonValue(parsed);
     if (!converted.ok) return failure("migration.invalidJson", {path, reason: "not strict JSON"});
-    if (canonicalJson(converted.value) !== text) {
+    if (requireCanonical && canonicalJson(converted.value) !== text) {
         return failure("migration.checksumMismatch", {path, reason: "JSON artifact is not canonical"});
     }
     return {ok: true, value: converted.value};

@@ -1,7 +1,7 @@
 import {strict as assert} from "node:assert";
 import {describe, it} from "mocha";
 import {completeMigrationCatalog, type PublishedMigrationInfo, type ReleaseRefInfo, type ValidationResult} from "system-definition";
-import {describeMigrationHistory, checkHistoryHeadDrift, readMigrationHistory, type MigrationHistoryStateInfo} from "../src/migration-history";
+import {describeMigrationHistory, checkHistoryHeadDrift, readMigrationHistory, readMigrationStatus, type MigrationHistoryStateInfo} from "../src/migration-history";
 import {bootstrapHistory} from "../src/history-schema";
 import type {InstallationInfo, MigrationHistoryInfo} from "../src/journal-contracts";
 import type {PgSchemaInfo, PgSession} from "../src/pg-schema";
@@ -42,6 +42,19 @@ function session(): PgSession {
 }
 
 describe("minimal migration history", () => {
+    it("reads catalog status with one journal SELECT, without schema inspection or transaction control", async () => {
+        let queries = 0;
+        const journalOnly: PgSession = {async query(sql, values) {
+            queries++;
+            assert.match(sql, /^SELECT row_to_json/);
+            return session().query(sql, values);
+        }, async close() {throw new Error("Caller owns the session");}};
+        const state = value(await readMigrationStatus(journalOnly, config, scope, catalog));
+        assert.deepEqual(state.migrations.map(entry => entry.applied), [true, false]);
+        assert.equal(queries, 1);
+        assert.equal((await readMigrationStatus(journalOnly, config, {...scope, systemId: "another"}, catalog)).ok, false);
+        assert.equal(queries, 1);
+    });
     it("derives applied and pending entries from the catalog and database pointer", () => {
         assert.equal(contract, true);
         const state = value(describeMigrationHistory(installation, [applied], catalog));

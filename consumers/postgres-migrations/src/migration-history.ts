@@ -41,11 +41,16 @@ export async function checkHistoryHeadDrift(expected: PgSchemaInfo, observed: In
     return compared.value.equal ? {ok: true, value: true} : fail("Database differs from its last applied migration; reconcile it before planning or applying another", "migration.schemaDrift");
 }
 
-export async function readMigrationHistory(session: PgSession, config: JournalConfig, scope: InstallationScope, catalog: MigrationCatalogInfo, schemas: Readonly<Record<string, PgSchemaInfo>>): Promise<ValidationResult<MigrationHistoryStateInfo>> {
+/** Read status from the catalog and journal only; no schema inspection or writes. */
+export async function readMigrationStatus(session: PgSession, config: JournalConfig, scope: InstallationScope, catalog: MigrationCatalogInfo): Promise<ValidationResult<MigrationHistoryStateInfo>> {
     if (catalog.systemId !== scope.systemId) return fail("Catalog belongs to another application", "migration.invalidCatalog");
     const state = await readHistoryState(session, config, scope);
     if (!state.ok) return state;
-    const described = describeMigrationHistory(state.value.installation, state.value.history, catalog);
+    return describeMigrationHistory(state.value.installation, state.value.history, catalog);
+}
+
+export async function readMigrationHistory(session: PgSession, config: JournalConfig, scope: InstallationScope, catalog: MigrationCatalogInfo, schemas: Readonly<Record<string, PgSchemaInfo>>): Promise<ValidationResult<MigrationHistoryStateInfo>> {
+    const described = await readMigrationStatus(session, config, scope, catalog);
     if (!described.ok || described.value.installation === null) return described;
     const expected = schemas[described.value.installation.current.releaseHash];
     if (expected === undefined) return fail("Missing saved schema for the applied database head", "migration.invalidReference");

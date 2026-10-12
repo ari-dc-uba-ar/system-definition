@@ -298,6 +298,28 @@ publicadas con sus hashes. Se conserva junto a los archivos inmutables generados
 incluye las migraciones que todavía no se aplicaron. La base sólo guarda el
 baseline, el puntero actual y la secuencia confirmada de migraciones aplicadas.
 
+`readMigrationCatalog(baseline, directories)` lee los manifiestos guardados en el
+orden suministrado y completa `MigrationCatalogInfo` mediante el core. No ordena
+por nombre ni fecha ni descubre un baseline implícito. `baseline` viene de la
+release inicial guardada; la app proporciona las ubicaciones ordenadas de las
+migraciones. Se rechazan secuencias desconectadas, duplicadas o archivos ausentes.
+El reader de manifiestos reutiliza el parser JSON y decoder existentes y admite
+los manifiestos anteriores con formato pretty JSON: su identidad usa JSON
+canónico, mientras los recursos referenciados conservan hashes de bytes exactos.
+
+`readMigrationStatus(session, journal, scope, catalog)` combina ese catálogo con
+el puntero y el log aplicado mediante la única consulta de `readHistoryState`.
+Devuelve los estados `applied`/pendiente con `MigrationHistoryStateInfo`, sin
+inspección de schemas, inicialización, control de transacciones ni aplicación.
+Reutiliza la comprobación de secuencia existente. Los datos completos del log,
+incluidas fechas de commit, siguen disponibles con `readHistoryState`.
+
+```typescript
+const catalog = await readMigrationCatalog(baseline, orderedDirectories);
+if (!catalog.ok) throw new Error(JSON.stringify(catalog.problems));
+const status = await readMigrationStatus(session, journal, scope, catalog.value);
+```
+
 `bootstrapHistory(session, {schema})` crea únicamente `installation` y
 `migration_history`. Los estados operativos de deployment/verificación no forman
 parte de esta inicialización. El formato existente se conserva: no se borra ni
@@ -314,7 +336,7 @@ distintos. SQL y recursos se cargan mediante los readers de artifacts existentes
 que verifican sus bytes antes de ejecución.
 
 `readMigrationHistory(session, journal, scope, catalog, schemas)` lee puntero e
-historial juntos y comprueba drift contra el schema guardado para el hash del head
+historial mediante `readMigrationStatus` y comprueba drift contra el schema guardado para el hash del head
 actual. `schemas` contiene los schemas publicados, indexados por release hash.
 No se usa el próximo SSOT deseado como estado esperado de la base. Un drift bloquea
 el resultado y requiere reconciliación del usuario antes de planificar o aplicar.
