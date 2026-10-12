@@ -2,7 +2,7 @@ import {AuthoringFiles} from "../src/authoring-files";
 import {strict as assert} from "node:assert";
 import {createHash} from "node:crypto";
 import {describe, it} from "mocha";
-import type {ReleaseRefInfo, ValidationResult} from "system-definition";
+import type {ReleaseRefInfo, ResourceRefInfo, ValidationResult} from "system-definition";
 import type {AuthoringBaseInfo, StructureChangeInfo} from "../src/authoring-contract";
 import {
     compileDraft,
@@ -98,6 +98,11 @@ class CompileRuntime extends AuthoringFiles {
 
     async readQuery(): Promise<ValidationResult<string>> {
         throw new Error("T18 structure-only compilation must not load data queries");
+    }
+
+    async readSql(ref: ResourceRefInfo): Promise<ValidationResult<string>> {
+        const resource = this.resources.get(ref.name);
+        return resource ? {ok: true, value: resource.text} : {ok: false, problems: []};
     }
 
     async inspectCompiled(): Promise<ValidationResult<PgSchemaInfo>> {

@@ -28,6 +28,7 @@ export * from "./source-selection";
 
 export * from "./authoring-cli";
 export * from "./draft-revision";
+export * from "./migration-draft";
 
 export * from "./validation-artifact";
 
@@ -53,6 +54,7 @@ export * from "./postgres-authoring";
 export * from "./build-validation";
 export * from "./historical-validation";
 export * from "./compiled-artifact";
+export * from "./migration-artifact";
 export * from "./ssot";
 export * from "./database-settings";
 export * from "./assessment";

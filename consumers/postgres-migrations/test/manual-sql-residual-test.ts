@@ -1,4 +1,5 @@
 import {AuthoringFiles} from "../src/authoring-files";
+import {sha256Hex} from "../src/canonical-hash";
 import {strict as assert} from "node:assert";
 import {describe, it} from "mocha";
 import type {ReleaseRefInfo, ResourceRefInfo, ValidationResult} from "system-definition";
@@ -58,8 +59,9 @@ function schema(objects: readonly PgObjectInfo[]): PgSchemaInfo {
     return {formatVersion: 1, engineVersion: "18.6", schemas: ["app"], objects};
 }
 
-function sql(name: string, digit: string): ResourceRefInfo {
-    return {name, kind: "sql", contentHash: hash(digit)};
+function sql(name: string): ResourceRefInfo {
+    const text = name === "drop-legacy.sql" ? "ALTER TABLE app.people DROP COLUMN legacy_note;" : "ALTER TABLE app.people ADD COLUMN note text;";
+    return {name, kind: "sql", contentHash: sha256Hex(new TextEncoder().encode(text))};
 }
 
 function check(name: string, digit: string): ResourceRefInfo {
@@ -86,7 +88,7 @@ function manualStep(
 ): ManualStep {
     return {
         id,
-        run: sql(id + ".sql", "7"),
+        run: sql(id + ".sql"),
         dependsOn: [],
         implementsChanges,
         reads: [],

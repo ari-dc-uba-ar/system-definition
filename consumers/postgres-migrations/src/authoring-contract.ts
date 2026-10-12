@@ -246,7 +246,7 @@ export interface AuthoringRuntime {
     finalSteps?: MigrationInfo["steps"];
     loadRelease(ref: ReleaseRefInfo): Promise<ValidationResult<AuthoringReleaseBundle>>;
     reconstructHistory(head: ReleaseRefInfo): Promise<ValidationResult<PgSchemaInfo>>;
-    readQuery(ref: QueryRefInfo): Promise<ValidationResult<string>>;
+    readQuery?(ref: QueryRefInfo): Promise<ValidationResult<string>>;
     readSql?(ref: ResourceRefInfo): Promise<ValidationResult<string>>;
     inspectDraft(draft: MigrationDraftInfo): Promise<ValidationResult<PgSchemaInfo>>;
     emitResource?(resource: AuthoredResource): Promise<ValidationResult<FileInfo>>;
@@ -273,7 +273,7 @@ export type CompiledAuthoringInfo = {
     migration: MigrationInfo;
     operations: readonly CompiledAuthoringOperationInfo[];
     decisions: readonly DataDecisionInfo[];
-    checkpoints: readonly unknown[];
+    checkpoints: readonly {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]}[];
     queryResources: Readonly<Record<string, QueryResourceInfo>>;
     validationArtifacts: readonly unknown[];
 };

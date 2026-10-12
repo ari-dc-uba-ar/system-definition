@@ -23,14 +23,13 @@ import {bootstrapJournal, installBaseline, readHistoryState, withMigrationLock, 
 import {checkApplyEligibility, recordVerification} from "./evidence";
 import {checkDeploymentReady} from "./deployment-gate";
 import {executeMigrationPath} from "./runner";
-import {compiledArtifact} from "./compiled-artifact";
+import {saveMigrationArtifact} from "./migration-artifact";
 import {promptDataMigration} from "./authoring-prompt";
 import type {AuthoredResource} from "./authoring-files";
 import {loadSsot} from "./ssot";
 import {loadDatabaseSettings} from "./database-settings";
 import {assessDatabase} from "./assessment";
 import {assessMigrationDecisions, collectMigrationDecisions} from "./migration-decisions";
-import {publishArtifactDirectory} from "./artifact-files";
 
 const commands = ["capture", "assess", "build-release", "infer", "add-data", "add-sql", "validate", "generate", "resolve", "verify", "publish", "plan", "status", "install", "apply", "deployment-gate", "verify-resolution", "apply-resolution"];
 const help = `postgres-migrations <command> --ssot <module.js> | --project <module.js> [options]
@@ -178,14 +177,8 @@ export async function dispatchCommand(command: string, flags: ReadonlyMap<string
         if (!result.ok || command === "validate") return result;
         // A new directory is the publication boundary. Existing output is never replaced.
         const destination = resolve(required("out"));
-        const artifact = compiledArtifact(result.value, authoring.files, authoring.context);
-        const files = new Map(authoring.files.files);
-        const encodeJson = (value: unknown) => new TextEncoder().encode(JSON.stringify(value, null, 2) + "\n");
-        files.set("compiled.json", encodeJson(result.value));
-        files.set("migration.json", encodeJson(artifact.manifest));
-        files.set("resources.json", encodeJson([...authoring.files.resources.values()]));
-        await publishArtifactDirectory(destination, files);
-        return result;
+        const saved = await saveMigrationArtifact(destination, result.value, authoring.files);
+        return saved.ok ? result : saved;
     }
     if (command === "resolve") {
         const resolutionRuntime = project.resolution ?? (authoring ? {...authoring.runtime,

@@ -239,8 +239,8 @@ También admite las resoluciones `migrate` (referencia a una transformación en
 `draft.data` y sus outputs) y `check` (recurso de comprobación para datos requeridos).
 Un check no autoriza pérdida de datos. Los renames siguen siendo declaraciones
 `RenameInfo` del draft, que la inferencia evalúa antes de recoger estas decisiones.
-La creación automática del draft desde `--ssot` se integrará en el paso de
-ensamblar migraciones; este paso trabaja sobre un draft existente.
+`createMigrationDraft` puede crear ese draft desde el SSOT suministrado y el schema
+origen; la composición completa de esos inputs en la CLI se integra por separado.
 
 Las respuestas válidas se agregan y el draft se guarda atómicamente con una nueva
 revisión. Las parciales dejan las demás diferencias en `pending`; exit 0 significa
@@ -248,6 +248,48 @@ que se guardaron las decisiones, no que la migración esté lista para aplicar.
 Respuestas de otra migración/revisión, duplicadas o con referencias inválidas se
 rechazan sin cambiar el archivo. La función pura retorna el nuevo draft y no
 consulta la base ni ejecuta SQL. La generación vuelve a evaluar readiness.
+
+## Ensamblar y guardar una migración
+
+Los tres pasos usan los contratos existentes:
+
+- `createMigrationDraft(id, base, current, target, schema)` proyecta el SSOT,
+  calcula cambios/preguntas y crea su revisión. `base` identifica los estados
+  origen/destino con `AuthoringBaseInfo`; lo aporta el caller desde sus releases.
+- `assembleMigration(draft, current, desired, runtime)` recalcula las diferencias,
+  valida las decisiones y compone SQL, transformaciones y checks ordenados. Usa
+  sólo los callbacks existentes para leer recursos y emitir archivos; no necesita
+  callbacks de inspección/reconstrucción, conexión ni scratch. Para estructura sola
+  basta con `emitResource`. Checks usan `readSql`; transformaciones usan los readers
+  y `loadDataContext` existentes.
+- `saveMigrationArtifact(directory, assembled, files)` comprueba los recursos y
+  guarda el directorio completo mediante el publisher atómico existente. No
+  reemplaza una salida previa ni registra aplicación/success en la base.
+
+```typescript
+const files = new AuthoringFiles();
+const draft = createMigrationDraft('migration-id', base, current, target, schema);
+if (!draft.ok) throw new Error(JSON.stringify(draft.problems));
+const desired = projectSsotSchema(target, schema);
+if (!desired.ok) throw new Error(JSON.stringify(desired.problems));
+const assembled = await assembleMigration(draft.value, current, desired.value, {
+    emitResource: files.emitResource.bind(files),
+});
+if (!assembled.ok) throw new Error(JSON.stringify(assembled.problems));
+const saved = await saveMigrationArtifact('migrations/migration-id', assembled.value, files);
+```
+
+Se conserva el formato de artifacts: `migration.json`, `authoring.json`,
+`resources.json` y los archivos referenciados. `authoring.json` es la compilación
+canónica cubierta por el hash del manifiesto; se eliminó la copia redundante
+`compiled.json`. Los SQL/checks se incluyen por referencia y por bytes, manteniendo
+sus hashes y el orden capture → prepare → write → finish del ensamblador existente.
+Los checkpoints tipan sus checks con `ResourceRefInfo` en el contrato ya existente.
+
+La creación del manifiesto se comparte con replay. El comando `generate --project`
+conserva el compiler/verificador y usa el mismo saver; la nueva API permite sólo
+ensamblar/guardar cuando la verificación se hace por separado. Guardar no equivale
+a verificar ni aplicar. Los readers existentes siguen validando los artifacts.
 
 ## Historial mínimo
 

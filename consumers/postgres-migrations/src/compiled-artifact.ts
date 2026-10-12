@@ -1,5 +1,6 @@
-import {canonicalJson, toJsonValue, type FileInfo, type SystemSnapshotInfo} from "system-definition";
-import {computeMigrationHash, sha256Hex, type MigrationManifestInfo, type ArtifactResult} from "./artifact";
+import {toJsonValue, type FileInfo, type SystemSnapshotInfo} from "system-definition";
+import {sha256Hex, type ArtifactResult} from "./artifact";
+import {createMigrationManifest} from "./migration-artifact";
 import type {CompiledAuthoringInfo} from "./authoring-contract";
 import type {AuthoringFiles} from "./authoring-files";
 import type {MigrationExecutionArtifactContext} from "./migration-plan-runtime";
@@ -9,13 +10,9 @@ export function compiledArtifact(
     compiled: CompiledAuthoringInfo, files: AuthoringFiles,
     snapshots: {from: SystemSnapshotInfo; to: SystemSnapshotInfo},
 ) {
-    const converted = toJsonValue(compiled);
-    if (!converted.ok) throw new Error("Compiled authoring is not strict JSON");
-    const bytes = new TextEncoder().encode(canonicalJson(converted.value));
-    const authoring = {path: "authoring.json", contentHash: sha256Hex(bytes), byteLength: bytes.length};
-    files.files.set(authoring.path, bytes);
-    const manifest: MigrationManifestInfo = {formatVersion: 1, migration: compiled.migration, authoring, migrationHash: "0".repeat(64)};
-    manifest.migrationHash = computeMigrationHash(manifest);
+    const checked = createMigrationManifest(compiled, files);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.problems));
+    const manifest = checked.value;
     const published = {migration: manifest.migration, migrationHash: manifest.migrationHash};
     const json = toJsonValue(manifest);
     if (!json.ok) throw new Error("Migration manifest is not strict JSON");

@@ -9,7 +9,6 @@ import {
 import type {
     AuthoringRuntime,
     CompiledAuthoringInfo,
-    CompiledAuthoringOperationInfo,
     FieldRefInfo,
     ManualStepInfo,
     MigrationDraftInfo,
@@ -218,7 +217,7 @@ function manualCheckpoints(steps: readonly ManualStepInfo[]): {
 async function validateManualSteps(
     desired: PgSchemaInfo,
     manual: readonly ManualStepInfo[],
-    runtime: AuthoringRuntime,
+    runtime: Pick<AuthoringRuntime, "readSql" | "emitResource">,
 ): Promise<ValidationResult<ValidatedManualInfo>> {
     const stepIds = new Set<string>();
     for (const step of manual) {
@@ -280,6 +279,10 @@ async function validateManualSteps(
         if (!sql.ok) return sql;
         const prepared = prepareManualSqlResource({ref: step.run, text: sql.value});
         if (!prepared.ok) return prepared;
+        if (runtime.emitResource) {
+            const emitted = await runtime.emitResource({ref: step.run, text: sql.value});
+            if (!emitted.ok) return emitted;
+        }
     }
 
     const checkpoints = manualCheckpoints(ordered.value);
@@ -315,6 +318,29 @@ function migrationForDraft(
         steps: manual.steps.map(step => ({id: step.id, run: step.run})),
         after: [],
     };
+}
+
+async function prepareAssembly(draft: MigrationDraftInfo, changes: readonly StructureChangeInfo[], desired: PgSchemaInfo, runtime: Pick<AuthoringRuntime, "readSql" | "emitResource">): Promise<ValidationResult<{manual: ValidatedManualInfo; initial: CompiledAuthoringInfo}>> {
+    const decisions = validateMigrationDecisions(changes, draft);
+    if (!decisions.ok) return decisions;
+    const manual = await validateManualSteps(desired, draft.manual, runtime);
+    if (!manual.ok) return manual;
+    return {ok: true, value: {manual: manual.value, initial: {
+        formatVersion: 1, draftHash: draft.revisionHash, base: draft.base,
+        migration: migrationForDraft(draft, manual.value), decisions: draft.decisions,
+        operations: manual.value.steps.map(step => ({id: "manual:" + step.id, stepIds: [step.id], changeIds: [...step.implementsChanges], dataMigrationIds: []})),
+        checkpoints: manual.value.checkpoints, queryResources: {}, validationArtifacts: [],
+    }}};
+}
+
+/** Assemble from supplied schemas and declared effects; verification is a separate step. */
+export async function assembleMigration(draft: MigrationDraftInfo, current: PgSchemaInfo, desired: PgSchemaInfo, runtime: Pick<AuthoringRuntime, "readQuery" | "readSql" | "emitResource" | "loadDataContext" | "finalSteps">): Promise<ValidationResult<CompiledAuthoringInfo>> {
+    const changes = inferStructureChanges(draft.base, current, desired, draft.renames);
+    if (!changes.ok) return changes;
+    const prepared = await prepareAssembly(draft, changes.value, desired, runtime);
+    if (!prepared.ok) return prepared;
+    const residual = changes.value.filter(change => !prepared.value.manual.claimedChangeIds.has(change.id));
+    return compileGenerated(draft, runtime, current, desired, residual, prepared.value.initial);
 }
 
 /**
@@ -354,17 +380,11 @@ export async function compileDraft(
     );
     if (!historical.ok) return historical;
 
-    const decisions = validateMigrationDecisions(historical.value, draft);
-    if (!decisions.ok) return decisions;
+    const prepared = await prepareAssembly(draft, historical.value, loadedDesired.value.expectedSchema, runtime);
+    if (!prepared.ok) return prepared;
+    const {manual, initial} = prepared.value;
 
-    const manual = await validateManualSteps(
-        loadedDesired.value.expectedSchema,
-        draft.manual,
-        runtime,
-    );
-    if (!manual.ok) return manual;
-
-    const inspected = await runtime.inspectDraft({...draft, manual: manual.value.steps});
+    const inspected = await runtime.inspectDraft({...draft, manual: manual.steps});
     if (!inspected.ok) return inspected;
 
     const residual = inferStructureChanges(
@@ -375,7 +395,7 @@ export async function compileDraft(
     );
     if (!residual.ok) return residual;
 
-    const repeatedManualChange = residual.value.find(change => manual.value.claimedChangeIds.has(change.id));
+    const repeatedManualChange = residual.value.find(change => manual.claimedChangeIds.has(change.id));
     if (repeatedManualChange !== undefined) {
         return fail("migration.authoringInvalid", {
             changeId: repeatedManualChange.id,
@@ -386,21 +406,13 @@ export async function compileDraft(
     const firstUnsupported = residual.value.find(change => change.impact === "unsupported");
     if (firstUnsupported !== undefined) return unsupported(firstUnsupported);
 
-    const manualOperations: readonly CompiledAuthoringOperationInfo[] = manual.value.steps.map(step => ({
-        id: "manual:" + step.id,
-        stepIds: [step.id],
-        changeIds: [...step.implementsChanges],
-        dataMigrationIds: [],
-    }));
-    return compileGenerated(draft, runtime, inspected.value, loadedDesired.value.expectedSchema, residual.value, {
-            formatVersion: 1,
-            draftHash: draft.revisionHash,
-            base: draft.base,
-            migration: migrationForDraft(draft, manual.value),
-            operations: manualOperations,
-            decisions: draft.decisions,
-            checkpoints: manual.value.checkpoints,
-            queryResources: Object.freeze(Object.create(null) as Record<string, never>),
-            validationArtifacts: [],
-    });
+    const assembled = await compileGenerated(draft, runtime, inspected.value, loadedDesired.value.expectedSchema, residual.value, initial);
+    if (!assembled.ok) return assembled;
+    if (assembled.value === initial) return assembled;
+    if (!runtime.inspectCompiled) return fail("migration.authoringInvalid", {reason: "Verification requires owned scratch replay"});
+    const replayed = await runtime.inspectCompiled(assembled.value);
+    if (!replayed.ok) return replayed;
+    const remaining = inferStructureChanges(draft.base, replayed.value, loadedDesired.value.expectedSchema, []);
+    if (!remaining.ok) return remaining;
+    return remaining.value.length === 0 ? assembled : fail("migration.authoringInvalid", {reason: "Combined SQL replay did not reach the requested SSOT"});
 }

@@ -167,7 +167,7 @@ function cloneJson<T>(value: T): ArtifactResult<T> {
     return {ok: true, value: converted.value as T};
 }
 
-function canonicalBytes(value: unknown): ArtifactResult<{value: JsonValue, bytes: Uint8Array}> {
+export function canonicalBytes(value: unknown): ArtifactResult<{value: JsonValue, bytes: Uint8Array}> {
     const converted = toJsonValue(value);
     if (!converted.ok) {
         const first = converted.problems[0];

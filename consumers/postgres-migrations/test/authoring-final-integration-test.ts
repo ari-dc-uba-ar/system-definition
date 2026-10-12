@@ -63,12 +63,12 @@ function identity(tableName: string, name: string): PgObjectIdentity {
     return {schema: "app", kind: "column", name, parentName: tableName, signature: []};
 }
 
-function sql(name: string, digit: string): ResourceRefInfo {
-    return {name, kind: "sql", contentHash: fixedHash(digit)};
+function sql(name: string): ResourceRefInfo {
+    return {name, kind: "sql", contentHash: sha256(`SELECT 1 /* ${name} */;`)};
 }
 
-function check(name: string, digit: string): ResourceRefInfo {
-    return {name, kind: "check", contentHash: fixedHash(digit)};
+function check(name: string): ResourceRefInfo {
+    return {name, kind: "check", contentHash: sha256(`SELECT true AS ok /* ${name} */;`)};
 }
 
 function infer(from: PgSchemaInfo, to: PgSchemaInfo): readonly StructureChangeInfo[] {
@@ -92,7 +92,7 @@ function step(
 ): ManualStepInfo {
     return {
         id,
-        run: sql(id + ".sql", id === "alpha" ? "a" : id === "beta" ? "b" : "7"),
+        run: sql(id + ".sql"),
         dependsOn: [],
         implementsChanges: [],
         reads: [],
@@ -146,7 +146,7 @@ class Runtime extends AuthoringFiles implements AuthoringRuntime {
     }
 
     async readSql(ref: ResourceRefInfo): Promise<ValidationResult<string>> {
-        return {ok: true, value: `SELECT 1 /* ${ref.name} */;`};
+        return {ok: true, value: ref.kind === "check" ? `SELECT true AS ok /* ${ref.name} */;` : `SELECT 1 /* ${ref.name} */;`};
     }
 
     async inspectCompiled(): Promise<ValidationResult<PgSchemaInfo>> {
@@ -211,8 +211,8 @@ describe("T21 final authoring manifest, graph and add-sql integration", () => {
         const from = schema([table("people"), column("people", "id", false)]);
         const to = schema([table("people"), column("people", "id", false), column("people", "note")]);
         const change = addedColumn(infer(from, to), "note");
-        const pre = check("pre-note", "c");
-        const post = check("post-note", "d");
+        const pre = check("pre-note");
+        const post = check("post-note");
         const manual = step("manual-note", {
             implementsChanges: [change.id],
             writes: [identity("people", "note")],

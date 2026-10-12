@@ -319,6 +319,7 @@ export async function resolveConflict(
             if (createHash("sha256").update(read.value).digest("hex") !== resource.file.contentHash) return failure("Preparation SQL checksum mismatch");
         }
         for (const [name, resource] of Object.entries(artifact.queryResources)) {
+            if (!runtime.readQuery) return failure("Preparation queries require a query reader");
             const read = await runtime.readQuery({name, kind: "query", contentHash: resource.file.contentHash});
             if (!read.ok) return read;
             if (createHash("sha256").update(read.value).digest("hex") !== resource.file.contentHash) return failure("Preparation query checksum mismatch");

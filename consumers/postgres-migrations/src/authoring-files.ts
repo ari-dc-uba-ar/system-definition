@@ -1,4 +1,4 @@
-import {createHash} from "node:crypto";
+import {sha256Hex} from "./canonical-hash";
 import type {FileInfo, ValidationResult} from "system-definition";
 
 export type AuthoredResource = {
@@ -13,7 +13,7 @@ export class AuthoringFiles {
 
     async emitResource(resource: AuthoredResource): Promise<ValidationResult<FileInfo>> {
         const bytes = new TextEncoder().encode(resource.text);
-        const contentHash = createHash("sha256").update(bytes).digest("hex");
+        const contentHash = sha256Hex(bytes);
         if (contentHash !== resource.ref.contentHash) throw new Error("Compiler resource hash mismatch");
         const file = {path: `generated/${contentHash}.sql`, contentHash, byteLength: bytes.length};
         this.resources.set(resource.ref.name, resource);

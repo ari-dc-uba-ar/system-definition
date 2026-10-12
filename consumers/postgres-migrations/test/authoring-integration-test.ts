@@ -69,6 +69,11 @@ describe("T22 final CLI/CI and PostgreSQL authoring integration contract", () =>
                 assert.ok(query);
                 return {ok: true, value: query.text};
             },
+            async readSql(ref) {
+                const resource = prepared.files.resources.get(ref.name);
+                assert.ok(resource);
+                return {ok: true, value: resource.text};
+            },
             emitResource: prepared.files.emitResource.bind(prepared.files),
             loadDataContext: prepared.loadDataContext,
         });

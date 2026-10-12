@@ -1,4 +1,4 @@
-import {createHash} from "node:crypto";
+import {sha256Hex} from "./canonical-hash";
 import {decodeContentRefInfo, isPlainObject, problem, type MigrationInfo, type ResourceRefInfo, type ValidationResult} from "system-definition";
 import type {AuthoringRuntime, CompiledAuthoringInfo, MigrationDraftInfo, StructureChangeInfo} from "./authoring-contract";
 import {compileDataMigration} from "./compile-data";
@@ -11,8 +11,7 @@ import type {PgSchemaInfo} from "./pg-schema";
 import {validationArtifactEvidenceHash} from "./validation-artifact";
 import {samePgIdentity} from "./pg-identity";
 
-const hash = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
-type Checkpoint = {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]};
+const hash = (text: string): string => sha256Hex(new TextEncoder().encode(text));
 
 function failed(reason: string): ValidationResult<never> {
     return {ok: false, problems: [problem(null, "migration.authoringInvalid", "blocking", {reason})]};
@@ -20,18 +19,17 @@ function failed(reason: string): ValidationResult<never> {
 
 /** Compose executable resources using the existing data compiler and checkpoint engine. */
 export async function compileGenerated(
-    draft: MigrationDraftInfo, runtime: AuthoringRuntime,
+    draft: MigrationDraftInfo, runtime: Pick<AuthoringRuntime, "readQuery" | "readSql" | "emitResource" | "loadDataContext" | "finalSteps">,
     inspected: PgSchemaInfo, desired: PgSchemaInfo,
     residual: readonly StructureChangeInfo[], initial: CompiledAuthoringInfo,
 ): Promise<ValidationResult<CompiledAuthoringInfo>> {
     if (residual.length === 0 && draft.data.length === 0 && initial.migration.steps.length === 0 && !runtime.finalSteps?.length) return {ok: true, value: initial};
-    if (runtime.emitResource === undefined || runtime.inspectCompiled === undefined) {
-        return failed("SQL generation requires an artifact sink and owned scratch replay");
+    if (runtime.emitResource === undefined) {
+        return failed("Migration assembly requires an artifact sink");
     }
     const emit = runtime.emitResource.bind(runtime);
-    const ast = await createPgAstTools();
     const operations = [...initial.operations];
-    const checkpoints: Checkpoint[] = [...initial.checkpoints] as Checkpoint[];
+    const checkpoints = [...initial.checkpoints];
     const queryResources = {...initial.queryResources};
     const capture: MigrationInfo["steps"][number][] = [];
     const write: MigrationInfo["steps"][number][] = [];
@@ -44,10 +42,12 @@ export async function compileGenerated(
     const loadedData = runtime.loadDataContext ? await runtime.loadDataContext() : undefined;
     if (loadedData !== undefined && !loadedData.ok) return loadedData;
     const data = loadedData?.value;
+    const ast = data === undefined ? undefined : await createPgAstTools();
     const validationArtifacts = data?.validationArtifacts ?? initial.validationArtifacts;
 
     // Manual checkpoints use the same immutable query-resource registry as generated ones.
     for (const checkpoint of checkpoints) for (const row of checkpoint.rows) {
+        if (!runtime.readQuery) return failed("Row checkpoints require a query reader");
         if (!isPlainObject(row)) return failed("Malformed manual row checkpoint");
         const query = decodeContentRefInfo(row.select, "$", "query", (_path, reason) => failed(reason));
         if (!query.ok) return query;
@@ -67,7 +67,7 @@ export async function compileGenerated(
     }
 
     if (draft.data.length > 0) {
-        if (data === undefined) return failed("Data compilation requires historical snapshots, transformations, codecs and validation artifacts");
+        if (data === undefined || ast === undefined || !runtime.readQuery) return failed("Data compilation requires queries, historical snapshots, transformations, codecs and validation artifacts");
         const byId = new Map(draft.data.map(migration => [migration.id, migration]));
         if (byId.size !== draft.data.length) return failed("Duplicate data migration id");
         const ordered: typeof draft.data[number][] = [];
@@ -183,7 +183,7 @@ export async function compileGenerated(
     }
     const allSteps = [...capture, ...initial.migration.steps, ...prepare, ...write, ...finish, ...(runtime.finalSteps ?? [])];
     for (const step of runtime.finalSteps ?? []) operations.push({id: step.id, stepIds: [step.id], changeIds: [], dataMigrationIds: []});
-    if (data !== undefined) {
+    if (data !== undefined && ast !== undefined) {
         // Query complete entities, including untouched fields, using their historical codecs.
         for (const side of ["from", "to"] as const satisfies readonly SnapshotSide[]) {
             const artifact = data.validationArtifacts.find(one => one.side === side);
@@ -206,15 +206,16 @@ export async function compileGenerated(
             else checkpoints.push({afterStep, checks: [], rows});
         }
     }
+    for (const ref of [...before, ...initial.migration.after, ...checkpoints.flatMap(checkpoint => checkpoint.checks)]) {
+        if (!runtime.readSql) return failed("Assembly requires a reader for referenced checks");
+        const text = await runtime.readSql(ref);
+        if (!text.ok) return text;
+        const stored = await emit({ref, text: text.value});
+        if (!stored.ok) return stored;
+    }
     const compiled: CompiledAuthoringInfo = {
         ...initial, operations, checkpoints, queryResources, validationArtifacts,
         migration: {...initial.migration, before, steps: allSteps},
     };
-    const replayed = await runtime.inspectCompiled(compiled);
-    if (!replayed.ok) return replayed;
-    const {inferStructureChanges} = await import("./infer.js");
-    const remaining = inferStructureChanges(draft.base, replayed.value, desired, []);
-    if (!remaining.ok) return remaining;
-    if (remaining.value.length > 0) return failed("Combined SQL replay did not reach the requested SSOT");
     return {ok: true, value: compiled};
 }
