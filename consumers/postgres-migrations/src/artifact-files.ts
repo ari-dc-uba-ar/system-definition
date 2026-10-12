@@ -1,7 +1,7 @@
 import {lstat, mkdir, readFile, realpath, rename, rm, writeFile} from "node:fs/promises";
 import {randomUUID} from "node:crypto";
 import {dirname, isAbsolute, join, relative, resolve, sep} from "node:path";
-import {problem, type FileInfo} from "system-definition";
+import {canonicalJson, decodeFileInfo, isPlainObject, problem, toJsonValue, type FileInfo, type JsonValue} from "system-definition";
 import type {ArtifactResult} from "./artifact";
 import {sha256Hex} from "./canonical-hash";
 
@@ -52,7 +52,7 @@ export async function openArtifactDirectory(directory: string): Promise<Artifact
     } catch (error) {
         return failure("migration.invalidReference", {path: directory, reason: error instanceof Error ? error.message : String(error)});
     }
-    const read: ArtifactDirectory["read"] = async path => {
+    const readPhysical: ArtifactDirectory["read"] = async path => {
         if (!isSafeArtifactPath(path)) return failure("migration.invalidReference", {path, reason: "unsafe artifact path"});
         try {
             let current = root;
@@ -72,6 +72,41 @@ export async function openArtifactDirectory(directory: string): Promise<Artifact
         } catch (error) {
             return failure("migration.invalidReference", {path, reason: error instanceof Error ? error.message : String(error)});
         }
+    };
+    let archive: Readonly<Record<string, JsonValue>> | undefined;
+    if (await artifactExists(join(root, "metadata.json"))) {
+        const metadata = await readPhysical("metadata.json");
+        if (!metadata.ok) return metadata;
+        try {
+            const parsed = toJsonValue(JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(metadata.value)));
+            if (!parsed.ok) return parsed;
+            const value = parsed.value;
+            if (!isPlainObject(value) || Object.keys(value).some(path => !isSafeArtifactPath(path))) return failure("migration.unsupportedFormat", {reason: "invalid migration metadata"});
+            archive = value as Readonly<Record<string, JsonValue>>;
+            const descriptor = archive["script.json"];
+            if (descriptor !== undefined) {
+                const script = decodeFileInfo(descriptor, "script", (path, reason) => failure("migration.invalidReference", {path, reason}));
+                if (!script.ok) return script;
+                const bytes = await readPhysical(script.value.path); if (!bytes.ok) return bytes;
+                if (bytes.value.length !== script.value.byteLength || sha256Hex(bytes.value) !== script.value.contentHash) return failure("migration.checksumMismatch", {path: script.value.path});
+            }
+        } catch (error) {return failure("migration.invalidJson", {reason: error instanceof Error ? error.message : String(error)});}
+    }
+    const read: ArtifactDirectory["read"] = async path => {
+        if (!isSafeArtifactPath(path)) return failure("migration.invalidReference", {path, reason: "unsafe artifact path"});
+        const stored = archive?.[path];
+        if (stored !== undefined && Object.hasOwn(archive!, path)) return {ok: true, value: new TextEncoder().encode(typeof stored === "string" ? stored : canonicalJson(stored))};
+        if (archive !== undefined && /^generated\/[a-f0-9]{64}\.sql$/.test(path)) {
+            try {
+                const source = archive["resources.json"] ?? [];
+                const registry: unknown = typeof source === "string" ? JSON.parse(source) : source;
+                if (!Array.isArray(registry)) return failure("migration.unsupportedFormat", {reason: "invalid resource registry"});
+                const resource: unknown = registry.find((raw: unknown) => isPlainObject(raw) && isPlainObject(raw.ref) && path === `generated/${raw.ref.contentHash}.sql`);
+                if (!isPlainObject(resource) || typeof resource.text !== "string") return failure("migration.invalidReference", {path, reason: "missing migration SQL"});
+                return {ok: true, value: new TextEncoder().encode(resource.text)};
+            } catch (error) {return failure("migration.invalidJson", {path, reason: String(error)});}
+        }
+        return readPhysical(path);
     };
     return {ok: true, value: {read, async readVerified(file) {
         const loaded = await read(file.path);

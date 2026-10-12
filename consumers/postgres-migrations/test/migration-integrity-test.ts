@@ -6,7 +6,8 @@ import {describe, it} from "mocha";
 import type {ValidationResult} from "system-definition";
 import {AuthoringFiles} from "../src/authoring-files";
 import {canonicalBytes, computeMigrationHash, sha256Hex} from "../src/artifact";
-import {saveMigrationArtifact} from "../src/migration-artifact";
+import {createMigrationManifest} from "../src/migration-artifact";
+import {publishArtifactDirectory} from "../src/artifact-files";
 import {verifyMigrationFiles} from "../src/migration-integrity";
 import type {CompiledAuthoringInfo} from "../src/authoring-contract";
 import type {ValidationArtifactInfo} from "../src/validation-artifact";
@@ -36,7 +37,10 @@ async function fixture(directory: string) {
         migration: {id: "A-B", from, to, description: "", before: [before.ref], steps: [{id: "transform", run: transform.ref}], after: [after.ref]},
         operations: [], decisions: [], checkpoints: [{afterStep: "transform", checks: [checkpoint.ref], rows: []}],
         queryResources: {rows: {kind: "query", file: query.file}}, validationArtifacts: [validator]};
-    const published = value(await saveMigrationArtifact(directory, compiled, files));
+    const manifest = value(createMigrationManifest(compiled, files));
+    const saved = new Map(files.files); saved.set("migration.json", value(canonicalBytes(manifest)).bytes);
+    await publishArtifactDirectory(directory, saved);
+    const published = {migration: manifest.migration, migrationHash: manifest.migrationHash};
     return {published, paths: ["authoring.json", "resources.json", before.file.path, transform.file.path, after.file.path, checkpoint.file.path, query.file.path, unused.file.path, entry.path]};
 }
 

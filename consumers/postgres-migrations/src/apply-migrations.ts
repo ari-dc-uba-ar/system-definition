@@ -1,7 +1,7 @@
 import {randomUUID} from "node:crypto";
 import {problem, type ValidationResult} from "system-definition";
 import type {DatabaseSettings} from "./database-settings";
-import {provisionDatabase, grantAppPermissions, verifyDatabasePermissions} from "./database-permissions";
+import {provisionDatabase, verifyDatabasePermissions} from "./database-permissions";
 import {connectPostgres} from "./pg-session";
 import {bootstrapJournal, finishAttempt, installBaseline, readHistoryState, readAttempt, startAttempt, withMigrationLock} from "./journal";
 import {describeMigrationHistory, checkHistoryHeadDrift} from "./migration-history";
@@ -58,8 +58,21 @@ export async function applyMigrations(root: string, catalog: StoredMigrationCata
         } finally {await existing.close();}
     } catch { /* Initial owner may not exist; the administrative setup verifies roles/schema. */ }
     if (!initialized) {
+        let initialSql: string | undefined;
+        const first = catalog.migrations[0];
+        if (first !== undefined) {
+            const directory = migrationDirectory(root, first), verified = await verifyMigrationFiles(directory, first);
+            if (!verified.ok) return verified;
+            const ref = verified.value.authoring.initial;
+            if (ref !== undefined) {
+                const reader = await openArtifactDirectory(directory); if (!reader.ok) return reader;
+                const bytes = await reader.value.read(`generated/${ref.contentHash}.sql`); if (!bytes.ok) return bytes;
+                if (sha256Hex(bytes.value) !== ref.contentHash) return invalidStore("Initial setup changed", "migration.checksumMismatch");
+                initialSql = new TextDecoder("utf-8", {fatal: true}).decode(bytes.value);
+            }
+        }
         const setup = await withMigrationLock({openTarget: () => connectPostgres({...settings.database, ...settings.initialUser})}, scope, 5000,
-            session => provisionDatabase(session, settings, journal.schema));
+            session => provisionDatabase(session, settings, journal.schema, initialSql));
         if (!setup.ok) return setup;
     }
     return withMigrationLock({openTarget: () => connectPostgres({...settings.database, ...settings.owner})}, scope, 5000, async lock => {
@@ -139,10 +152,7 @@ export async function applyMigrations(root: string, catalog: StoredMigrationCata
             }
             const state = (schema: typeof source.value.schema) => ({expectedSchema: schema, inspection: {schemas: scope.schemas, excluded: []}, managedData: [], invariantChecks: []});
             const base: Omit<MigrationExecutionContext, "authoring"> = {journal, scope, resources, from: state(source.value.schema),
-                to: {...state(target.value.schema), async verifyPermissions(session) {
-                    const granted = await grantAppPermissions(session, settings, target.value.schema);
-                    return granted.ok ? verifyDatabasePermissions(session, settings, target.value.schema) : granted;
-                }}, options: {statementTimeoutMs: 30000, lockTimeoutMs: 5000}, now: () => new Date().toISOString()};
+                to: {...state(target.value.schema), verifyPermissions: session => verifyDatabasePermissions(session, settings, target.value.schema)}, options: {statementTimeoutMs: 30000, lockTimeoutMs: 5000}, now: () => new Date().toISOString()};
             const context = await resolveMigrationExecutionContext(pending, base, {
                 loadMigrationManifest: () => readArtifactJson(reader.value, "migration.json", false),
                 readMigrationFile: (_migration, file) => reader.value.readVerified(file),

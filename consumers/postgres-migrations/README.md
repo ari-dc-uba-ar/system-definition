@@ -5,6 +5,9 @@
 The application supplies a typed SSOT with explicit SQL mappings and database connections for initialUser, owner and appUser.
 The CLI supports capture, assess, infer, generate, data, resolve, status and apply without a project adapter.
 
+Each migration has numbered SQL and metadata.json, including initial owner/app setup and ordered permissions.
+Passwords remain in connection settings; metadata preserves checks, snapshots and frozen validators.
+
 Commands are non-interactive; unresolved changes return structured errors and remain pending.
 
 Apply verifies immutable files, catalog/history integrity and recorded-head drift, then uses locked owner transactions.

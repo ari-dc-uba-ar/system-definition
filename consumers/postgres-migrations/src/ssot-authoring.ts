@@ -1,4 +1,4 @@
-import {readFile, mkdir} from "node:fs/promises";
+import {readFile, mkdir, unlink} from "node:fs/promises";
 import {dirname, join} from "node:path";
 import {completeMigrationCatalog, isPlainObject, sameReleaseRef, type ValidationResult} from "system-definition";
 import {parseJsonBytes, sha256Hex} from "./artifact";
@@ -7,9 +7,10 @@ import type {SqlSsotInfo} from "./sql-mapping";
 import {createMigrationDraft} from "./migration-draft";
 import {computeDraftRevisionHash} from "./draft-revision";
 import {assembleMigration} from "./authoring";
-import type {AuthoringRuntime, MigrationDraftInfo} from "./authoring-contract";
+import type {AuthoringRuntime, CompiledAuthoringInfo, MigrationDraftInfo} from "./authoring-contract";
 import {AuthoringFiles} from "./authoring-files";
 import {runAddSqlSession, type AddSqlContractInfo} from "./authoring-cli";
+import {databaseProvisioningSql, appPermissionSql} from "./database-permissions";
 import {saveMigrationArtifact} from "./migration-artifact";
 import {isSafeArtifactPath} from "./artifact-files";
 import {captureMigrationState, initializeMigrationStore, invalidStore, jsonBytes, migrationDirectory, readCatalogState, readStateBytes, stateFile, stateReference, writeJsonAtomic, type MigrationStateInfo} from "./migration-store";
@@ -32,6 +33,8 @@ export async function inferSsotMigration(system: SqlSsotInfo, settings: Database
     if (!isSafeArtifactPath(id) || id.includes("/")) return invalidStore("Migration id must be one safe directory name");
     const catalog = await initializeMigrationStore(root, system, settings.database.schema, baselineDirectory);
     if (!catalog.ok) return catalog;
+    const sequence = String(catalog.value.migrations.length + 1).padStart(4, "0") + "_";
+    id = id.startsWith(sequence) ? id : sequence + id;
     const from = await readCatalogState(root, catalog.value, catalog.value.migrations.length);
     const to = await captureMigrationState(system, settings.database.schema, id);
     if (!from.ok) return from;
@@ -91,11 +94,28 @@ export async function generateSsotMigration(system: SqlSsotInfo, settings: Datab
     const savedStates = {from: stateFile("states/from.json", from.value), to: stateFile("states/to.json", to.value)};
     files.files.set(savedStates.from.path, jsonBytes(from.value));
     files.files.set(savedStates.to.path, jsonBytes(to.value));
-    const compiled = {...assembled.value, states: savedStates};
-    const published = await saveMigrationArtifact(migrationDirectory(root, {migration: compiled.migration, migrationHash: "0".repeat(64)}), compiled, files);
+    const compiled: CompiledAuthoringInfo = {...assembled.value, states: savedStates};
+    const resource = async (name: string, text: string) => {
+        const ref = {kind: "sql" as const, name, contentHash: sha256Hex(text)};
+        await files.emitResource({ref, text});
+        return ref;
+    };
+    if (catalog.value.migrations.length === 0 && Object.keys(from.value.ssot.entities).length === 0) {
+        compiled.initial = await resource("initial-users.sql", databaseProvisioningSql(settings, settings.database.schema + "_migrations").join("\n"));
+    }
+    const grants = appPermissionSql(settings, to.value.schema).join("\n");
+    if (grants !== "") {
+        const run = await resource("app-permissions.sql", grants);
+        compiled.migration = {...compiled.migration, steps: [...compiled.migration.steps, {id: "app-permissions", run}]};
+        compiled.operations = [...compiled.operations, {id: "app-permissions", stepIds: ["app-permissions"], changeIds: [], dataMigrationIds: []}];
+    }
+    const prefix = String(catalog.value.migrations.length + 1).padStart(4, "0") + "_";
+    const sqlName = (compiled.migration.id.startsWith(prefix) ? compiled.migration.id : prefix + compiled.migration.id) + ".sql";
+    const published = await saveMigrationArtifact(migrationDirectory(root, {migration: compiled.migration, migrationHash: "0".repeat(64)}), compiled, files, sqlName);
     if (!published.ok) return published;
     const next = completeMigrationCatalog([...catalog.value.releases, published.value.migration.to], [...catalog.value.migrations, published.value]);
     if (!next.ok) return next;
-    await writeJsonAtomic(join(root, "catalog.json"), {...next.value, ...(catalog.value.baselineDirectory === undefined ? {} : {baselineDirectory: catalog.value.baselineDirectory})});
+    await writeJsonAtomic(join(root, "catalog.json"), {...next.value, ...(catalog.value.baselineDirectory === undefined ? {} : {baselineDirectory: catalog.value.baselineDirectory})}, true);
+    if (draftFile === join(root, "draft.json")) {await unlink(draftFile); await unlink(draftFile + ".states.json");}
     return published;
 }

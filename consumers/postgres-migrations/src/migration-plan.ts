@@ -101,7 +101,7 @@ function decodeRow(value: unknown, path: string): ValidationResult<AuthoringChec
 }
 
 function decodeAuthoring(value: JsonValue, migration: MigrationInfo): ArtifactResult<CompiledAuthoringInfo> {
-    if (!isObject(value) || !hasExactKeys(value, ["formatVersion", "draftHash", "base", "migration", "operations", "decisions", "checkpoints", "queryResources", "validationArtifacts", ...(Object.hasOwn(value, "states") ? ["states"] : [])])
+    if (!isObject(value) || !hasExactKeys(value, ["formatVersion", "draftHash", "base", "migration", "operations", "decisions", "checkpoints", "queryResources", "validationArtifacts", ...(Object.hasOwn(value, "states") ? ["states"] : []), ...(Object.hasOwn(value, "initial") ? ["initial"] : [])])
         || value.formatVersion !== 1 || !isSha256(value.draftHash) || !isObject(value.base)
         || !hasExactKeys(value.base, ["from", "to", "fromSnapshotHash", "toSnapshotHash", "fromPersistenceHash", "toPersistenceHash"])
         || !isSha256(value.base.fromSnapshotHash) || !isSha256(value.base.toSnapshotHash)
@@ -144,11 +144,13 @@ function decodeAuthoring(value: JsonValue, migration: MigrationInfo): ArtifactRe
         const toFile = decodeFileInfo(value.states.to, "states.to", invalidAuthoring); if (!toFile.ok) return toFile;
         states = {from: fromFile.value, to: toFile.value};
     }
+    const initial = Object.hasOwn(value, "initial") ? decodeContentRefInfo(value.initial, "initial", "sql", invalidAuthoring) : {ok: true as const, value: undefined};
+    if (!initial.ok) return initial;
     return {ok: true, value: {formatVersion: 1, draftHash: value.draftHash,
         base: {from: from.value, to: to.value, fromSnapshotHash: value.base.fromSnapshotHash, toSnapshotHash: value.base.toSnapshotHash,
             fromPersistenceHash: value.base.fromPersistenceHash, toPersistenceHash: value.base.toPersistenceHash},
         migration, operations: operations.value, decisions: decisions.value, checkpoints: checkpoints.value, queryResources,
-        validationArtifacts: validationArtifacts.value, ...(states === undefined ? {} : {states})}};
+        validationArtifacts: validationArtifacts.value, ...(states === undefined ? {} : {states}), ...(initial.value === undefined ? {} : {initial: initial.value})}};
 }
 
 function parseCanonicalJson(bytes: Uint8Array, file: FileInfo): ArtifactResult<JsonValue> {

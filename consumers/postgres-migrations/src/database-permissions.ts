@@ -7,8 +7,39 @@ function invalid(reason: string): ValidationResult<never> {
     return {ok: false, problems: [problem(null, "migration.permissionsInvalid", "blocking", {reason})]};
 }
 
+/** Pure initial setup SQL; passwords come from transaction-local values at apply time. */
+export function databaseProvisioningSql(settings: DatabaseSettings, journalSchema?: string): readonly string[] {
+    const {owner, appUser, database} = settings;
+    const literal = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+    const roleSql = (user: string, passwordSetting: string) => {
+        const body = `BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = ${literal(user)}) THEN
+        CREATE ROLE ${quote(user)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+        EXECUTE format('ALTER ROLE %I PASSWORD %L', ${literal(user)}, NULLIF(current_setting('${passwordSetting}', true), ''));
+    END IF;
+END;`;
+        let tag = "$roles$";
+        while (body.includes(tag)) tag = tag.slice(0, -1) + "_$";
+        return `DO ${tag}\n${body}\n${tag};\n`;
+    };
+    const schema = quote(database.schema), ownerName = quote(owner.user), appName = quote(appUser.user);
+    return [
+        roleSql(owner.user, "migration.owner_password"), roleSql(appUser.user, "migration.app_password"),
+        ...[...new Set([database.schema, ...(journalSchema === undefined ? [] : [journalSchema])])].map(name =>
+            `CREATE SCHEMA IF NOT EXISTS ${quote(name)} AUTHORIZATION ${ownerName};\n`),
+        `REVOKE CREATE ON SCHEMA ${schema} FROM PUBLIC, ${appName};\n`,
+        `GRANT USAGE ON SCHEMA ${schema} TO ${appName};\n`,
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${ownerName} IN SCHEMA ${schema} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${appName};\n`,
+    ];
+}
+export function appPermissionSql(settings: DatabaseSettings, expected: PgSchemaInfo): readonly string[] {
+    return expected.objects.filter(object => object.kind === "table").map(object =>
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${quote(object.identity.schema)}.${quote(object.identity.name)} TO ${quote(settings.appUser.user)};\n`);
+}
+
 /** Initial administrative connection; no data/schema migration is executed here. */
-export async function provisionDatabase(session: PgSession, settings: DatabaseSettings, journalSchema?: string): Promise<ValidationResult<true>> {
+export async function provisionDatabase(session: PgSession, settings: DatabaseSettings, journalSchema?: string, savedSql = databaseProvisioningSql(settings, journalSchema).join("\n")): Promise<ValidationResult<true>> {
+    if (savedSql !== databaseProvisioningSql(settings, journalSchema).join("\n")) return invalid("Saved initial owner/app setup differs from database settings");
     const {owner, appUser, database} = settings;
     const existing = await session.query("SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ($1, $2)", [owner.user, appUser.user]);
     if (existing.rows.some(row => row.rolcanlogin !== true)) return invalid("Configured connection roles must allow login");
@@ -16,25 +47,13 @@ export async function provisionDatabase(session: PgSession, settings: DatabaseSe
     if (app && [app.rolsuper, app.rolcreatedb, app.rolcreaterole, app.rolreplication, app.rolbypassrls].some(flag => flag === true)) return invalid("The existing app role has administrative privileges");
     await session.query("BEGIN", []);
     try {
-        for (const connection of [owner, appUser]) {
-            if (existing.rows.some(row => row.rolname === connection.user)) continue;
-            const password = typeof connection.password === "function" ? await connection.password() : connection.password ?? null;
-            const formatted = await session.query("SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %L', $1::text, $2::text) AS sql", [connection.user, password]);
-            const sql = formatted.rows[0]?.sql;
-            if (typeof sql !== "string") throw new Error("Could not format role creation");
-            await session.query(sql, []);
-        }
-        const schema = quote(database.schema), ownerName = quote(owner.user), appName = quote(appUser.user);
+        const passwords = await Promise.all([owner.password, appUser.password].map(password => typeof password === "function" ? password() : password ?? ""));
+        await session.query("SELECT set_config('migration.owner_password', $1, true), set_config('migration.app_password', $2, true)", passwords);
+        await session.query(savedSql, []);
         for (const namespace of new Set([database.schema, ...(journalSchema === undefined ? [] : [journalSchema])])) {
-            await session.query(`CREATE SCHEMA IF NOT EXISTS ${quote(namespace)} AUTHORIZATION ${ownerName}`, []);
             const ownership = await session.query("SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname = $1", [namespace]);
             if (ownership.rows[0]?.owner !== owner.user) throw new Error("Configured schema belongs to a different owner");
         }
-        for (const sql of [
-            `REVOKE CREATE ON SCHEMA ${schema} FROM PUBLIC, ${appName}`,
-            `GRANT USAGE ON SCHEMA ${schema} TO ${appName}`,
-            `ALTER DEFAULT PRIVILEGES FOR ROLE ${ownerName} IN SCHEMA ${schema} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${appName}`,
-        ]) await session.query(sql, []);
         await session.query("COMMIT", []);
         return {ok: true, value: true};
     } catch (error) {
@@ -45,11 +64,7 @@ export async function provisionDatabase(session: PgSession, settings: DatabaseSe
 
 /** Current and future managed tables receive the same data-only app privileges. */
 export async function grantAppPermissions(session: PgSession, settings: DatabaseSettings, expected: PgSchemaInfo): Promise<ValidationResult<true>> {
-    for (const object of expected.objects) {
-        if (object.kind !== "table") continue;
-        const name = `${quote(object.identity.schema)}.${quote(object.identity.name)}`;
-        await session.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${name} TO ${quote(settings.appUser.user)}`, []);
-    }
+    for (const sql of appPermissionSql(settings, expected)) await session.query(sql, []);
     return {ok: true, value: true};
 }
 

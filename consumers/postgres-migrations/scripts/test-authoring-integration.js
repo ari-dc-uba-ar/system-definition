@@ -2,11 +2,14 @@
 // These scenarios compile the public, commented examples. No hand-built migration SQL and
 // no excluded application objects can make a broken generator appear to pass this suite.
 const assert = require("node:assert/strict");
+const {mkdtemp, readdir, rm} = require("node:fs/promises");
+const {tmpdir} = require("node:os");
+const {join} = require("node:path");
 const {randomUUID} = require("node:crypto");
 const {
     compileDraft, compiledArtifact, createPostgresScratch, buildReleaseOnScratch, inspectSchema,
     bootstrapJournal, installBaseline, resolveMigrationExecutionContext, executeMigrationPath, buildMigrationPlan,
-    readInstallation,
+    readInstallation, saveMigrationArtifact, openArtifactDirectory, readArtifactJson,
 } = require("../dist/src/index.js");
 const {studentProject} = require("../../../examples/postgres-migrations/dist/student-runtime.js");
 const {legacyRelease, currentRelease} = require("../../../examples/postgres-migrations/dist/student-migrations.js");
@@ -24,6 +27,7 @@ async function lateFailure(compiled, files) {
     const scratch = createPostgresScratch({}, ["app"]);
     const source = value(await scratch.create("upgrade-source"));
     const target = value(await scratch.create("clean-target"));
+    const directory = await mkdtemp(join(tmpdir(), "sd-compact-replay-"));
     try {
         value(await buildReleaseOnScratch(source.session, legacyRelease));
         value(await buildReleaseOnScratch(target.session, currentRelease));
@@ -38,7 +42,18 @@ async function lateFailure(compiled, files) {
         const ref = {name: "intentional-late-failure", kind: "check", contentHash: textHash(text)};
         value(await files.emitResource({ref, text}));
         const rejected = {...compiled, migration: {...compiled.migration, after: [ref]}};
-        const artifact = compiledArtifact(rejected, files, {from: legacyRelease.snapshot, to: currentRelease.snapshot});
+        const memory = compiledArtifact(rejected, files, {from: legacyRelease.snapshot, to: currentRelease.snapshot});
+        const destination = join(directory, "migration"), published = value(await saveMigrationArtifact(destination, rejected, files, "0001_destructive.sql"));
+        assert.deepEqual((await readdir(destination)).sort(), ["0001_destructive.sql", "metadata.json"]);
+        const reader = value(await openArtifactDirectory(destination));
+        const artifact = {published, runtime: {...memory.runtime,
+            loadMigrationManifest: () => readArtifactJson(reader, "migration.json", false),
+            readMigrationFile: (_migration, file) => reader.readVerified(file),
+            async importValidationModule(file, cacheIdentity) {
+                const bytes = value(await reader.readVerified(file));
+                return import(`data:text/javascript;base64,${Buffer.from(bytes).toString("base64")}#${cacheIdentity}`);
+            },
+        }};
         const resources = Object.fromEntries([...files.resources].filter(([, resource]) => resource.ref.kind !== "query"));
         const context = value(await resolveMigrationExecutionContext(artifact.published, {
             journal, scope, resources,
@@ -57,6 +72,7 @@ async function lateFailure(compiled, files) {
     } finally {
         value(await scratch.destroy(source));
         value(await scratch.destroy(target));
+        await rm(directory, {recursive: true, force: true});
     }
 }
 

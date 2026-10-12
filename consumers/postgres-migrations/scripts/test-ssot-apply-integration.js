@@ -53,7 +53,11 @@ async function main() {
         assert.equal(run("apply", [], 3).problems[0].messageKey, "migration.schemaDrift");
         await owner.query('ALTER TABLE app.items DROP COLUMN rogue', []);
         const initial = JSON.parse(await readFile(join(store, "catalog.json"), "utf8")).migrations[0];
-        const sqlPath = join(store, "entries", initial.migration.id, "generated", initial.migration.steps[0].run.contentHash + ".sql"), bytes = await readFile(sqlPath);
+        const sqlPath = join(store, "entries", initial.migration.id, initial.migration.id + ".sql"), bytes = await readFile(sqlPath);
+        assert.ok(bytes.toString().includes('CREATE ROLE "' + settings.owner.user + '"'));
+        assert.ok(bytes.toString().includes('CREATE ROLE "' + settings.appUser.user + '"'));
+        assert.ok(!bytes.toString().includes(settings.owner.password));
+        assert.ok(!bytes.toString().includes(settings.appUser.password));
         const changed = Buffer.from(bytes); changed[0] ^= 1; await writeFile(sqlPath, changed);
         assert.equal(run("apply", [], 3).problems[0].messageKey, "migration.checksumMismatch");
         await writeFile(sqlPath, bytes);
@@ -88,7 +92,7 @@ async function main() {
         assert.equal((await app.query('SELECT name FROM app.items', [])).rows[0].name, "moved");
         const status = value(run("status"));
         assert.deepEqual(status.migrations.map(migration => migration.applied), [true, true, true, false]);
-        assert.equal(status.installation.current.releaseId, "move-name");
+        assert.equal(status.installation.current.releaseId, "0003_move-name");
         assert.equal((await owner.query("SELECT state FROM app_migrations.execution_attempt ORDER BY started_at DESC LIMIT 1", [])).rows[0].state, "failed");
         console.log("SSOT CLI fresh install, roles, idempotence, integrity/drift/permission gates, concurrency, upgrades, decisions and transactional data failure verified");
     } finally {

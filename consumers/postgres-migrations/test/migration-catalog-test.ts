@@ -5,9 +5,10 @@ import {join} from "node:path";
 import {describe, it} from "mocha";
 import type {MigrationCatalogInfo, ReleaseRefInfo, ValidationResult} from "system-definition";
 import {readMigrationCatalog} from "../src/migration-catalog";
-import {saveMigrationArtifact} from "../src/migration-artifact";
+import {createMigrationManifest} from "../src/migration-artifact";
+import {publishArtifactDirectory} from "../src/artifact-files";
 import {AuthoringFiles} from "../src/authoring-files";
-import {sha256Hex} from "../src/canonical-hash";
+import {canonicalBytes, sha256Hex} from "../src/artifact";
 import type {CompiledAuthoringInfo} from "../src/authoring-contract";
 
 const ref = (id: string, digit: string): ReleaseRefInfo => ({systemId: "catalog", releaseId: id, releaseHash: digit.repeat(64)});
@@ -21,7 +22,10 @@ async function save(directory: string, from: ReleaseRefInfo, to: ReleaseRefInfo)
         base: {from, to, fromSnapshotHash: "5".repeat(64), toSnapshotHash: "6".repeat(64), fromPersistenceHash: "7".repeat(64), toPersistenceHash: "8".repeat(64)},
         migration: {id: from.releaseId + "-" + to.releaseId, from, to, description: "", before: [], steps: [{id: "run", run}], after: []},
         operations: [], decisions: [], checkpoints: [], queryResources: {}, validationArtifacts: []};
-    return value(await saveMigrationArtifact(directory, compiled, files));
+    const manifest = value(createMigrationManifest(compiled, files));
+    const saved = new Map(files.files); saved.set("migration.json", value(canonicalBytes(manifest)).bytes);
+    await publishArtifactDirectory(directory, saved);
+    return {migration: manifest.migration, migrationHash: manifest.migrationHash};
 }
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Expect<T extends true> = T;

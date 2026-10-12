@@ -7,6 +7,7 @@ import {
     isNonEmptyString,
     isPlainObject,
     type FileResourceInfo,
+    type ContentRefInfo,
     type FileInfo,
     type PersistenceInfo,
     type JsonValue,
@@ -312,4 +313,5 @@ export type CompiledAuthoringInfo = {
     queryResources: Readonly<Record<string, QueryResourceInfo>>;
     validationArtifacts: readonly ValidationArtifactInfo[];
     states?: {from: FileInfo; to: FileInfo};
+    initial?: ContentRefInfo<"sql">;
 };

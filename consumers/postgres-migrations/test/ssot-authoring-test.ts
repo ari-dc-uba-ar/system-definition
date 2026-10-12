@@ -1,5 +1,5 @@
 import {strict as assert} from "node:assert";
-import {mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
+import {mkdtemp, readFile, readdir, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {describe, it} from "mocha";
@@ -7,6 +7,7 @@ import {captureSystemSnapshot, commonTypeDefs, commonTypeBehaviours, completeCor
 import {decodeSqlSsot} from "../src/sql-mapping";
 import {inferSsotMigration, generateSsotMigration} from "../src/ssot-authoring";
 import {migrationDirectory, readStoredCatalog, readCatalogState} from "../src/migration-store";
+import {openArtifactDirectory} from "../src/artifact-files";
 import {verifyMigrationFiles} from "../src/migration-integrity";
 import {dispatchSsotAuthoring} from "../src/ssot-cli";
 import type {DatabaseSettings} from "../src/database-settings";
@@ -33,10 +34,15 @@ describe("SSOT migration authoring without a project adapter", () => {
         assert.equal(catalog.migrations.length, 1);
         assert.equal(value(await readCatalogState(root, catalog, 0)).schema.objects.length, 0);
         assert.equal(value(await readCatalogState(root, catalog, 1)).schema.objects.filter(object => object.kind === "table").length, 1);
-        const statePath = join(migrationDirectory(root, published), "states/to.json");
-        const bytes = await readFile(statePath);
-        bytes[0] ^= 1;
-        await writeFile(statePath, bytes);
+        const directory = migrationDirectory(root, published);
+        assert.deepEqual((await readdir(directory)).sort(), ["0001_initial.sql", "metadata.json"]);
+        const script = await readFile(join(directory, "0001_initial.sql"), "utf8");
+        assert.ok(script.includes('CREATE ROLE "owner"') && script.includes('CREATE ROLE "app"'));
+        assert.ok(script.includes('TO "app"'));
+        assert.ok(verified.authoring.initial);
+        const metadataFile = join(directory, "metadata.json"), metadata = JSON.parse(await readFile(metadataFile, "utf8"));
+        metadata["states/to.json"].releaseId = "changed";
+        await writeFile(metadataFile, JSON.stringify(metadata));
         assert.equal((await verifyMigrationFiles(migrationDirectory(root, published), published)).ok, false);
         assert.equal((await readCatalogState(root, catalog, 1)).ok, false);
     }));
@@ -50,7 +56,7 @@ describe("SSOT migration authoring without a project adapter", () => {
             contract: {id: "increment", resourceName: "increment.sql", dependsOn: [], implementsChanges: [], reads: [],
                 writes: [{schema: "app", kind: "table", name: "items", parentName: null, signature: []}], destroys: [], before: [], after: [], rowChecks: []}}));
         const verified = value(await verifyMigrationFiles(migrationDirectory(root, published), published));
-        assert.equal(verified.authoring.migration.steps.length, 1);
+        assert.equal(verified.authoring.migration.steps.length, 2);
         const catalog = value(await readStoredCatalog(root));
         assert.equal(catalog.migrations.length, 2);
         assert.deepEqual(value(await readCatalogState(root, catalog, 1)).schema, value(await readCatalogState(root, catalog, 2)).schema);

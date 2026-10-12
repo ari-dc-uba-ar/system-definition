@@ -47,6 +47,7 @@ export type MigrationManifestInfo = {
     migration: MigrationInfo;
     authoring: FileInfo;
     resources?: FileInfo;
+    script?: FileInfo;
     migrationHash: string;
 };
 
@@ -516,7 +517,7 @@ function migrationContextFromSerialized(value: JsonValue): ArtifactResult<Migrat
 
 export function decodeMigrationManifest(value: JsonValue): ArtifactResult<MigrationManifestInfo> {
     if (!isObject(value)) return failure("migration.unsupportedFormat", {reason: "migration manifest must be an object"});
-    const expected = ["formatVersion", "migration", "authoring", "migrationHash", ...(Object.hasOwn(value, "resources") ? ["resources"] : [])].sort();
+    const expected = ["formatVersion", "migration", "authoring", "migrationHash", ...(Object.hasOwn(value, "resources") ? ["resources"] : []), ...(Object.hasOwn(value, "script") ? ["script"] : [])].sort();
     if (!hasExactKeys(value, expected)) {
         return failure("migration.unsupportedFormat", {reason: "invalid migration manifest shape"});
     }
@@ -526,6 +527,8 @@ export function decodeMigrationManifest(value: JsonValue): ArtifactResult<Migrat
     if (!authoring.ok) return authoring;
     const resources = Object.hasOwn(value, "resources") ? decodeFileInfo(value.resources, "manifest.resources") : {ok: true as const, value: undefined};
     if (!resources.ok) return resources;
+    const script = Object.hasOwn(value, "script") ? decodeFileInfo(value.script, "manifest.script") : {ok: true as const, value: undefined};
+    if (!script.ok) return script;
     if (typeof value.migrationHash !== "string" || !isSha256(value.migrationHash)) {
         return failure("migration.unsupportedFormat", {reason: "invalid migration hash"});
     }
@@ -540,6 +543,7 @@ export function decodeMigrationManifest(value: JsonValue): ArtifactResult<Migrat
         migration: migration.value,
         authoring: authoring.value,
         ...(resources.value === undefined ? {} : {resources: resources.value}),
+        ...(script.value === undefined ? {} : {script: script.value}),
         migrationHash: value.migrationHash,
     };
     if (computeMigrationHash(manifest) !== manifest.migrationHash) {

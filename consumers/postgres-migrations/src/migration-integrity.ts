@@ -18,6 +18,7 @@ export async function verifyMigrationFiles(directory: string, expected: Publishe
     });
     if (!verified.ok) return verified;
     const {manifest, authoring} = verified.value;
+    if (manifest.script !== undefined) {const script = await reader.readVerified(manifest.script); if (!script.ok) return script;}
     const refs: unknown[] = [...authoring.migration.before, ...authoring.migration.steps.map(step => step.run), ...authoring.migration.after];
     for (const checkpoint of authoring.checkpoints) {
         refs.push(...checkpoint.checks);

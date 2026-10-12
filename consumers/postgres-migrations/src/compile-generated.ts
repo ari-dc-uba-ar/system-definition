@@ -159,7 +159,9 @@ export async function compileGenerated(
     const prepare: MigrationInfo["steps"][number][] = [];
     const finish: MigrationInfo["steps"][number][] = [];
     for (const [index, statement] of structure.value.entries()) {
-        const id = "structure:" + statement.change.id + ":" + index;
+        const identity = statement.change.after ?? statement.change.before!;
+        const label = [statement.change.action, identity.kind, identity.parentName, identity.name].filter(part => part !== null).join("_").replace(/[^a-zA-Z0-9_-]+/g, "_");
+        const id = String(index + 1).padStart(3, "0") + "_" + label;
         const step = await sqlStep(id, statement.text);
         if (!step.ok) return step;
         (statement.order < 50 ? prepare : finish).push(step.value);

@@ -250,12 +250,39 @@ if (!assembled.ok) throw new Error(JSON.stringify(assembled.problems));
 const saved = await saveMigrationArtifact('migrations/migration-id', assembled.value, files);
 ```
 
-Se conserva el formato de artifacts: `migration.json`, `authoring.json`,
-`resources.json` y los archivos referenciados. `authoring.json` es la compilación
-canónica cubierta por el hash del manifiesto; se eliminó la copia redundante
-`compiled.json`. Los SQL/checks se incluyen por referencia y por bytes, manteniendo
-sus hashes y el orden capture → prepare → write → finish del ensamblador existente.
-Los checkpoints tipan sus checks con `ResourceRefInfo` en el contrato ya existente.
+Cada migración publicada contiene dos archivos: un SQL numerado y metadata.json.
+Los IDs nuevos también llevan el prefijo de secuencia, por ejemplo:
+
+```text
+migrations/
+  baseline.json
+  catalog.json
+  entries/
+    0001_initial/
+      0001_initial.sql
+      metadata.json
+    0002_add-planes/
+      0002_add-planes.sql
+      metadata.json
+```
+
+El SQL muestra los pasos ordenados y las fases de conexión. La inicial guarda
+creación de owner/app, schemas y permisos para initialUser; el owner aplica
+schema/datos y grants. Los passwords se suministran al ejecutar, nunca se guardan.
+Los queries de apoyo se muestran como comentarios; checks y validadores los
+controla el runner. No se debe ejecutar el archivo saltándose esas comprobaciones.
+
+metadata.json empaqueta los contratos existentes: manifiesto, authoring, registro
+de recursos, estados origen/destino y módulos históricos. El reader reconstruye
+sus bytes usando los hashes originales. No agrega otro modelo de schema ni otro
+historial. El SQL combinado también está ligado al hash de la migración nueva.
+Los drafts generados por defecto se eliminan al publicar; los drafts explícitos
+fuera del directorio de trabajo se conservan. El catálogo legible ordena las entradas.
+
+Los readers también aceptan directorios anteriores. Compactar su representación
+conserva identidad e historial. Cuando el setup de roles no estaba archivado en una
+migración aplicada, su SQL lo indica como declaración histórica de la configuración;
+las migraciones iniciales nuevas sí guardan y ejecutan ese recurso.
 
 La creación del manifiesto se comparte con replay. `generate --ssot` reutiliza
 el ensamblador y saver, y liga los estados origen/destino al manifiesto. La API de

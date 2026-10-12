@@ -37,9 +37,9 @@ export async function readStateBytes(bytes: Uint8Array): Promise<ValidationResul
     if (!state.ok) return state;
     return sha256Hex(jsonBytes(state.value)) === sha256Hex(bytes) ? state : invalidStore("Saved state is not the declared SSOT projection", "migration.checksumMismatch");
 }
-export async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
+export async function writeJsonAtomic(file: string, value: unknown, pretty = false): Promise<void> {
     const temporary = file + "." + randomUUID() + ".tmp";
-    await writeFile(temporary, jsonBytes(value), {flag: "wx"});
+    await writeFile(temporary, pretty ? JSON.stringify(value, null, 2) + "\n" : jsonBytes(value), {flag: "wx"});
     await rename(temporary, file);
 }
 export function migrationDirectory(root: string, migration: PublishedMigrationInfo): string {
@@ -48,7 +48,7 @@ export function migrationDirectory(root: string, migration: PublishedMigrationIn
     return join(root, "entries", id);
 }
 export async function readStoredCatalog(root: string): Promise<ValidationResult<StoredMigrationCatalog>> {
-    const parsed = parseJsonBytes(await readFile(join(root, "catalog.json")), "catalog.json");
+    const parsed = parseJsonBytes(await readFile(join(root, "catalog.json")), "catalog.json", false);
     if (!parsed.ok) return parsed;
     const raw = parsed.value;
     if (!isPlainObject(raw) || !Array.isArray(raw.releases) || !Array.isArray(raw.migrations) || (raw.baselineDirectory !== undefined && typeof raw.baselineDirectory !== "string")) return invalidStore("Malformed migration catalog");
@@ -89,7 +89,7 @@ export async function initializeMigrationStore(root: string, target: SqlSsotInfo
     const catalog = completeMigrationCatalog([baseline], []);
     if (!catalog.ok) return catalog;
     const stored = {...catalog.value, ...(baselineDirectory === undefined ? {} : {baselineDirectory: resolve(baselineDirectory)})};
-    await writeJsonAtomic(join(root, "catalog.json"), stored);
+    await writeJsonAtomic(join(root, "catalog.json"), stored, true);
     return {ok: true, value: stored};
 }
 export async function readCatalogState(root: string, catalog: StoredMigrationCatalog, index: number): Promise<ValidationResult<MigrationStateInfo>> {

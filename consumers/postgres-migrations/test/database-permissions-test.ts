@@ -5,7 +5,7 @@ import type {DatabaseSettings} from "../src/database-settings";
 import type {PgSession, PgSchemaInfo} from "../src/pg-schema";
 const settings: DatabaseSettings = {database: {database: "test", schema: "app"}, initialUser: {user: "admin"}, owner: {user: "owner", password: "fixture-owner"}, appUser: {user: "app", password: "fixture-app"}};
 describe("owner/app provisioning and permission verification", () => {
-    it("creates missing roles and schema with one administrative transaction and parameterized role formatting", async () => {
+    it("creates missing roles and schema with one administrative transaction and passwords supplied separately from the saved SQL", async () => {
         const calls: string[] = [];
         const session: PgSession = {async query(sql, params) {
             calls.push(sql);
@@ -15,7 +15,8 @@ describe("owner/app provisioning and permission verification", () => {
         }, async close() {}};
         assert.equal((await provisionDatabase(session, settings)).ok, true);
         assert.ok(calls.includes("BEGIN") && calls.includes("COMMIT"));
-        assert.equal(calls.filter(sql => sql.startsWith("CREATE ROLE")).length, 2);
+        assert.ok(calls.some(sql => sql.includes('CREATE ROLE "owner"') && sql.includes('CREATE ROLE "app"')));
+        assert.ok(calls.every(sql => !sql.includes("fixture-owner") && !sql.includes("fixture-app")));
         assert.ok(calls.some(sql => sql.includes('AUTHORIZATION "owner"')));
         assert.ok(calls.some(sql => sql.includes("ALTER DEFAULT PRIVILEGES")));
     });

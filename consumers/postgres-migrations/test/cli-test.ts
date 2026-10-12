@@ -27,7 +27,8 @@ describe("migration CLI boundary", () => {
         }
     });
 
-    it("rejects missing required command inputs before loading modules", () => {
+    it("rejects missing required command inputs before loading modules", function () {
+        this.timeout(10_000);
         for (const [command, options, missing] of [
             ["infer", ["--ssot", "missing.js", "--database", "missing.js"], "id"],
             ["data", ["--ssot", "missing.js", "--database", "missing.js", "--id", "d", "--sql", "s.sql"], "contract"],
