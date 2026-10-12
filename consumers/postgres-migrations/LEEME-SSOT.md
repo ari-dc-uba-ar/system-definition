@@ -291,6 +291,35 @@ conserva el compiler/verificador y usa el mismo saver; la nueva API permite sól
 ensamblar/guardar cuando la verificación se hace por separado. Guardar no equivale
 a verificar ni aplicar. Los readers existentes siguen validando los artifacts.
 
+## Verificar los archivos de una migración
+
+`verifyMigrationFiles(directory, expected)` reutiliza los readers de artifacts y
+`loadVerifiedMigrationAuthoring`. `expected` es el `PublishedMigrationInfo` del
+catálogo registrado/revisado: comparar sólo el hash recalculado del archivo contra
+sí mismo no detectaría una migración reescrita con un nuevo hash.
+
+Verifica el manifiesto y los bytes del authoring canónico, los SQL/checks de before,
+steps, after y checkpoints, todos los recursos del registro, las queries y los
+bundles de validación. Para `FileInfo` comprueba hash y tamaño mediante
+`readVerified`; los demás recursos se leen por su content hash. Usa los decoders
+del core para las referencias y `decodeValidationArtifact` para bundles.
+
+Los manifiestos nuevos también incluyen `resources: FileInfo`, que liga
+`resources.json` al hash de la migración. Es opcional para leer artifacts previos;
+no se reescribe historial ni archivos publicados. En los artifacts anteriores,
+el registro conserva la comprobación de sus textos/recursos contra los hashes
+declarados, aunque no tiene su propio hash ligado al manifiesto.
+
+```typescript
+const verified = await verifyMigrationFiles(directory, catalog.migrations[index]);
+if (!verified.ok) throw new Error(JSON.stringify(verified.problems));
+```
+
+El resultado usa `VerifiedMigrationAuthoring` existente. La función sólo lee:
+no interpreta datos, importa módulos, ejecuta SQL ni inspecciona schemas. El reader
+de catálogo sigue leyendo los manifiestos; la comprobación completa de bytes es
+este paso separado. La composición completa en la CLI permanece por integrar.
+
 ## Historial mínimo
 
 El catálogo ordenado usa `MigrationCatalogInfo` del core: releases y migraciones

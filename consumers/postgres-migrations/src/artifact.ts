@@ -45,6 +45,7 @@ export type MigrationManifestInfo = {
     formatVersion: 1;
     migration: MigrationInfo;
     authoring: FileInfo;
+    resources?: FileInfo;
     migrationHash: string;
 };
 
@@ -436,6 +437,11 @@ export function parseJsonBytes(bytes: Uint8Array, path: string, requireCanonical
     return {ok: true, value: converted.value};
 }
 
+export async function readArtifactJson(root: ArtifactDirectory, path: string, requireCanonical = true): Promise<ArtifactResult<JsonValue>> {
+    const bytes = await root.read(path);
+    return bytes.ok ? parseJsonBytes(bytes.value, path, requireCanonical) : bytes;
+}
+
 function decodeFileInfo(value: JsonValue, path: string): ArtifactResult<FileInfo> {
     if (!isObject(value)) return failure("migration.unsupportedFormat", {path, reason: "expected file info"});
     if (!hasExactKeys(value, ["byteLength", "contentHash", "path"])) return failure("migration.unsupportedFormat", {path, reason: "invalid file info shape"});
@@ -519,7 +525,7 @@ function migrationContextFromSerialized(value: JsonValue): ArtifactResult<Migrat
 
 export function decodeMigrationManifest(value: JsonValue): ArtifactResult<MigrationManifestInfo> {
     if (!isObject(value)) return failure("migration.unsupportedFormat", {reason: "migration manifest must be an object"});
-    const expected = ["formatVersion", "migration", "authoring", "migrationHash"].sort();
+    const expected = ["formatVersion", "migration", "authoring", "migrationHash", ...(Object.hasOwn(value, "resources") ? ["resources"] : [])].sort();
     if (!hasExactKeys(value, expected)) {
         return failure("migration.unsupportedFormat", {reason: "invalid migration manifest shape"});
     }
@@ -527,6 +533,8 @@ export function decodeMigrationManifest(value: JsonValue): ArtifactResult<Migrat
 
     const authoring = decodeFileInfo(value.authoring, "manifest.authoring");
     if (!authoring.ok) return authoring;
+    const resources = Object.hasOwn(value, "resources") ? decodeFileInfo(value.resources, "manifest.resources") : {ok: true as const, value: undefined};
+    if (!resources.ok) return resources;
     if (typeof value.migrationHash !== "string" || !isSha256(value.migrationHash)) {
         return failure("migration.unsupportedFormat", {reason: "invalid migration hash"});
     }
@@ -540,6 +548,7 @@ export function decodeMigrationManifest(value: JsonValue): ArtifactResult<Migrat
         formatVersion: 1,
         migration: migration.value,
         authoring: authoring.value,
+        ...(resources.value === undefined ? {} : {resources: resources.value}),
         migrationHash: value.migrationHash,
     };
     if (computeMigrationHash(manifest) !== manifest.migrationHash) {

@@ -1,5 +1,5 @@
 import {problem, sameContentRef, type PublishedMigrationInfo, type ValidationResult} from "system-definition";
-import {canonicalBytes, computeMigrationHash, decodeMigrationManifest, parseJsonBytes, sha256Hex, type ArtifactResult, type MigrationManifestInfo} from "./artifact";
+import {canonicalBytes, computeMigrationHash, decodeMigrationManifest, readArtifactJson, sha256Hex, type ArtifactResult, type MigrationManifestInfo} from "./artifact";
 import type {CompiledAuthoringInfo} from "./authoring-contract";
 import type {AuthoringFiles} from "./authoring-files";
 import {openArtifactDirectory, publishArtifactDirectory} from "./artifact-files";
@@ -7,25 +7,27 @@ import {openArtifactDirectory, publishArtifactDirectory} from "./artifact-files"
 export async function loadMigrationManifest(directory: string): Promise<ArtifactResult<MigrationManifestInfo>> {
     const reader = await openArtifactDirectory(directory);
     if (!reader.ok) return reader;
-    const loaded = await reader.value.read("migration.json");
+    const loaded = await readArtifactJson(reader.value, "migration.json", false);
     if (!loaded.ok) return loaded;
-    // Manifest identity hashes its JSON value; earlier publishers used pretty JSON.
-    const parsed = parseJsonBytes(loaded.value, "migration.json", false);
-    return parsed.ok ? decodeMigrationManifest(parsed.value) : parsed;
+    return decodeMigrationManifest(loaded.value);
 }
 
 /** The same canonical authoring bytes bind replay and saved migrations. */
 export function createMigrationManifest(compiled: CompiledAuthoringInfo, files: AuthoringFiles): ArtifactResult<MigrationManifestInfo> {
     const encoded = canonicalBytes(compiled);
     if (!encoded.ok) return encoded;
+    const registry = canonicalBytes([...files.resources.values()]);
+    if (!registry.ok) return registry;
     const authoring = {path: "authoring.json", contentHash: sha256Hex(encoded.value.bytes), byteLength: encoded.value.bytes.length};
-    const manifest: MigrationManifestInfo = {formatVersion: 1, migration: compiled.migration, authoring, migrationHash: "0".repeat(64)};
+    const resources = {path: "resources.json", contentHash: sha256Hex(registry.value.bytes), byteLength: registry.value.bytes.length};
+    const manifest: MigrationManifestInfo = {formatVersion: 1, migration: compiled.migration, authoring, resources, migrationHash: "0".repeat(64)};
     manifest.migrationHash = computeMigrationHash(manifest);
     const json = canonicalBytes(manifest);
     if (!json.ok) return json;
     const checked = decodeMigrationManifest(json.value.value);
     if (!checked.ok) return checked;
     files.files.set(authoring.path, encoded.value.bytes);
+    files.files.set(resources.path, registry.value.bytes);
     return checked;
 }
 
@@ -43,12 +45,10 @@ export async function saveMigrationArtifact(destination: string, compiled: Compi
     }
     const manifest = createMigrationManifest(compiled, files);
     if (!manifest.ok) return manifest;
-    const encoded = canonicalBytes(manifest.value), resources = canonicalBytes([...files.resources.values()]);
+    const encoded = canonicalBytes(manifest.value);
     if (!encoded.ok) return encoded;
-    if (!resources.ok) return resources;
     const saved = new Map(files.files);
     saved.set("migration.json", encoded.value.bytes);
-    saved.set("resources.json", resources.value.bytes);
     await publishArtifactDirectory(destination, saved);
     return {ok: true, value: {migration: manifest.value.migration, migrationHash: manifest.value.migrationHash}};
 }

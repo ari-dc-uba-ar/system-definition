@@ -20,6 +20,7 @@ export * from "./deployment-gate";
 
 export * from "./migration-history";
 export * from "./migration-catalog";
+export * from "./migration-integrity";
 export * from "./infer";
 
 export * from "./authoring";

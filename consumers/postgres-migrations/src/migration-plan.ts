@@ -15,6 +15,7 @@ import {
 } from "system-definition";
 import {
     decodeMigrationManifest,
+    parseJsonBytes,
     sha256Hex,
     type ArtifactProblem,
     type ArtifactResult,
@@ -24,8 +25,6 @@ import {canonicalJsonSha256} from "./canonical-hash";
 import type {CompiledAuthoringInfo} from "./authoring";
 
 type JsonObject = {readonly [key: string]: JsonValue};
-
-const decoder = new TextDecoder("utf-8", {fatal: true});
 
 export interface MigrationPlanArtifactContext {
     loadMigrationManifest(migration: PublishedMigrationInfo): Promise<ArtifactResult<JsonValue>>;
@@ -176,28 +175,7 @@ function parseCanonicalJson(bytes: Uint8Array, file: FileInfo): ArtifactResult<J
         return failure("migration.checksumMismatch", {path: file.path, reason: "authoring file metadata mismatch"});
     }
 
-    let text: string;
-    try {
-        text = decoder.decode(bytes);
-    } catch {
-        return failure("migration.unsupportedFormat", {path: file.path, reason: "invalid UTF-8"});
-    }
-    if (text.startsWith("\uFEFF")) {
-        return failure("migration.unsupportedFormat", {path: file.path, reason: "UTF-8 BOM is not allowed"});
-    }
-
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(text) as unknown;
-    } catch {
-        return failure("migration.invalidJson", {path: file.path});
-    }
-    const converted = toJsonValue(parsed);
-    if (!converted.ok) return failure("migration.invalidJson", {path: file.path, reason: "not strict JSON"});
-    if (canonicalJson(converted.value) !== text) {
-        return failure("migration.checksumMismatch", {path: file.path, reason: "JSON artifact is not canonical"});
-    }
-    return {ok: true, value: converted.value};
+    return parseJsonBytes(bytes, file.path);
 }
 
 function validatePathEndpoints(path: MigrationPathInfo): ArtifactResult<true> {
