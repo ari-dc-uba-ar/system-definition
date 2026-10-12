@@ -339,7 +339,7 @@ export async function main(argv: readonly string[]): Promise<number> {
                 else {
                     const {database, initialUser, owner, appUser} = loaded.value;
                     result = command === "assess" ? await assessDatabase(ssot.value, loaded.value)
-                        : {ok: true, value: {ssot: ssot.value, database: {
+                        : {ok: true, value: {...ssot.value, database: {
                             database: {host: database.host, port: database.port, database: database.database, schema: database.schema},
                             initialUser: {user: initialUser.user}, owner, appUser,
                         }}};

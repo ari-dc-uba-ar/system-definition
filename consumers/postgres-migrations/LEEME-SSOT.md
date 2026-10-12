@@ -1,14 +1,25 @@
 # Cargar el SSOT
 
 La aplicación define su modelo con `system-definition` y exporta `ssot`, el
-`SystemSnapshotInfo` que produce `captureSystemSnapshot`. No necesita tipos ni
-constructores propios del consumidor de migraciones.
+`SystemSnapshotInfo` que produce `captureSystemSnapshot`. En el mismo módulo
+exporta `sqlMapping`, con una elección SQL explícita por cada tipo del backend.
+No necesita un constructor propio del consumidor de migraciones.
 
 ```typescript
 const result = captureSystemSnapshot(context, {systemId, entities, records});
 if (!result.ok) throw new Error(JSON.stringify(result.problems));
 export const ssot = result.value;
+export const sqlMapping = {
+    text: sqlTypes.text,
+    integer: sqlTypes.integer,
+    boolean: sqlTypes.boolean,
+} satisfies SqlTypeMapping<typeof ssot>;
 ```
+
+`sqlTypes` y `SqlTypeMapping` se importan de `system-definition`. El vocabulario
+incluye 17 tipos escalares SQL; el mapeo tipado exige todas las claves registradas
+en el SSOT y sólo permite esas elecciones. Los tipos lógicos propios pueden usar
+cualquier elección explícita: por ejemplo, `edad: sqlTypes.smallint`.
 
 El consumidor carga ese módulo y usa el decoder existente del core:
 
@@ -21,7 +32,11 @@ const result = await loadSsot('dist/system.js');
 postgres-migrations capture --ssot dist/system.js
 ```
 
-La función devuelve `ValidationResult<SystemSnapshotInfo>`, ambos tipos del core.
+La función devuelve `ValidationResult<SqlSsotInfo>`: `{ssot, persistence}` compone
+los contratos existentes `SystemSnapshotInfo` y `PersistenceInfo` del core.
+El loader usa `decodeSystemSnapshot` y `decodePersistence` y rechaza mappings
+ausentes, incompletos, extra o desconocidos antes de conectarse a PostgreSQL.
+No hay defaults por nombre lógico ni inferencia desde los tipos de TypeScript.
 Este paso carga el modelo y permite conocer sus entidades. La integración
 de creación, permisos, generación y ejecución de migraciones se refactorizará
 por separado. `capture` y `assess` requieren `--ssot`; el adaptador anterior de
@@ -55,7 +70,7 @@ postgres-migrations capture --ssot dist/system.js --database dist/database.js
 ```
 
 Así el consumidor recibe ambos inputs. La salida del CLI muestra el modelo,
-host/puerto/base y nombres de usuarios; omite parámetros de autenticación del
+el mapping de persistencia, host/puerto/base y nombres de usuarios; omite parámetros de autenticación del
 driver. La creación de roles y la verificación de privilegios son pasos separados.
 
 ## Comparar el SSOT con la base actual
@@ -84,10 +99,30 @@ El adaptador de authoring reutiliza estas reglas y el comparador; conserva los I
 de releases y las correspondencias explícitas que necesita la compilación posterior.
 
 Los índices de constraints se representan mediante sus constraints; índices
-independientes y objetos extra siguen apareciendo. Los mappings internos iniciales
-cubren `text`, `integer` y `boolean`. Un dominio no soportado devuelve el error del
-proyector. Este paso no ejecuta DDL ni modifica datos; reconciliación y generación
-de SQL quedan para pasos posteriores.
+independientes y objetos extra siguen apareciendo. El mapping lógico usa
+únicamente las elecciones declaradas en `sqlMapping`. Un mapping inválido
+se rechaza al cargar. Este paso no ejecuta DDL ni modifica datos.
+
+## Generar SQL desde mappings explícitos
+
+`generateMigrationSql(changes, current, target, schema, dataDestinations)` es una
+función pura: proyecta el SSOT destino con su mapping y reutiliza los renderers de
+tablas, columnas y constraints. Devuelve statements ordenados con `text` y `order`.
+`current` es el schema observado y `changes` son los cambios ya evaluados; las
+decisiones y el código de transformaciones pertenecen a sus pasos propios.
+
+```typescript
+const target = await loadSsot('dist/system.js');
+if (!target.ok) throw new Error(JSON.stringify(target.problems));
+const sql = generateMigrationSql(changes, current, target.value, 'app');
+```
+
+El generador no abre conexiones, reconstruye historial, aplica migrations ni
+traduce validators arbitrarios a SQL. Los PK, UK, FK y nullability se obtienen de
+sus definiciones explícitas. El vocabulario actual es escalar y sin parámetros de
+longitud/precisión; un `maxLength` propio de la aplicación no se convierte por
+suposición en `varchar(n)`. Los renderers existentes siguen rechazando efectos
+que requieran SQL manual.
 
 ## Decisiones de datos por migración
 

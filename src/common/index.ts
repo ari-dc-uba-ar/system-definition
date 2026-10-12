@@ -14,6 +14,7 @@ export * from "./decode-structure";
 export * from "./system-snapshot";
 
 export * from "./system-persistence";
+export * from "./sql-types";
 
 export * from "./migration";
 

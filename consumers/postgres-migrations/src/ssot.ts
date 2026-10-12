@@ -1,8 +1,9 @@
 import {resolve} from "node:path";
 import {pathToFileURL} from "node:url";
-import {decodeSystemSnapshot, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
+import type {ValidationResult} from "system-definition";
+import {decodeSqlSsot, type SqlSsotInfo} from "./sql-mapping";
 
-export async function loadSsot(file: string): Promise<ValidationResult<SystemSnapshotInfo>> {
+export async function loadSsot(file: string): Promise<ValidationResult<SqlSsotInfo>> {
     const module = await import(pathToFileURL(resolve(file)).href);
-    return decodeSystemSnapshot(module.ssot);
+    return decodeSqlSsot(module.ssot, module.sqlMapping);
 }

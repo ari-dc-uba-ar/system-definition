@@ -1,8 +1,9 @@
 import {strict as assert} from "node:assert";
 import {describe, it} from "mocha";
 import {captureSystemSnapshot, commonTypeDefs, commonTypeBehaviours, completeCoreField, defineTypes,
-    defineRecord, withRecords, defineEntity, defineEntities} from "system-definition";
-import {assessSchema, projectSsotSchema} from "../src/assessment";
+    defineRecord, withRecords, defineEntity, defineEntities, sqlTypes} from "system-definition";
+import {assessSchema} from "../src/assessment";
+import {decodeSqlSsot, projectSsotSchema} from "../src/sql-mapping";
 import type {PgSession} from "../src/pg-schema";
 
 const types = defineTypes({types: commonTypeDefs, behaviours: commonTypeBehaviours, completeField: completeCoreField});
@@ -10,7 +11,9 @@ const context = withRecords(types, {item: defineRecord(types, {id: {type: "integ
 const entities = defineEntities({items: defineEntity(context, {name: "items", record: "item", pk: ["id"], fks: {}, uks: {}, validators: []})});
 const captured = captureSystemSnapshot(context, {systemId: "items", entities, records: context.records});
 if (!captured.ok) throw new Error(JSON.stringify(captured.problems));
-const ssot = captured.value;
+const mapped = decodeSqlSsot(captured.value, {text: sqlTypes.text, integer: sqlTypes.integer, boolean: sqlTypes.boolean});
+if (!mapped.ok) throw new Error(JSON.stringify(mapped.problems));
+const ssot = mapped.value;
 
 describe("read-only schema assessment", () => {
     it("projects the SSOT without release, journal or resource configuration", () => {
