@@ -1,7 +1,6 @@
 import {
-    decodeFileResourceInfo,
+    compareUtf16,
     type FileInfo,
-    type Problem,
     type PublishedMigrationInfo,
     type SystemSnapshotInfo,
 } from "system-definition";
@@ -10,7 +9,7 @@ import {
     type ArtifactProblem,
     type ArtifactResult,
 } from "./artifact";
-import type {CompiledAuthoringInfo, QueryResourceInfo} from "./authoring";
+import type {CompiledAuthoringInfo} from "./authoring";
 import type {
     AuthoringCheckpointExecution,
     MigrationExecutionContext,
@@ -21,9 +20,7 @@ import {
     type MigrationPlanArtifactContext,
 } from "./migration-plan";
 import {
-    decodeValidationArtifact,
     type ValidationArtifactHost,
-    type ValidationArtifactInfo,
 } from "./validation-artifact";
 
 const decoder = new TextDecoder("utf-8", {fatal: true});
@@ -46,32 +43,10 @@ function failure<T>(
     const one: ArtifactProblem = {
         field: null,
         messageKey,
-        message: messageKey,
         severity: "blocking",
         details,
     };
     return {ok: false, problems: [one]};
-}
-
-function validationFailure<T>(problems: readonly Problem[]): ArtifactResult<T> {
-    return {
-        ok: false,
-        problems: problems.map(one => ({...one, message: one.messageKey})),
-    };
-}
-
-function queryFile(
-    name: string,
-    value: QueryResourceInfo,
-): ArtifactResult<FileInfo> {
-    if (name.length === 0) {
-        return failure("migration.invalidReference", {
-            name,
-            reason: "invalid authored query resource metadata",
-        });
-    }
-    const decoded = decodeFileResourceInfo(value, name, "query", (path, reason) => failure("migration.invalidReference", {path, reason}));
-    return decoded.ok ? {ok: true, value: decoded.value.file} : validationFailure(decoded.problems);
 }
 
 async function resolveQueries(
@@ -80,20 +55,18 @@ async function resolveQueries(
     runtime: MigrationExecutionArtifactContext,
 ): Promise<ArtifactResult<AuthoringCheckpointExecution["queryResources"]>> {
     const resolved: Record<string, {ref: QueryRefInfo; text: string}> = Object.create(null) as Record<string, {ref: QueryRefInfo; text: string}>;
-    for (const name of Object.keys(authoring.queryResources).sort()) {
-        const metadata = queryFile(name, authoring.queryResources[name]);
-        if (!metadata.ok) return metadata;
+    for (const [name, {file: metadata}] of Object.entries(authoring.queryResources).sort(([left], [right]) => compareUtf16(left, right))) {
 
-        const bytes = await runtime.readMigrationFile(migration, metadata.value);
+        const bytes = await runtime.readMigrationFile(migration, metadata);
         if (!bytes.ok) return bytes;
         const actualHash = sha256Hex(bytes.value);
-        if (bytes.value.byteLength !== metadata.value.byteLength || actualHash !== metadata.value.contentHash) {
+        if (bytes.value.byteLength !== metadata.byteLength || actualHash !== metadata.contentHash) {
             return failure("migration.checksumMismatch", {
                 name,
-                path: metadata.value.path,
-                expectedHash: metadata.value.contentHash,
+                path: metadata.path,
+                expectedHash: metadata.contentHash,
                 actualHash,
-                expectedBytes: String(metadata.value.byteLength),
+                expectedBytes: String(metadata.byteLength),
                 actualBytes: String(bytes.value.byteLength),
             });
         }
@@ -104,20 +77,20 @@ async function resolveQueries(
         } catch {
             return failure("migration.unsupportedFormat", {
                 name,
-                path: metadata.value.path,
+                path: metadata.path,
                 reason: "query artifact is not valid UTF-8",
             });
         }
         if (text.startsWith("\uFEFF")) {
             return failure("migration.unsupportedFormat", {
                 name,
-                path: metadata.value.path,
+                path: metadata.path,
                 reason: "UTF-8 BOM is not allowed",
             });
         }
 
         resolved[name] = {
-            ref: {name, kind: "query", contentHash: metadata.value.contentHash},
+            ref: {name, kind: "query", contentHash: metadata.contentHash},
             text,
         };
     }
@@ -145,30 +118,13 @@ function resolveSnapshots(
             });
         }
     }
-    return {ok: true, value: runtime.snapshots};
-}
-
-function resolveValidationArtifacts(
-    authoring: CompiledAuthoringInfo,
-): ArtifactResult<readonly ValidationArtifactInfo[]> {
-    const artifacts: ValidationArtifactInfo[] = [];
-    for (const raw of authoring.validationArtifacts) {
-        const decoded = decodeValidationArtifact(raw);
-        if (!decoded.ok) return validationFailure(decoded.problems);
-        const expectedHash = decoded.value.side === "from"
-            ? authoring.base.fromSnapshotHash
-            : authoring.base.toSnapshotHash;
-        if (decoded.value.snapshotHash !== expectedHash) {
-            return failure("migration.validationArtifactInvalid", {
-                side: decoded.value.side,
-                expectedHash,
-                actualHash: decoded.value.snapshotHash,
-                reason: "validation artifact snapshot is not the authored snapshot",
-            });
-        }
-        artifacts.push(decoded.value);
+    for (const artifact of authoring.validationArtifacts) {
+        if (artifact.snapshotHash !== expected[artifact.side]) return failure("migration.validationArtifactInvalid", {
+            side: artifact.side, expectedHash: expected[artifact.side], actualHash: artifact.snapshotHash,
+            reason: "validation artifact snapshot is not the authored snapshot",
+        });
     }
-    return {ok: true, value: artifacts};
+    return {ok: true, value: runtime.snapshots};
 }
 
 function validationHost(
@@ -209,13 +165,11 @@ export async function resolveMigrationExecutionContext(
     if (!snapshots.ok) return snapshots;
     const queries = await resolveQueries(migration, verified.value.authoring, runtime);
     if (!queries.ok) return queries;
-    const validationArtifacts = resolveValidationArtifacts(verified.value.authoring);
-    if (!validationArtifacts.ok) return validationArtifacts;
 
     const authoring: AuthoringCheckpointExecution = {
-        checkpoints: verified.value.authoring.checkpoints as AuthoringCheckpointExecution["checkpoints"],
+        checkpoints: verified.value.authoring.checkpoints,
         queryResources: queries.value,
-        validationArtifacts: validationArtifacts.value,
+        validationArtifacts: verified.value.authoring.validationArtifacts,
         validationHost: validationHost(migration, runtime),
         snapshots: snapshots.value,
     };

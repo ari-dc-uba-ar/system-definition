@@ -69,3 +69,17 @@ export function exactKeys(
 ): ValidationResult<true> {
     return exactOptionalKeys(value, expected, [], path, invalid);
 }
+
+export function decodeArray<T>(
+    value: unknown, path: string, invalid: StructuralFailure,
+    decode: (value: unknown, path: string) => ValidationResult<T>,
+): ValidationResult<readonly T[]> {
+    if (!Array.isArray(value)) return invalid(path, "expected an array");
+    const result: T[] = [];
+    for (const [index, raw] of value.entries()) {
+        const item = decode(raw, path + "[" + index + "]");
+        if (!item.ok) return item;
+        result.push(item.value);
+    }
+    return {ok: true, value: result};
+}

@@ -37,13 +37,13 @@ export type PgTypeInfo = {
 export type PgObjectInfo =
     | {
         kind: "table";
-        identity: PgObjectIdentity;
+        identity: PgObjectIdentity<"table">;
         persistence: string;
         relationKind: string;
     }
     | {
         kind: "column";
-        identity: PgObjectIdentity;
+        identity: PgObjectIdentity<"column">;
         type: PgTypeInfo;
         nullable: boolean;
         defaultExpression: string | null;
@@ -52,11 +52,11 @@ export type PgObjectInfo =
     }
     | {
         kind: "constraint";
-        identity: PgObjectIdentity;
+        identity: PgObjectIdentity<"constraint">;
         constraintKind: "primaryKey" | "unique" | "foreignKey" | "check";
         definition: string;
         columns: readonly string[];
-        target: PgObjectIdentity | null;
+        target: PgObjectIdentity<"table"> | null;
         pairs: readonly {source: string; target: string}[];
         deferrable: boolean;
         initiallyDeferred: boolean;
@@ -65,22 +65,22 @@ export type PgObjectInfo =
     }
     | {
         kind: "index";
-        identity: PgObjectIdentity;
+        identity: PgObjectIdentity<"index">;
         definition: string;
         valid: boolean;
         ready: boolean;
-        ownerConstraint: PgObjectIdentity | null;
+        ownerConstraint: PgObjectIdentity<"constraint"> | null;
     }
     | {
         kind: "view";
-        identity: PgObjectIdentity;
+        identity: PgObjectIdentity<"view">;
         definition: string;
         columns: readonly string[];
         options: Readonly<Record<string, string>>;
     }
     | {
         kind: "routine";
-        identity: PgObjectIdentity;
+        identity: PgObjectIdentity<"routine">;
         routineKind: "function" | "procedure";
         definition: string;
     };
@@ -181,15 +181,15 @@ function constraintName(table: string, suffix: string): ValidationResult<string>
     return {ok: true, value};
 }
 
-function tableIdentity(schema: string, name: string): PgObjectIdentity {
+function tableIdentity(schema: string, name: string): PgObjectIdentity<"table"> {
     return {schema, kind: "table", name, parentName: null, signature: []};
 }
 
-function columnIdentity(schema: string, table: string, name: string): PgObjectIdentity {
+function columnIdentity(schema: string, table: string, name: string): PgObjectIdentity<"column"> {
     return {schema, kind: "column", name, parentName: table, signature: []};
 }
 
-function constraintIdentity(schema: string, table: string, name: string): PgObjectIdentity {
+function constraintIdentity(schema: string, table: string, name: string): PgObjectIdentity<"constraint"> {
     return {schema, kind: "constraint", name, parentName: table, signature: []};
 }
 

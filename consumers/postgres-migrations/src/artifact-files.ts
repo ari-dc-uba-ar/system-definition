@@ -6,7 +6,7 @@ import type {ArtifactResult} from "./artifact";
 import {sha256Hex} from "./canonical-hash";
 
 function failure<T>(key: string, details: Readonly<Record<string, string>>): ArtifactResult<T> {
-    return {ok: false, problems: [{...problem(null, key, "blocking", details), message: key}]};
+    return {ok: false, problems: [problem(null, key, "blocking", details)]};
 }
 
 export function isSafeArtifactPath(path: string): boolean {

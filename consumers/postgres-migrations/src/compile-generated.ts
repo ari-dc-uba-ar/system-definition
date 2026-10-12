@@ -190,7 +190,7 @@ export async function compileGenerated(
             const expectedHash = side === "from" ? draft.base.fromSnapshotHash : draft.base.toSnapshotHash;
             if (artifact === undefined || artifact.snapshotHash !== expectedHash) return failed("Missing or mismatched historical validation artifact");
             const afterStep = side === "from" ? capture[0]!.id : (write[write.length - 1] ?? allSteps[allSteps.length - 1])!.id;
-            const rows: unknown[] = [];
+            const rows: CompiledAuthoringInfo["checkpoints"][number]["rows"][number][] = [];
             for (const entity of Object.keys(data.context[side].entities).sort()) {
                 const projected = compileMachineEntityReadQuery(data.context[side], entity, data.persistence, data.storage,
                     `SELECT * FROM ${quotePgQualified(data.storage.schema, entity)}`, ast.machine);

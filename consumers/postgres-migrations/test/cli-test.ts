@@ -23,7 +23,19 @@ describe("migration CLI boundary", () => {
         for (const command of ["capture", "assess"]) {
             const result = spawnSync(process.execPath, [resolve(__dirname, "../src/cli-main.js"), command], {encoding: "utf8"});
             assert.equal(result.status, 2);
-            assert.match(result.stdout, new RegExp(command + " requires --ssot"));
+            assert.match(result.stdout, /Supply --ssot/);
+        }
+    });
+
+    it("rejects missing required command inputs before loading modules", () => {
+        for (const [command, options, missing] of [
+            ["infer", ["--ssot", "missing.js", "--database", "missing.js"], "id"],
+            ["data", ["--ssot", "missing.js", "--database", "missing.js", "--id", "d", "--sql", "s.sql"], "contract"],
+            ["resolve", ["--draft", "draft.json"], "answers"],
+        ] as const) {
+            const result = spawnSync(process.execPath, [resolve(__dirname, "../src/cli-main.js"), command, ...options], {encoding: "utf8"});
+            assert.equal(result.status, 2);
+            assert.ok(result.stdout.includes("Supply --" + missing));
         }
     });
 

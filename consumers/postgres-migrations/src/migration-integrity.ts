@@ -1,8 +1,7 @@
-import {decodeContentRefInfo, decodeFileResourceInfo, isPlainObject, problem, type PublishedMigrationInfo, type ValidationResult} from "system-definition";
+import {decodeContentRefInfo, isPlainObject, problem, type PublishedMigrationInfo, type ValidationResult} from "system-definition";
 import {parseJsonBytes, readArtifactJson, sha256Hex} from "./artifact";
 import {openArtifactDirectory} from "./artifact-files";
 import {loadVerifiedMigrationAuthoring, type VerifiedMigrationAuthoring} from "./migration-plan";
-import {decodeValidationArtifact} from "./validation-artifact";
 
 function invalid(path: string, reason: string): ValidationResult<never> {
     return {ok: false, problems: [problem(null, "migration.invalidReference", "blocking", {path, reason})]};
@@ -21,7 +20,6 @@ export async function verifyMigrationFiles(directory: string, expected: Publishe
     const {manifest, authoring} = verified.value;
     const refs: unknown[] = [...authoring.migration.before, ...authoring.migration.steps.map(step => step.run), ...authoring.migration.after];
     for (const checkpoint of authoring.checkpoints) {
-        if (!isPlainObject(checkpoint) || !Array.isArray(checkpoint.checks)) return invalid("checkpoints", "Malformed checkpoint checks");
         refs.push(...checkpoint.checks);
     }
     const registry = manifest.resources ? await reader.readVerified(manifest.resources) : await reader.read("resources.json");
@@ -43,16 +41,12 @@ export async function verifyMigrationFiles(directory: string, expected: Publishe
         if (!bytes.ok) return bytes;
         if (sha256Hex(bytes.value) !== ref.value.contentHash) return {ok: false, problems: [problem(null, "migration.checksumMismatch", "blocking", {path})]};
     }
-    for (const [name, raw] of Object.entries(authoring.queryResources)) {
-        const query = decodeFileResourceInfo(raw, name, "query", invalid);
-        if (!query.ok) return query;
-        const bytes = await reader.readVerified(query.value.file);
+    for (const query of Object.values(authoring.queryResources)) {
+        const bytes = await reader.readVerified(query.file);
         if (!bytes.ok) return bytes;
     }
-    for (const raw of authoring.validationArtifacts) {
-        const artifact = decodeValidationArtifact(raw);
-        if (!artifact.ok) return artifact;
-        const bytes = await reader.readVerified(artifact.value.entry);
+    for (const artifact of authoring.validationArtifacts) {
+        const bytes = await reader.readVerified(artifact.entry);
         if (!bytes.ok) return bytes;
     }
     for (const file of Object.values(authoring.states ?? {})) {

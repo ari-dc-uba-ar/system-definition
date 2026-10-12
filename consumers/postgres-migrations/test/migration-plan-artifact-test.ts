@@ -103,7 +103,7 @@ class MemoryContext implements MigrationPlanArtifactContext {
         this.manifestReads++;
         const found = this.manifests.get(one.migrationHash);
         return found === undefined
-            ? {ok: false, problems: [{field: null, messageKey: "migration.invalidReference", message: "migration.invalidReference", severity: "blocking", details: {}}]}
+            ? {ok: false, problems: [{field: null, messageKey: "migration.invalidReference", severity: "blocking", details: {}}]}
             : ok(found);
     }
 
@@ -111,7 +111,7 @@ class MemoryContext implements MigrationPlanArtifactContext {
         this.fileReads++;
         const found = this.files.get(one.migrationHash + ":" + file.path);
         return found === undefined
-            ? {ok: false, problems: [{field: null, messageKey: "migration.invalidReference", message: "migration.invalidReference", severity: "blocking", details: {}}]}
+            ? {ok: false, problems: [{field: null, messageKey: "migration.invalidReference", severity: "blocking", details: {}}]}
             : ok(found);
     }
 }

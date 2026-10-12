@@ -10,3 +10,19 @@ type MixedRenameRejected = Reject<Assignable<{before: FieldRefInfo; after: {enti
 type ReversedSidesRejected = Reject<Assignable<{before: FieldRefInfo & {side: "to"}; after: FieldRefInfo & {side: "from"}}, RenameInfo>>;
 const contracts: [AddRequiresDestination, DropRequiresSource, AlterHasBoth, MixedRenameRejected, ReversedSidesRejected] = [false, false, true, false, false];
 void contracts;
+
+import type {SsotAuthoringOptions, SsotCommandOptions} from "../src/ssot-cli";
+import type {PgObjectInfo} from "../src/pg-schema";
+import type {AuthoringCheckpointRowInfo} from "../src/authoring-contract";
+import type {ArtifactResult} from "../src/artifact";
+import type {ValidationResult} from "system-definition";
+type DataNeedsSql = Reject<Assignable<SsotCommandOptions & {command: "data"; id: string}, SsotAuthoringOptions>>;
+type InferNeedsId = Reject<Assignable<SsotCommandOptions & {command: "infer"}, SsotAuthoringOptions>>;
+type WrongIdentity = Reject<Assignable<Omit<Extract<PgObjectInfo, {kind: "table"}>, "identity"> & {identity: PgObjectIdentity<"column">}, PgObjectInfo>>;
+type ColumnNeedsParent = Reject<Assignable<{schema: string; kind: "column"; name: string; parentName: null; signature: []}, PgObjectIdentity<"column">>>;
+type TableHasNoParent = Expect<Assignable<PgObjectIdentity<"table">["parentName"], null>>;
+type MixedRow = Reject<Assignable<Pick<AuthoringCheckpointRowInfo, "id" | "afterStep" | "side" | "select" | "validatorArtifactHash"> & {entity: string; ports: Record<string, never>}, AuthoringCheckpointRowInfo>>;
+type CoreResults = Expect<Assignable<ArtifactResult<string>, ValidationResult<string>>>;
+type ArtifactResults = Expect<Assignable<ValidationResult<string>, ArtifactResult<string>>>;
+const strongerContracts: [DataNeedsSql, InferNeedsId, WrongIdentity, ColumnNeedsParent, TableHasNoParent, MixedRow, CoreResults, ArtifactResults] = [false, false, false, false, true, false, true, true];
+void strongerContracts;

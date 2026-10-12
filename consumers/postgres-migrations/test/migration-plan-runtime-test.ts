@@ -121,7 +121,7 @@ class MemoryRuntime implements MigrationExecutionArtifactContext {
     async readMigrationFile(one: PublishedMigrationInfo, entry: FileInfo): Promise<ArtifactResult<Uint8Array>> {
         const found = this.files.get(one.migrationHash + ":" + entry.path);
         return found === undefined
-            ? {ok: false, problems: [{field: null, messageKey: "migration.invalidReference", message: "migration.invalidReference", severity: "blocking", details: {path: entry.path}}]}
+            ? {ok: false, problems: [{field: null, messageKey: "migration.invalidReference", severity: "blocking", details: {path: entry.path}}]}
             : ok(found);
     }
 
@@ -163,6 +163,20 @@ describe("T22 plan-bound runner artifact resolution", () => {
         assert.equal(result.value.authoring?.snapshots.to.snapshotHash, H2);
     });
 
+    it("preserves query names that match Object prototype properties", async () => {
+        const runtime = new MemoryRuntime(), queryBytes = encoder.encode("SELECT 1");
+        const queryFile = file("queries/prototype.sql", queryBytes), authored = authoring(queryFile);
+        authored.queryResources = {["__proto__"]: {kind: "query", file: queryFile}};
+        const bytes = bytesOf(authored), header = manifest(bytes), one = published(header);
+        const json = toJsonValue(header); if (!json.ok) throw new Error("invalid fixture");
+        runtime.manifestValue = json.value;
+        runtime.files.set(one.migrationHash + ":authoring.json", bytes);
+        runtime.files.set(one.migrationHash + ":queries/prototype.sql", queryBytes);
+        const result = await resolveMigrationExecutionContext(one, baseContext(), runtime);
+        assert.ok(result.ok);
+        assert.equal(result.value.authoring?.queryResources["__proto__"].text, "SELECT 1");
+    });
+
     it("rejects missing or changed query bytes before returning an execution context", async () => {
         const missing = new MemoryRuntime();
         const oneMissing = install(missing);
@@ -199,6 +213,23 @@ describe("T22 plan-bound runner artifact resolution", () => {
         runtime.files.set(one.migrationHash + ":authoring.json", authoringBytes);
         runtime.files.set(one.migrationHash + ":queries/people-after.sql", queryBytes);
         assert.equal(firstKey(await resolveMigrationExecutionContext(one, baseContext(), runtime)), "migration.validationArtifactInvalid");
+    });
+
+    it("rejects malformed nested artifacts at loading, even when their hashes match", async () => {
+        const variants = [
+            {operations: [{id: "op", stepIds: [123], changeIds: [], dataMigrationIds: []}]},
+            {checkpoints: [{afterStep: "step", checks: [{kind: "sql", name: "wrong", contentHash: H1}], rows: []}]},
+            {checkpoints: [{afterStep: "step", checks: [], rows: [{id: "row", afterStep: "step", side: "elsewhere", entity: "people", select: {kind: "query", name: "q", contentHash: H1}, validatorArtifactHash: H2}]}]},
+        ];
+        for (const invalid of variants) {
+            const runtime = new MemoryRuntime();
+            const bytes = bytesOf({...authoring(file("queries/q.sql", encoder.encode("SELECT 1"))), ...invalid});
+            const header = manifest(bytes), one = published(header);
+            const json = toJsonValue(header); if (!json.ok) throw new Error("invalid fixture");
+            runtime.manifestValue = json.value;
+            runtime.files.set(one.migrationHash + ":authoring.json", bytes);
+            assert.equal(firstKey(await resolveMigrationExecutionContext(one, baseContext(), runtime)), "migration.unsupportedFormat");
+        }
     });
 
     it("re-verifies the immutable migration identity instead of trusting a caller-supplied context", async () => {

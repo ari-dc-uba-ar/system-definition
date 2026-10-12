@@ -8,7 +8,7 @@ import {
 } from "system-definition";
 import {canonicalJsonSha256, sha256Hex} from "./canonical-hash";
 import {computeDraftRevisionHash} from "./draft-revision";
-import type {ManualStepInfo, MigrationDraftInfo, PendingQuestionInfo} from "./authoring-contract";
+import {decodeManualStepInfo, type ManualStepInfo, type MigrationDraftInfo, type PendingQuestionInfo} from "./authoring-contract";
 import {
     decodeDataMigration,
     type AuthoringContext,
@@ -217,6 +217,16 @@ export async function runAddDataSession(options: AddDataSessionOptions): Promise
 export type AddSqlContractInfo = Omit<ManualStepInfo, "run"> & {
     resourceName: string;
 };
+
+export function decodeAddSqlContract(value: unknown): ValidationResult<AddSqlContractInfo> {
+    const invalid = (path: string, reason: string): ValidationResult<never> => ({ok: false, problems: oneProblem("migration.authoringInvalid", {path, reason})});
+    if (!isPlainObject(value) || !hasExactKeys(value, ["id", "resourceName", "dependsOn", "implementsChanges", "reads", "writes", "destroys", "before", "after", "rowChecks"]) || typeof value.resourceName !== "string" || value.resourceName.length === 0) return invalid("$", "expected a SQL resource name");
+    const {resourceName, ...effects} = value;
+    const decoded = decodeManualStepInfo({...effects, run: {kind: "sql", name: resourceName, contentHash: "0".repeat(64)}}, "$", invalid);
+    if (!decoded.ok) return decoded;
+    const {run: _run, ...contract} = decoded.value;
+    return {ok: true, value: {...contract, resourceName}};
+}
 
 export type AddSqlSessionOptions = {
     draftPath: string;

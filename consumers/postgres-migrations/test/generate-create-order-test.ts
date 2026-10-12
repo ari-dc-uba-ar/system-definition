@@ -1,7 +1,7 @@
 import {strict as assert} from "node:assert";
 import {describe, it} from "mocha";
 import {generateCreate} from "../src/generate-create";
-import type {PgSchemaInfo} from "../src/pg-schema";
+import type {PgObjectInfo, PgSchemaInfo} from "../src/pg-schema";
 
 describe("clean-create identity ordering", () => {
     it("preserves field-wise ordering for quoted identifiers", () => {
@@ -12,13 +12,13 @@ describe("clean-create identity ordering", () => {
             arrayDimensions: 0,
             collation: null,
         } as const;
-        const table = (name: string) => ({
+        const table = (name: string): Extract<PgObjectInfo, {kind: "table"}> => ({
             kind: "table" as const,
             identity: {schema: "app", kind: "table", name, parentName: null, signature: []},
             persistence: "permanent",
             relationKind: "r",
         });
-        const column = (parentName: string) => ({
+        const column = (parentName: string): Extract<PgObjectInfo, {kind: "column"}> => ({
             kind: "column" as const,
             identity: {schema: "app", kind: "column", name: "id", parentName, signature: []},
             type,

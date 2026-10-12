@@ -20,7 +20,7 @@ export function compiledArtifact(
     async function read(file: FileInfo): Promise<ArtifactResult<Uint8Array>> {
         const value = files.files.get(file.path);
         if (value === undefined || value.length !== file.byteLength || sha256Hex(value) !== file.contentHash) {
-            return {ok: false, problems: [{field: null, messageKey: "migration.checksumMismatch", message: "migration.checksumMismatch", severity: "blocking", details: {path: file.path}}]};
+            return {ok: false, problems: [{field: null, messageKey: "migration.checksumMismatch", severity: "blocking", details: {path: file.path}}]};
         }
         return {ok: true, value};
     }

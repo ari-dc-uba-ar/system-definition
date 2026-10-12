@@ -1,5 +1,7 @@
 import {
     childPath,
+    decodeArray,
+    hasExactKeys,
     decodeResourceRefInfo,
     exactKeys,
     isNonEmptyString,
@@ -15,8 +17,9 @@ import {
     type ValidationResult,
 } from "system-definition";
 import type {PgObjectIdentity, PgSchemaInfo} from "./pg-schema";
+import {decodePgObjectIdentity} from "./pg-identity";
 import type {SchemaDifferenceInfo} from "./compare-schema";
-import type {DataMigrationInfo, FieldRefInfo, QueryRefInfo} from "./migration-authoring";
+import type {DataMigrationInfo, FieldRefInfo, PortInfo, QueryRefInfo, SnapshotSide} from "./migration-authoring";
 import type {AuthoringContext} from "./migration-authoring";
 import type {StorageContext} from "./pg-schema";
 import type {ValidationArtifactInfo} from "./validation-artifact";
@@ -228,6 +231,24 @@ export type ManualStepInfo = {
     rowChecks: readonly unknown[];
 };
 
+
+/** Decode manual effects once; assembly owns reference/effect semantics. */
+export function decodeManualStepInfo(value: unknown, path: string, invalid: StructuralFailure): ValidationResult<ManualStepInfo> {
+    if (!isPlainObject(value) || !hasExactKeys(value, ["id", "run", "dependsOn", "implementsChanges", "reads", "writes", "destroys", "before", "after", "rowChecks"])
+        || !isNonEmptyString(value.id) || !Array.isArray(value.rowChecks)) return invalid(path, "invalid manual step");
+    const strings = (raw: unknown, at: string) => isNonEmptyString(raw) ? {ok: true as const, value: raw} : invalid(at, "expected a name");
+    const run = decodeResourceRefInfo(value.run, path + ".run", invalid); if (!run.ok) return run;
+    const dependsOn = decodeArray(value.dependsOn, path + ".dependsOn", invalid, strings); if (!dependsOn.ok) return dependsOn;
+    const implementsChanges = decodeArray(value.implementsChanges, path + ".implementsChanges", invalid, strings); if (!implementsChanges.ok) return implementsChanges;
+    const reads = decodeArray(value.reads, path + ".reads", invalid, (raw, at) => decodePgObjectIdentity(raw, at, invalid)); if (!reads.ok) return reads;
+    const writes = decodeArray(value.writes, path + ".writes", invalid, (raw, at) => decodePgObjectIdentity(raw, at, invalid)); if (!writes.ok) return writes;
+    const destroys = decodeArray(value.destroys, path + ".destroys", invalid, (raw, at) => decodePgObjectIdentity(raw, at, invalid)); if (!destroys.ok) return destroys;
+    const before = decodeArray(value.before, path + ".before", invalid, (raw, at) => decodeResourceRefInfo(raw, at, invalid)); if (!before.ok) return before;
+    const after = decodeArray(value.after, path + ".after", invalid, (raw, at) => decodeResourceRefInfo(raw, at, invalid)); if (!after.ok) return after;
+    return {ok: true, value: {id: value.id, run: run.value, dependsOn: dependsOn.value, implementsChanges: implementsChanges.value,
+        reads: reads.value, writes: writes.value, destroys: destroys.value, before: before.value, after: after.value, rowChecks: value.rowChecks}};
+}
+
 /** Authored choices belong to the migration; changes and pending are derived. */
 export type MigrationDraftInfo = {
     formatVersion: 1;
@@ -272,6 +293,14 @@ export type CompiledAuthoringOperationInfo = {
     dataMigrationIds: readonly string[];
 };
 
+export type AuthoringCheckpointRowInfo = {
+    id: string;
+    afterStep: string;
+    side: SnapshotSide;
+    select: QueryRefInfo;
+    validatorArtifactHash: string;
+} & ({entity: string; ports?: never} | {ports: Readonly<Record<string, PortInfo>>; entity?: never});
+
 export type CompiledAuthoringInfo = {
     formatVersion: 1;
     draftHash: string;
@@ -279,8 +308,8 @@ export type CompiledAuthoringInfo = {
     migration: MigrationInfo;
     operations: readonly CompiledAuthoringOperationInfo[];
     decisions: readonly DataDecisionInfo[];
-    checkpoints: readonly {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly unknown[]}[];
+    checkpoints: readonly {afterStep: string; checks: readonly ResourceRefInfo[]; rows: readonly AuthoringCheckpointRowInfo[]}[];
     queryResources: Readonly<Record<string, QueryResourceInfo>>;
-    validationArtifacts: readonly unknown[];
+    validationArtifacts: readonly ValidationArtifactInfo[];
     states?: {from: FileInfo; to: FileInfo};
 };

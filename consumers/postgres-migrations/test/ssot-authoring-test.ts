@@ -67,8 +67,8 @@ describe("SSOT migration authoring without a project adapter", () => {
         const ssotFile = join(root, "system.mjs"), databaseFile = join(root, "database.mjs"), store = join(root, "migrations");
         await writeFile(ssotFile, `export const ssot=${JSON.stringify(snapshot)}; export const sqlMapping=${JSON.stringify(mapping)};`);
         await writeFile(databaseFile, `export const databaseSettings=${JSON.stringify(settings)};`);
-        const flags = new Map([["ssot", ssotFile], ["database", databaseFile], ["directory", store], ["id", "initial"]]);
-        assert.equal((await dispatchSsotAuthoring("infer", flags)).ok, true);
-        assert.equal((await dispatchSsotAuthoring("generate", flags)).ok, true);
+        const options = {ssot: ssotFile, database: databaseFile, directory: store, draft: join(store, "draft.json")};
+        assert.equal((await dispatchSsotAuthoring({...options, command: "infer", id: "initial"})).ok, true);
+        assert.equal((await dispatchSsotAuthoring({...options, command: "generate"})).ok, true);
     }));
 });

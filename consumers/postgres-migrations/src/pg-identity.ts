@@ -1,10 +1,10 @@
-import {compareUtf16} from "system-definition";
+import {compareUtf16, decodeArray, hasExactKeys, isNonEmptyString, isPlainObject, type StructuralFailure, type ValidationResult} from "system-definition";
 
-export type PgObjectIdentity = {
+export type PgObjectIdentity<K extends string = string> = {
     schema: string;
-    kind: string;
+    kind: K;
     name: string;
-    parentName: string | null;
+    parentName: K extends "column" | "constraint" | "index" ? string : K extends "table" | "view" | "routine" ? null : string | null;
     signature: readonly string[];
 };
 
@@ -29,4 +29,13 @@ export function samePgIdentity(left: PgObjectIdentity, right: PgObjectIdentity):
 
 export function comparePgIdentity(left: PgObjectIdentity, right: PgObjectIdentity): number {
     return compareUtf16(pgIdentityKey(left), pgIdentityKey(right));
+}
+
+export function decodePgObjectIdentity(value: unknown, path: string, invalid: StructuralFailure): ValidationResult<PgObjectIdentity> {
+    if (!isPlainObject(value) || !hasExactKeys(value, ["schema", "kind", "name", "parentName", "signature"])
+        || !isNonEmptyString(value.schema) || !isNonEmptyString(value.kind) || !isNonEmptyString(value.name)
+        || (value.parentName !== null && !isNonEmptyString(value.parentName))) return invalid(path, "invalid SQL identity");
+    const signature = decodeArray(value.signature, path + ".signature", invalid,
+        (raw, at) => isNonEmptyString(raw) ? {ok: true, value: raw} : invalid(at, "expected a signature name"));
+    return signature.ok ? {ok: true, value: {schema: value.schema, kind: value.kind, name: value.name, parentName: value.parentName, signature: signature.value}} : signature;
 }

@@ -409,3 +409,19 @@ Se eliminaron activación de deployments, readiness, política de rehearsal y
 preparaciones correctivas con historial separado. El drift sigue requiriendo
 reconciliación explícita del usuario; no se corrige automáticamente. Los documentos
 T01–T23 describen el diseño histórico y no son el contrato del CLI actual.
+
+## Contratos internos y flujos
+
+Los ocho comandos se agrupan en inspección (capture/assess/status), autoría
+(infer/resolve/generate/data) y aplicación (apply). Provisioning y recuperación
+son fases de aplicación; no agregan un workflow de deployment.
+
+El CLI valida los argumentos requeridos y pasa opciones tipadas por comando:
+data requiere SQL/contrato e id; infer requiere id. Los artifacts inmutables se
+decodifican completos al cargarlos, reutilizando los decoders del core y el mismo
+contrato de filas/checkpoints que usa el compilador. El ejecutor conserva checks
+de referencias, datos, hashes, permisos y resultado de transacciones; no repite
+las comprobaciones de forma del loader. Los objetos SQL soportados correlacionan
+su kind con la identidad y el parent. Las tentativas usan resultados tipados de
+conexión y una sola escritura inicial. ArtifactResult/ArtifactProblem son aliases
+de ValidationResult/Problem, sin una propiedad message paralela a messageKey.

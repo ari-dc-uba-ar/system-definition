@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 import {existsSync} from "node:fs";
 import {mkdir, readFile} from "node:fs/promises";
-import {dirname, resolve} from "node:path";
+import {dirname, join, resolve} from "node:path";
 import {CLI_COMMANDS, cliExitCode, type CliCommand} from "./cli";
 import type {ValidationResult} from "system-definition";
 import {loadSsot} from "./ssot";
-import {loadDatabaseSettings} from "./database-settings";
 import {assessDatabase} from "./assessment";
-import {dispatchSsotAuthoring, dispatchSsotApply} from "./ssot-cli";
+import {dispatchSsotAuthoring, dispatchSsotApply, loadMigrationInputs} from "./ssot-cli";
 import {readMigrationDraft} from "./ssot-authoring";
 import {collectMigrationDecisions} from "./migration-decisions";
 import {invalidStore, readStoredCatalog, writeJsonAtomic} from "./migration-store";
@@ -28,50 +27,51 @@ apply generates unresolved work for review, verifies artifacts/history/drift, an
 Initial roles use initialUser; the application uses appUser. Credentials are omitted from output.
 Exit codes: 0 success, 2 input/configuration, 3 verification, 4 execution/conflict.
 `;
-async function inputs(flags: Flags) {
-    const file = flags.get("ssot");
-    if (!file) return invalidStore("Supply --ssot", "migration.invalidExecutionOptions");
-    const ssot = await loadSsot(file);
-    if (!ssot.ok) return ssot;
-    const database = flags.get("database");
-    if (!database) return invalidStore("Supply --database", "migration.invalidExecutionOptions");
-    const settings = await loadDatabaseSettings(database);
-    return settings.ok ? {ok: true as const, value: {ssot: ssot.value, settings: settings.value}} : settings;
+function required(flags: Flags, name: string): string {
+    const value = flags.get(name);
+    if (value === undefined) throw new Error("Supply --" + name);
+    return value;
+}
+function options(flags: Flags) {
+    const directory = resolve(flags.get("directory") ?? "migrations");
+    return {ssot: required(flags, "ssot"), database: required(flags, "database"), directory,
+        draft: resolve(flags.get("draft") ?? join(directory, "draft.json")), baseline: flags.get("baseline")};
+}
+function sqlFiles(flags: Flags) {
+    return {file: resolve(required(flags, "sql")), contract: resolve(required(flags, "contract"))};
 }
 const handlers: Record<CliCommand, (flags: Flags) => Promise<ValidationResult<unknown>>> = {
     async capture(flags) {
-        if (!flags.has("ssot")) return invalidStore("capture requires --ssot", "migration.invalidExecutionOptions");
-        if (!flags.has("database")) return loadSsot(flags.get("ssot")!);
-        const loaded = await inputs(flags);
+        const ssot = required(flags, "ssot");
+        if (!flags.has("database")) return loadSsot(ssot);
+        const loaded = await loadMigrationInputs({ssot, database: required(flags, "database")});
         if (!loaded.ok) return loaded;
-        const {ssot, settings: {database, initialUser, owner, appUser}} = loaded.value;
-        return {ok: true, value: {...ssot, database: {database: {host: database.host, port: database.port, database: database.database, schema: database.schema},
+        const {system, settings: {database, initialUser, owner, appUser}} = loaded.value;
+        return {ok: true, value: {...system, database: {database: {host: database.host, port: database.port, database: database.database, schema: database.schema},
             initialUser: {user: initialUser.user}, owner: {user: owner.user}, appUser: {user: appUser.user}}}};
     },
     async assess(flags) {
-        if (!flags.has("ssot")) return invalidStore("assess requires --ssot", "migration.invalidExecutionOptions");
-        const loaded = await inputs(flags);
-        return loaded.ok ? assessDatabase(loaded.value.ssot, loaded.value.settings) : loaded;
+        const loaded = await loadMigrationInputs(options(flags));
+        return loaded.ok ? assessDatabase(loaded.value.system, loaded.value.settings) : loaded;
     },
-    infer: flags => dispatchSsotAuthoring("infer", flags),
-    generate: flags => dispatchSsotAuthoring("generate", flags),
-    data: flags => dispatchSsotAuthoring("data", flags),
+    infer: flags => dispatchSsotAuthoring({...options(flags), command: "infer", id: required(flags, "id")}),
+    generate: flags => dispatchSsotAuthoring({...options(flags), command: "generate", sql: flags.has("sql") || flags.has("contract") ? sqlFiles(flags) : undefined}),
+    data: flags => dispatchSsotAuthoring({...options(flags), command: "data", id: required(flags, "id"), sql: sqlFiles(flags)}),
     async resolve(flags) {
-        const draftFile = flags.get("draft"), answersFile = flags.get("answers");
-        if (!draftFile || !answersFile) return invalidStore("resolve requires --draft and --answers", "migration.invalidExecutionOptions");
-        const draft = await readMigrationDraft(resolve(draftFile));
+        const draftFile = resolve(required(flags, "draft")), answersFile = resolve(required(flags, "answers"));
+        const draft = await readMigrationDraft(draftFile);
         if (!draft.ok) return draft;
-        const decided = collectMigrationDecisions(draft.value, JSON.parse(await readFile(resolve(answersFile), "utf8")));
-        if (decided.ok) await writeJsonAtomic(resolve(draftFile), decided.value);
+        const decided = collectMigrationDecisions(draft.value, JSON.parse(await readFile(answersFile, "utf8")));
+        if (decided.ok) await writeJsonAtomic(draftFile, decided.value);
         return decided;
     },
     async status(flags) {
-        const loaded = await inputs(flags);
+        const input = options(flags), loaded = await loadMigrationInputs(input);
         if (!loaded.ok) return loaded;
-        const root = resolve(flags.get("directory") ?? "migrations"), catalog = await readStoredCatalog(root);
-        return catalog.ok ? migrationStatus(root, catalog.value, loaded.value.settings) : catalog;
+        const catalog = await readStoredCatalog(input.directory);
+        return catalog.ok ? migrationStatus(input.directory, catalog.value, loaded.value.settings) : catalog;
     },
-    apply: flags => dispatchSsotApply(flags),
+    apply: flags => dispatchSsotApply({...options(flags), id: flags.get("id")}),
 };
 export async function main(argv: readonly string[]): Promise<number> {
     if (argv.length === 0 || argv.includes("--help")) {process.stdout.write(help); return 0;}

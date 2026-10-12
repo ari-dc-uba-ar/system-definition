@@ -116,9 +116,11 @@ describe("explicit SQL mapping and pure migration rendering", () => {
         const column = current.objects.find(object => object.kind === "column");
         assert.ok(column?.kind === "column");
         const from = {...current, objects: [...current.objects, {...column, identity: {...column.identity, name: "legacy"}}]};
-        const to = {...current, objects: current.objects.map(object => ({...object, identity: {...object.identity,
-            name: object.kind === "table" ? "renamed" : object.identity.name,
-            parentName: object.kind === "table" ? null : "renamed"}}))};
+        const to = {...current, objects: structuredClone(current.objects)};
+        for (const object of to.objects) {
+            if (object.kind === "table") object.identity.name = "renamed";
+            else if (object.identity.parentName !== null) object.identity.parentName = "renamed";
+        }
         const statements = value(generateStructureSql(value(inferStructureChanges(base, from, to, [{before: {entity: "people"}, after: {entity: "renamed"}}])), from, to));
         assert.match(statements[0]!.text, /"people" RENAME TO "renamed"/);
         assert.match(statements.at(-1)!.text, /ALTER TABLE "app"\."renamed" DROP COLUMN "legacy"/);

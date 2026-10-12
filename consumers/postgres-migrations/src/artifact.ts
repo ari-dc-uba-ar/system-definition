@@ -14,6 +14,7 @@ import {
     type MigrationInfo,
     type PersistenceInfo,
     type Problem,
+    type ValidationResult,
     type ReleaseRefInfo,
     type ResourceInfo,
     type ResourceRefInfo,
@@ -112,10 +113,8 @@ export type ReleaseArtifact = {
     resources: Readonly<Record<string, ResolvedArtifactResource>>;
 };
 
-export type ArtifactProblem = Problem & {message: string};
-export type ArtifactResult<T> =
-    | {ok: true, value: T}
-    | {ok: false, problems: readonly ArtifactProblem[]};
+export type ArtifactProblem = Problem;
+export type ArtifactResult<T> = ValidationResult<T>;
 
 type JsonObject = {readonly [key: string]: JsonValue};
 
@@ -140,18 +139,10 @@ function failure<T>(messageKey: string, details: Readonly<Record<string, string>
     const p: ArtifactProblem = {
         field: null,
         messageKey,
-        message: messageKey,
         severity: "blocking",
         details,
     };
     return {ok: false, problems: [p]};
-}
-
-function coreFailure<T>(problems: readonly Problem[]): ArtifactResult<T> {
-    return {
-        ok: false,
-        problems: problems.map(one => ({...one, message: one.messageKey})),
-    };
 }
 
 function isObject(value: JsonValue): value is JsonObject {
@@ -252,9 +243,9 @@ function prepareArtifact(draft: ReleaseArtifactDraft): ArtifactResult<PreparedAr
     const source = detached.value;
 
     const decodedSnapshot = decodeSystemSnapshot(source.snapshot);
-    if (!decodedSnapshot.ok) return coreFailure(decodedSnapshot.problems);
+    if (!decodedSnapshot.ok) return decodedSnapshot;
     const decodedPersistence = decodePersistence(source.persistence, decodedSnapshot.value);
-    if (!decodedPersistence.ok) return coreFailure(decodedPersistence.problems);
+    if (!decodedPersistence.ok) return decodedPersistence;
     source.snapshot = decodedSnapshot.value;
     source.persistence = {
         entities: [...decodedPersistence.value.entities],
@@ -542,7 +533,7 @@ export function decodeMigrationManifest(value: JsonValue): ArtifactResult<Migrat
     const context = migrationContextFromSerialized(value.migration);
     if (!context.ok) return context;
     const migration = decodeMigration(value.migration, context.value);
-    if (!migration.ok) return coreFailure(migration.problems);
+    if (!migration.ok) return migration;
 
     const manifest: MigrationManifestInfo = {
         formatVersion: 1,
@@ -748,12 +739,12 @@ export async function loadReleaseArtifact(directory: string): Promise<ArtifactRe
         return failure("migration.unsupportedFormat", {reason: "release JSON files have invalid shapes"});
     }
     const decodedSnapshot = decodeSystemSnapshot(snapshotJson.value);
-    if (!decodedSnapshot.ok) return coreFailure(decodedSnapshot.problems);
+    if (!decodedSnapshot.ok) return decodedSnapshot;
     if (decodedSnapshot.value.systemId !== manifest.value.release.systemId) {
         return failure("migration.invalidReference", {reason: "snapshot system id differs from manifest release"});
     }
     const decodedPersistence = decodePersistence(persistenceJson.value, decodedSnapshot.value);
-    if (!decodedPersistence.ok) return coreFailure(decodedPersistence.problems);
+    if (!decodedPersistence.ok) return decodedPersistence;
 
     return {
         ok: true,

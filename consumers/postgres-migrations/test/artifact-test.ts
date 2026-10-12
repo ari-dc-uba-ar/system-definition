@@ -59,8 +59,8 @@ async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
     }
 }
 
-function blockingKey(result: {ok: boolean, problems?: readonly {message: string}[]}): string | undefined {
-    return result.ok ? undefined : result.problems?.[0]?.message;
+function blockingKey(result: {ok: boolean, problems?: readonly {messageKey: string}[]}): string | undefined {
+    return result.ok ? undefined : result.problems?.[0]?.messageKey;
 }
 
 describe("immutable release artifacts", () => {

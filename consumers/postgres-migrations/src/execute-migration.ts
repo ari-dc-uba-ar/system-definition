@@ -12,6 +12,7 @@ import {
     type ValidationResult,
 } from "system-definition";
 import type {ManagedDataInfo} from "./artifact";
+import type {AuthoringCheckpointRowInfo} from "./authoring-contract";
 import {compareSchemas} from "./compare-schema";
 import {normalizePgSchema} from "./normalize-schema";
 import {
@@ -51,13 +52,7 @@ export type ReleaseExecutionState = {
     verifyPermissions?(session: PgSession): Promise<ValidationResult<true>>;
 };
 
-export type AuthoringCheckpointRowExecution = {
-    id: string;
-    afterStep: string;
-    side: SnapshotSide;
-    select: QueryRefInfo;
-    validatorArtifactHash: string;
-} & ({entity: string; ports?: never} | {ports: Readonly<Record<string, PortInfo>>; entity?: never});
+export type AuthoringCheckpointRowExecution = AuthoringCheckpointRowInfo;
 
 export type AuthoringCheckpointExecution = {
     checkpoints: readonly {
@@ -90,12 +85,8 @@ export type MigrationExecutionInfo = {
     history: MigrationHistoryInfo;
 };
 
-type PreparedAuthoringRow = {
-    id: string;
-    afterStep: string;
-    side: SnapshotSide;
-    entity: string | null;
-    ports: Readonly<Record<string, PortInfo>> | null;
+type PreparedAuthoringRow = Pick<AuthoringCheckpointRowInfo, "id" | "afterStep" | "side"> & {
+    selection: {entity: string; ports?: never} | {ports: Readonly<Record<string, PortInfo>>; entity?: never};
     select: {ref: QueryRefInfo; text: string};
     validatorArtifactHash: string;
     artifact: ValidationArtifactInfo;
@@ -104,6 +95,7 @@ type PreparedAuthoringRow = {
 
 type PreparedAuthoringCheckpoint = {
     afterStep: string;
+    validationHost: ValidationArtifactHost;
     checks: readonly ResolvedSqlResource[];
     rows: readonly PreparedAuthoringRow[];
 };
@@ -112,7 +104,6 @@ type PreparedExecution = {
     before: readonly ResolvedSqlResource[];
     steps: readonly {id: string; resource: PreparedSqlResource}[];
     checkpoints: ReadonlyMap<string, PreparedAuthoringCheckpoint>;
-    validationHost: ValidationArtifactHost | null;
     after: readonly ResolvedSqlResource[];
     targetInvariants: readonly ResolvedSqlResource[];
 };
@@ -132,21 +123,11 @@ function validMilliseconds(value: number): boolean {
 function prepareAuthoringCheckpoints(
     context: MigrationExecutionContext,
     stepIds: ReadonlySet<string>,
-): ValidationResult<{
-    checkpoints: ReadonlyMap<string, PreparedAuthoringCheckpoint>;
-    validationHost: ValidationArtifactHost | null;
-}> {
+): ValidationResult<ReadonlyMap<string, PreparedAuthoringCheckpoint>> {
     const authoring = context.authoring;
     if (authoring === undefined) {
-        return {ok: true, value: {checkpoints: new Map(), validationHost: null}};
+        return {ok: true, value: new Map()};
     }
-    if (!Array.isArray(authoring.checkpoints) || !Array.isArray(authoring.validationArtifacts)
-        || authoring.queryResources === null || typeof authoring.queryResources !== "object"
-        || authoring.snapshots === null || typeof authoring.snapshots !== "object"
-        || authoring.validationHost === null || typeof authoring.validationHost !== "object") {
-        return fail("migration.invalidReference", {reason: "invalid authoring checkpoint execution contract"});
-    }
-
     const artifacts = new Map<string, ValidationArtifactInfo>();
     for (const artifact of authoring.validationArtifacts) {
         let evidenceHash: string;
@@ -167,11 +148,6 @@ function prepareAuthoringCheckpoints(
     const prepared = new Map<string, PreparedAuthoringCheckpoint>();
     const rowIds = new Set<string>();
     for (const checkpoint of authoring.checkpoints) {
-        if (checkpoint === null || typeof checkpoint !== "object"
-            || typeof checkpoint.afterStep !== "string" || checkpoint.afterStep.length === 0
-            || !Array.isArray(checkpoint.checks) || !Array.isArray(checkpoint.rows)) {
-            return fail("migration.invalidReference", {reason: "invalid authoring checkpoint shape"});
-        }
         if (!stepIds.has(checkpoint.afterStep)) {
             return fail("migration.invalidReference", {
                 reason: "authoring checkpoint references an unknown migration step",
@@ -194,18 +170,6 @@ function prepareAuthoringCheckpoints(
 
         const rows: PreparedAuthoringRow[] = [];
         for (const row of checkpoint.rows) {
-            if (row === null || typeof row !== "object"
-                || typeof row.id !== "string" || row.id.length === 0
-                || typeof row.afterStep !== "string"
-                || (row.side !== "from" && row.side !== "to")
-                || (row.ports === undefined ? typeof row.entity !== "string" || row.entity.length === 0 : row.entity !== undefined)
-                || row.select === null || typeof row.select !== "object"
-                || row.select.kind !== "query"
-                || typeof row.select.name !== "string" || row.select.name.length === 0
-                || !isSha256(row.select.contentHash)
-                || !isSha256(row.validatorArtifactHash)) {
-                return fail("migration.invalidReference", {reason: "invalid authoring row checkpoint shape"});
-            }
             if (row.afterStep !== checkpoint.afterStep) {
                 return fail("migration.invalidReference", {
                     reason: "row checkpoint afterStep does not match its checkpoint",
@@ -220,15 +184,14 @@ function prepareAuthoringCheckpoints(
             rowIds.add(row.id);
 
             const query = authoring.queryResources[row.select.name];
-            if (query === undefined || query === null || typeof query !== "object"
-                || typeof query.text !== "string" || !sameContentRef(query.ref, row.select)) {
+            if (query === undefined || !sameContentRef(query.ref, row.select)) {
                 return fail("migration.checksumMismatch", {
                     name: row.select.name,
                     reason: "resolved row query does not match the checkpoint reference",
                 });
             }
 
-            const side = row.side as SnapshotSide;
+            const side = row.side;
             const artifact = artifacts.get(row.validatorArtifactHash);
             if (artifact === undefined) {
                 return fail("migration.invalidReference", {
@@ -238,14 +201,6 @@ function prepareAuthoringCheckpoints(
                 });
             }
             const historical = authoring.snapshots[side];
-            if (historical === undefined || historical === null
-                || !isSha256(historical.snapshotHash)
-                || historical.snapshot === null || typeof historical.snapshot !== "object") {
-                return fail("migration.invalidReference", {
-                    reason: "historical snapshot binding is missing",
-                    side,
-                });
-            }
             if (artifact.side !== side || artifact.snapshotHash !== historical.snapshotHash) {
                 return fail("migration.invalidReference", {
                     reason: "validation artifact does not match the checkpoint side/snapshot",
@@ -253,35 +208,32 @@ function prepareAuthoringCheckpoints(
                     side,
                 });
             }
-            let ports: Readonly<Record<string, PortInfo>> | null = null;
+            let selection: PreparedAuthoringRow["selection"];
             if (row.ports !== undefined) {
                 const decoded = decodeValidationPorts({from: authoring.snapshots.from.snapshot, to: authoring.snapshots.to.snapshot, transformations: {}}, row.ports, side);
                 if (!decoded.ok) return decoded;
-                ports = decoded.value;
-            }
-            if (row.entity !== undefined && historical.snapshot.entities[row.entity] === undefined) {
-                return fail("migration.invalidReference", {
-                    reason: "row checkpoint references an unknown historical entity",
-                    rowId: row.id,
-                    entity: row.entity,
+                selection = {ports: decoded.value};
+            } else {
+                if (historical.snapshot.entities[row.entity] === undefined) return fail("migration.invalidReference", {
+                    reason: "row checkpoint references an unknown historical entity", rowId: row.id, entity: row.entity,
                 });
+                selection = {entity: row.entity};
             }
 
             rows.push({
                 id: row.id,
                 afterStep: row.afterStep,
                 side,
-                entity: row.entity ?? null,
-                ports,
+                selection,
                 select: query,
                 validatorArtifactHash: row.validatorArtifactHash,
                 artifact,
                 snapshot: historical.snapshot,
             });
         }
-        prepared.set(checkpoint.afterStep, {afterStep: checkpoint.afterStep, checks, rows});
+        prepared.set(checkpoint.afterStep, {afterStep: checkpoint.afterStep, validationHost: authoring.validationHost, checks, rows});
     }
-    return {ok: true, value: {checkpoints: prepared, validationHost: authoring.validationHost}};
+    return {ok: true, value: prepared};
 }
 
 function resolveResource(
@@ -345,8 +297,7 @@ function prepareExecution(
         value: {
             before,
             steps,
-            checkpoints: authoring.value.checkpoints,
-            validationHost: authoring.value.validationHost,
+            checkpoints: authoring.value,
             after,
             targetInvariants,
         },
@@ -453,8 +404,8 @@ async function runAuthoringCheckpoint(
             modules.set(row.validatorArtifactHash, runtime);
         }
 
-        const validated = row.ports === null ? validateMachineEntityRows(row.snapshot, runtime, row.entity!, queried.value)
-            : validateMachinePortRows(runtime, row.ports, queried.value);
+        const validated = row.selection.ports === undefined ? validateMachineEntityRows(row.snapshot, runtime, row.selection.entity, queried.value)
+            : validateMachinePortRows(runtime, row.selection.ports, queried.value);
         if (!validated.ok) return validated;
     }
     return {ok: true, value: true};
@@ -535,15 +486,10 @@ export async function executeMigration(
 
             const checkpoint = prepared.value.checkpoints.get(step.id);
             if (checkpoint !== undefined) {
-                if (prepared.value.validationHost === null) {
-                    return await failInside(fail("migration.invalidReference", {
-                        reason: "authoring checkpoint validation host is missing",
-                    }));
-                }
                 const checkpointResult = await runAuthoringCheckpoint(
                     session,
                     checkpoint,
-                    prepared.value.validationHost,
+                    checkpoint.validationHost,
                     validationModules,
                 );
                 if (!checkpointResult.ok) return await failInside(checkpointResult);

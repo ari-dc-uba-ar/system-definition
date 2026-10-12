@@ -1,6 +1,11 @@
 import {
     canonicalJson,
     decodeFileInfo,
+    decodeArray,
+    decodeFileResourceInfo,
+    decodeReleaseRefInfo,
+    decodeContentRefInfo,
+    type ValidationResult,
     hasExactKeys,
     isPlainObject,
     isSha256,
@@ -12,7 +17,6 @@ import {
     type MigrationPathInfo,
     type MigrationPlanInfo,
     type PublishedMigrationInfo,
-    type ReleaseRefInfo,
 } from "system-definition";
 import {
     decodeMigrationManifest,
@@ -23,7 +27,9 @@ import {
     type MigrationManifestInfo,
 } from "./artifact";
 import {canonicalJsonSha256, omitJsonObjectKeys} from "./canonical-hash";
-import type {CompiledAuthoringInfo} from "./authoring";
+import {decodeDataDecisionInfo, decodeFieldRefInfo, type AuthoringCheckpointRowInfo, type CompiledAuthoringInfo} from "./authoring-contract";
+import {decodeValidationArtifact} from "./validation-artifact";
+import type {PortInfo} from "./migration-authoring";
 
 type JsonObject = {readonly [key: string]: JsonValue};
 
@@ -39,7 +45,6 @@ function failure<T>(
     const one: ArtifactProblem = {
         field: null,
         messageKey,
-        message: messageKey,
         severity: "blocking",
         details,
     };
@@ -67,108 +72,83 @@ export function computePlanHash(plan: MigrationPlanInfo): string {
     return canonicalJsonSha256(omitJsonObjectKeys(jsonOf(plan), ["planHash"]));
 }
 
-function decodeReleaseRef(value: JsonValue, label: string): ArtifactResult<ReleaseRefInfo> {
-    if (!isObject(value)
-        || !hasExactKeys(value, ["releaseHash", "releaseId", "systemId"])
-        || typeof value.systemId !== "string"
-        || typeof value.releaseId !== "string"
-        || typeof value.releaseHash !== "string"
-        || !isSha256(value.releaseHash)) {
-        return failure("migration.unsupportedFormat", {reason: `invalid authoring ${label} release reference`});
+const invalidAuthoring = (path: string, reason: string): ValidationResult<never> => failure("migration.unsupportedFormat", {path, reason});
+const stringArray = (value: unknown, path: string) => decodeArray(value, path, invalidAuthoring,
+    (raw, at) => typeof raw === "string" && raw.length > 0 ? {ok: true, value: raw} : invalidAuthoring(at, "expected a non-empty string"));
+const checks = (value: unknown, path: string) => decodeArray(value, path, invalidAuthoring,
+    (raw, at) => decodeContentRefInfo(raw, at, "check", invalidAuthoring));
+
+function decodeRow(value: unknown, path: string): ValidationResult<AuthoringCheckpointRowInfo> {
+    if (!isPlainObject(value) || !hasExactKeys(value, ["id", "afterStep", "side", "select", "validatorArtifactHash", Object.hasOwn(value, "entity") ? "entity" : "ports"])
+        || typeof value.id !== "string" || value.id.length === 0 || typeof value.afterStep !== "string" || value.afterStep.length === 0
+        || (value.side !== "from" && value.side !== "to") || !isSha256(value.validatorArtifactHash)) return invalidAuthoring(path, "invalid row checkpoint");
+    const select = decodeContentRefInfo(value.select, path + ".select", "query", invalidAuthoring);
+    if (!select.ok) return select;
+    const common: Omit<AuthoringCheckpointRowInfo, "entity" | "ports"> = {id: value.id, afterStep: value.afterStep, side: value.side, select: select.value, validatorArtifactHash: value.validatorArtifactHash};
+    if (Object.hasOwn(value, "entity")) return typeof value.entity === "string" && value.entity.length > 0
+        ? {ok: true, value: {...common, entity: value.entity}} : invalidAuthoring(path, "expected an entity");
+    if (!isPlainObject(value.ports)) return invalidAuthoring(path, "expected ports");
+    const ports: Record<string, PortInfo> = Object.create(null);
+    for (const [name, raw] of Object.entries(value.ports)) {
+        if (name.length === 0 || !isPlainObject(raw) || !hasExactKeys(raw, ["domain", "field"]) || !isPlainObject(raw.domain)
+            || !hasExactKeys(raw.domain, ["side", "type", "nullable"]) || (raw.domain.side !== "from" && raw.domain.side !== "to")
+            || typeof raw.domain.type !== "string" || raw.domain.type.length === 0 || typeof raw.domain.nullable !== "boolean") return invalidAuthoring(path, "invalid port");
+        const field = raw.field === null ? {ok: true as const, value: null} : decodeFieldRefInfo(raw.field, path, invalidAuthoring);
+        if (!field.ok) return field;
+        ports[name] = {domain: {side: raw.domain.side, type: raw.domain.type, nullable: raw.domain.nullable}, field: field.value};
     }
-    return {
-        ok: true,
-        value: {
-            systemId: value.systemId,
-            releaseId: value.releaseId,
-            releaseHash: value.releaseHash,
-        },
-    };
+    return {ok: true, value: {...common, ports}};
 }
 
-function decodeAuthoring(value: JsonValue): ArtifactResult<CompiledAuthoringInfo> {
-    if (!isObject(value)) return failure("migration.unsupportedFormat", {reason: "authoring artifact must be an object"});
-    const expected = [
-        "formatVersion",
-        "draftHash",
-        "base",
-        "migration",
-        "operations",
-        "decisions",
-        "checkpoints",
-        "queryResources",
-        "validationArtifacts",
-        ...(Object.hasOwn(value, "states") ? ["states"] : []),
-    ].sort();
-    if (!hasExactKeys(value, expected) || value.formatVersion !== 1) {
-        return failure("migration.unsupportedFormat", {reason: "invalid authoring artifact shape"});
-    }
-    if (typeof value.draftHash !== "string" || !isSha256(value.draftHash)) {
-        return failure("migration.unsupportedFormat", {reason: "invalid authoring draft hash"});
-    }
-    if (!isObject(value.base)) return failure("migration.unsupportedFormat", {reason: "invalid authoring base"});
-    const baseKeys = [
-        "from",
-        "to",
-        "fromSnapshotHash",
-        "toSnapshotHash",
-        "fromPersistenceHash",
-        "toPersistenceHash",
-    ].sort();
-    if (!hasExactKeys(value.base, baseKeys)) {
-        return failure("migration.unsupportedFormat", {reason: "invalid authoring base shape"});
-    }
-    const from = decodeReleaseRef(value.base.from, "from");
+function decodeAuthoring(value: JsonValue, migration: MigrationInfo): ArtifactResult<CompiledAuthoringInfo> {
+    if (!isObject(value) || !hasExactKeys(value, ["formatVersion", "draftHash", "base", "migration", "operations", "decisions", "checkpoints", "queryResources", "validationArtifacts", ...(Object.hasOwn(value, "states") ? ["states"] : [])])
+        || value.formatVersion !== 1 || !isSha256(value.draftHash) || !isObject(value.base)
+        || !hasExactKeys(value.base, ["from", "to", "fromSnapshotHash", "toSnapshotHash", "fromPersistenceHash", "toPersistenceHash"])
+        || !isSha256(value.base.fromSnapshotHash) || !isSha256(value.base.toSnapshotHash)
+        || !isSha256(value.base.fromPersistenceHash) || !isSha256(value.base.toPersistenceHash)) return invalidAuthoring("$", "invalid authoring shape");
+    if (!sameJson(value.migration, migration)) return failure("migration.invalidReference", {reason: "authoring migration does not match immutable manifest"});
+    const from = decodeReleaseRefInfo(value.base.from, "base.from", invalidAuthoring);
     if (!from.ok) return from;
-    const to = decodeReleaseRef(value.base.to, "to");
+    const to = decodeReleaseRefInfo(value.base.to, "base.to", invalidAuthoring);
     if (!to.ok) return to;
-    for (const key of ["fromSnapshotHash", "toSnapshotHash", "fromPersistenceHash", "toPersistenceHash"] as const) {
-        const hash = value.base[key];
-        if (typeof hash !== "string" || !isSha256(hash)) {
-            return failure("migration.unsupportedFormat", {reason: `invalid authoring ${key}`});
-        }
+    const operations = decodeArray(value.operations, "operations", invalidAuthoring, (raw, path): ValidationResult<CompiledAuthoringInfo["operations"][number]> => {
+        if (!isPlainObject(raw) || !hasExactKeys(raw, ["id", "stepIds", "changeIds", "dataMigrationIds"]) || typeof raw.id !== "string" || raw.id.length === 0) return invalidAuthoring(path, "invalid operation");
+        const stepIds = stringArray(raw.stepIds, path + ".stepIds"); if (!stepIds.ok) return stepIds;
+        const changeIds = stringArray(raw.changeIds, path + ".changeIds"); if (!changeIds.ok) return changeIds;
+        const dataMigrationIds = stringArray(raw.dataMigrationIds, path + ".dataMigrationIds"); if (!dataMigrationIds.ok) return dataMigrationIds;
+        return {ok: true, value: {id: raw.id, stepIds: stepIds.value, changeIds: changeIds.value, dataMigrationIds: dataMigrationIds.value}};
+    });
+    if (!operations.ok) return operations;
+    const decisions = decodeArray(value.decisions, "decisions", invalidAuthoring, (raw, path) => decodeDataDecisionInfo(raw, path, invalidAuthoring));
+    if (!decisions.ok) return decisions;
+    const checkpoints = decodeArray(value.checkpoints, "checkpoints", invalidAuthoring, (raw, path): ValidationResult<CompiledAuthoringInfo["checkpoints"][number]> => {
+        if (!isPlainObject(raw) || !hasExactKeys(raw, ["afterStep", "checks", "rows"]) || typeof raw.afterStep !== "string" || raw.afterStep.length === 0) return invalidAuthoring(path, "invalid checkpoint");
+        const checked = checks(raw.checks, path + ".checks"); if (!checked.ok) return checked;
+        const rows = decodeArray(raw.rows, path + ".rows", invalidAuthoring, decodeRow); if (!rows.ok) return rows;
+        return {ok: true, value: {afterStep: raw.afterStep, checks: checked.value, rows: rows.value}};
+    });
+    if (!checkpoints.ok) return checkpoints;
+    if (!isObject(value.queryResources)) return invalidAuthoring("queryResources", "expected a query map");
+    const queryResources: Record<string, CompiledAuthoringInfo["queryResources"][string]> = Object.create(null);
+    for (const [name, raw] of Object.entries(value.queryResources)) {
+        if (name.length === 0) return invalidAuthoring("queryResources", "empty query name");
+        const decoded = decodeFileResourceInfo(raw, name, "query", invalidAuthoring); if (!decoded.ok) return decoded;
+        queryResources[name] = decoded.value;
     }
-    if (!Array.isArray(value.operations)
-        || !Array.isArray(value.decisions)
-        || !Array.isArray(value.checkpoints)
-        || !isObject(value.queryResources)
-        || !Array.isArray(value.validationArtifacts)
-        || !isObject(value.migration)) {
-        return failure("migration.unsupportedFormat", {reason: "invalid authoring payload shape"});
-    }
-
+    const validationArtifacts = decodeArray(value.validationArtifacts, "validationArtifacts", invalidAuthoring, decodeValidationArtifact);
+    if (!validationArtifacts.ok) return validationArtifacts;
     let states: CompiledAuthoringInfo["states"];
     if (Object.hasOwn(value, "states")) {
-        if (!isObject(value.states) || !hasExactKeys(value.states, ["from", "to"])) return failure("migration.unsupportedFormat", {reason: "Invalid saved state references"});
-        const fromFile = decodeFileInfo(value.states.from, "states.from", () => failure("migration.invalidReference"));
-        const toFile = decodeFileInfo(value.states.to, "states.to", () => failure("migration.invalidReference"));
-        if (!fromFile.ok || !toFile.ok) return failure("migration.invalidReference", {reason: "Invalid saved state file"});
+        if (!isObject(value.states) || !hasExactKeys(value.states, ["from", "to"])) return invalidAuthoring("states", "invalid state references");
+        const fromFile = decodeFileInfo(value.states.from, "states.from", invalidAuthoring); if (!fromFile.ok) return fromFile;
+        const toFile = decodeFileInfo(value.states.to, "states.to", invalidAuthoring); if (!toFile.ok) return toFile;
         states = {from: fromFile.value, to: toFile.value};
     }
-    // T22 slice 2 needs a strict, detached JSON boundary and the exact endpoint
-    // identity. Deeper authoring resources are resolved by later T22 slices.
-    return {
-        ok: true,
-        value: {
-            formatVersion: 1,
-            draftHash: value.draftHash,
-            base: {
-                from: from.value,
-                to: to.value,
-                fromSnapshotHash: value.base.fromSnapshotHash as string,
-                toSnapshotHash: value.base.toSnapshotHash as string,
-                fromPersistenceHash: value.base.fromPersistenceHash as string,
-                toPersistenceHash: value.base.toPersistenceHash as string,
-            },
-            migration: value.migration as unknown as MigrationInfo,
-            operations: value.operations as unknown as CompiledAuthoringInfo["operations"],
-            decisions: value.decisions as unknown as CompiledAuthoringInfo["decisions"],
-            checkpoints: value.checkpoints,
-            queryResources: value.queryResources as unknown as CompiledAuthoringInfo["queryResources"],
-            validationArtifacts: value.validationArtifacts,
-            ...(states === undefined ? {} : {states}),
-        },
-    };
+    return {ok: true, value: {formatVersion: 1, draftHash: value.draftHash,
+        base: {from: from.value, to: to.value, fromSnapshotHash: value.base.fromSnapshotHash, toSnapshotHash: value.base.toSnapshotHash,
+            fromPersistenceHash: value.base.fromPersistenceHash, toPersistenceHash: value.base.toPersistenceHash},
+        migration, operations: operations.value, decisions: decisions.value, checkpoints: checkpoints.value, queryResources,
+        validationArtifacts: validationArtifacts.value, ...(states === undefined ? {} : {states})}};
 }
 
 function parseCanonicalJson(bytes: Uint8Array, file: FileInfo): ArtifactResult<JsonValue> {
@@ -231,7 +211,7 @@ export async function loadVerifiedMigrationAuthoring(
     if (!bytes.ok) return bytes;
     const parsed = parseCanonicalJson(bytes.value, decoded.value.authoring);
     if (!parsed.ok) return parsed;
-    const authoring = decodeAuthoring(parsed.value);
+    const authoring = decodeAuthoring(parsed.value, decoded.value.migration);
     if (!authoring.ok) return authoring;
 
     if (!sameReleaseRef(authoring.value.base.from, decoded.value.migration.from)
@@ -239,12 +219,6 @@ export async function loadVerifiedMigrationAuthoring(
         return failure("migration.invalidReference", {
             migrationId: published.migration.id,
             reason: "authoring base does not match migration endpoints",
-        });
-    }
-    if (!sameJson(authoring.value.migration, decoded.value.migration)) {
-        return failure("migration.invalidReference", {
-            migrationId: published.migration.id,
-            reason: "authoring migration does not match immutable manifest",
         });
     }
     return {ok: true, value: {manifest: decoded.value, authoring: authoring.value}};

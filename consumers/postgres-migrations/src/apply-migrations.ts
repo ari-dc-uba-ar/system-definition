@@ -157,26 +157,27 @@ export async function applyMigrations(root: string, catalog: StoredMigrationCata
             if (!context.ok) return context;
             const attemptId = randomUUID();
             const attemptInput = {attemptId, deploymentId: pending.migration.id, installationId: refreshed.value.installation.installationId, planHash: pending.migrationHash};
-            let executed: ValidationResult<unknown>, operation: PgSession | undefined, closed = true, startedAttempt = false;
+            const opened: ValidationResult<PgSession> = await connectPostgres({...settings.database, ...settings.owner})
+                .then(value => ({ok: true as const, value}), failure);
+            let ready = opened;
+            if (opened.ok) {
+                try {await opened.value.query(attemptLockSql(false), [attemptId]);}
+                catch (error) {ready = failure(error);}
+            }
+            let executed: ValidationResult<unknown>;
             try {
-                operation = await connectPostgres({...settings.database, ...settings.owner});
-                await operation.query(attemptLockSql(false), [attemptId]);
                 const started = await startAttempt(lock, journal, attemptInput);
                 if (!started.ok) return started;
-                startedAttempt = true;
-                executed = await executeMigration(operation, pending, context.value);
+                executed = ready.ok ? await executeMigration(ready.value, pending, context.value) : ready;
+            } catch (error) {executed = failure(error);}
+            finally {
+                if (opened.ok) try {await opened.value.close();}
+                catch {executed = {ok: false, problems: [problem(null, "migration.connectionCloseUnknown", "blocking")]};}
             }
-            catch (error) {executed = failure(error);}
-            finally {try {await operation?.close();} catch {closed = false;}}
-            if (!startedAttempt) {
-                const recorded = await startAttempt(lock, journal, attemptInput);
-                if (!recorded.ok) return recorded;
-            }
-            if (!closed) executed = {ok: false, problems: [problem(null, "migration.connectionCloseUnknown", "blocking")]};
             const unknown = !executed.ok && executed.problems.some(one => ["migration.commitUnknown", "migration.rollbackUnknown", "migration.connectionCloseUnknown"].includes(one.messageKey));
             const finished = await finishAttempt(lock, journal, attemptId, {state: executed.ok ? "succeeded" : unknown ? "unknown" : "failed", confirmedTarget: executed.ok ? pending.migration.to : null, problems: executed.ok ? [] : executed.problems});
             if (!finished.ok) return finished;
-            if (unknown && closed) {
+            if (unknown && !executed.ok && !executed.problems.some(one => one.messageKey === "migration.connectionCloseUnknown")) {
                 const outcome = await reconcileCommitOutcome(lock, attemptId, pending, {journal, scope});
                 if (!outcome.ok) return outcome;
                 if (outcome.value.state === "succeeded") continue;

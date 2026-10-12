@@ -89,18 +89,20 @@ function normalizePersistence(value: string): string {
 }
 
 function tableObject(row: CatalogRow, identity: PgObjectIdentity): PgObjectInfo | null {
+    if (identity.parentName !== null) return null;
     const persistence = stringValue(row, "persistence");
     const relationKind = stringValue(row, "relation_kind");
     if (persistence === null || relationKind === null) return null;
     return {
         kind: "table",
-        identity: {...identity, kind: "table"},
+        identity: {...identity, kind: "table", parentName: null},
         persistence: normalizePersistence(persistence),
         relationKind,
     };
 }
 
 function columnObject(row: CatalogRow, identity: PgObjectIdentity): PgObjectInfo | null {
+    if (identity.parentName === null) return null;
     const typeSchema = stringValue(row, "type_schema");
     const typeName = stringValue(row, "type_name");
     const modifiers = stringArrayValue(row, "type_modifiers");
@@ -118,7 +120,7 @@ function columnObject(row: CatalogRow, identity: PgObjectIdentity): PgObjectInfo
     }
     return {
         kind: "column",
-        identity: {...identity, kind: "column"},
+        identity: {...identity, kind: "column", parentName: identity.parentName},
         type: {
             schema: typeSchema,
             name: typeName,
@@ -148,6 +150,7 @@ function pairArrayValue(row: CatalogRow): readonly {source: string; target: stri
 }
 
 function constraintObject(row: CatalogRow, identity: PgObjectIdentity): PgObjectInfo | null {
+    if (identity.parentName === null) return null;
     const constraintKind = stringValue(row, "constraint_kind");
     if (constraintKind !== "primaryKey" && constraintKind !== "unique"
         && constraintKind !== "foreignKey" && constraintKind !== "check") return null;
@@ -164,7 +167,7 @@ function constraintObject(row: CatalogRow, identity: PgObjectIdentity): PgObject
     const targetSchema = nullableStringValue(row, "target_schema");
     const targetName = nullableStringValue(row, "target_name");
     if (targetSchema === undefined || targetName === undefined) return null;
-    let target: PgObjectIdentity | null = null;
+    let target: PgObjectIdentity<"table"> | null = null;
     if (constraintKind === "foreignKey") {
         if (targetSchema === null || targetName === null) return null;
         target = {schema: targetSchema, kind: "table", name: targetName, parentName: null, signature: []};
@@ -174,7 +177,7 @@ function constraintObject(row: CatalogRow, identity: PgObjectIdentity): PgObject
 
     return {
         kind: "constraint",
-        identity: {...identity, kind: "constraint"},
+        identity: {...identity, kind: "constraint", parentName: identity.parentName},
         constraintKind,
         definition,
         columns,
@@ -188,6 +191,7 @@ function constraintObject(row: CatalogRow, identity: PgObjectIdentity): PgObject
 }
 
 function indexObject(row: CatalogRow, identity: PgObjectIdentity): PgObjectInfo | null {
+    if (identity.parentName === null) return null;
     const definition = stringValue(row, "definition");
     const valid = booleanValue(row, "valid");
     const ready = booleanValue(row, "ready");
@@ -196,7 +200,7 @@ function indexObject(row: CatalogRow, identity: PgObjectIdentity): PgObjectInfo 
     const ownerParent = nullableStringValue(row, "owner_constraint_parent");
     if (definition === null || valid === null || ready === null
         || ownerSchema === undefined || ownerName === undefined || ownerParent === undefined) return null;
-    let ownerConstraint: PgObjectIdentity | null = null;
+    let ownerConstraint: PgObjectIdentity<"constraint"> | null = null;
     if (ownerSchema !== null || ownerName !== null || ownerParent !== null) {
         if (ownerSchema === null || ownerName === null || ownerParent === null) return null;
         ownerConstraint = {
@@ -207,7 +211,7 @@ function indexObject(row: CatalogRow, identity: PgObjectIdentity): PgObjectInfo 
             signature: [],
         };
     }
-    return {kind: "index", identity: {...identity, kind: "index"}, definition, valid, ready, ownerConstraint};
+    return {kind: "index", identity: {...identity, kind: "index", parentName: identity.parentName}, definition, valid, ready, ownerConstraint};
 }
 
 function optionsValue(row: CatalogRow): Readonly<Record<string, string>> | null {
@@ -223,18 +227,20 @@ function optionsValue(row: CatalogRow): Readonly<Record<string, string>> | null 
 }
 
 function viewObject(row: CatalogRow, identity: PgObjectIdentity): PgObjectInfo | null {
+    if (identity.parentName !== null) return null;
     const definition = stringValue(row, "definition");
     const columns = stringArrayValue(row, "columns");
     const options = optionsValue(row);
     if (definition === null || columns === null || options === null) return null;
-    return {kind: "view", identity: {...identity, kind: "view"}, definition, columns, options};
+    return {kind: "view", identity: {...identity, kind: "view", parentName: null}, definition, columns, options};
 }
 
 function routineObject(row: CatalogRow, identity: PgObjectIdentity): PgObjectInfo | null {
+    if (identity.parentName !== null) return null;
     const definition = stringValue(row, "definition");
     const routineKind = stringValue(row, "routine_kind");
     if (definition === null || (routineKind !== "function" && routineKind !== "procedure")) return null;
-    return {kind: "routine", identity: {...identity, kind: "routine"}, routineKind, definition};
+    return {kind: "routine", identity: {...identity, kind: "routine", parentName: null}, routineKind, definition};
 }
 
 function supportedObject(row: CatalogRow, identity: PgObjectIdentity): PgObjectInfo | null {
