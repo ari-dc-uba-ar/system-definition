@@ -15,7 +15,7 @@ describe("clean-create identity ordering", () => {
         const table = (name: string) => ({
             kind: "table" as const,
             identity: {schema: "app", kind: "table", name, parentName: null, signature: []},
-            persistence: name,
+            persistence: "permanent",
             relationKind: "r",
         });
         const column = (parentName: string) => ({

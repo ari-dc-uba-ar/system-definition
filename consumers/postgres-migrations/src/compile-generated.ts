@@ -153,8 +153,7 @@ export async function compileGenerated(
 
     }
 
-    const destinations = new Set(draft.data.flatMap(migration => migration.writes.flatMap(destination =>
-        destination.values.map(binding => JSON.stringify([destination.entity, binding.target.field])))));
+    const destinations = draft.data.flatMap(migration => migration.writes.flatMap(destination => destination.values.map(binding => binding.target)));
     const structure = generateStructureSql(residual, inspected, desired, destinations);
     if (!structure.ok) return structure;
     const prepare: MigrationInfo["steps"][number][] = [];

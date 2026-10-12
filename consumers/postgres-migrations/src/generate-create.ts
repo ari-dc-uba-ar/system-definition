@@ -1,7 +1,9 @@
 import {compareUtf16, problem, type ValidationResult} from "system-definition";
 import {pgIdentityKey} from "./pg-identity";
+import {POSTGRES_SUPPORT} from "./postgres-support";
 import {
     quotePgIdentifier,
+    quotePgQualified as qualified,
     type PgObjectIdentity,
     type PgObjectInfo,
     type PgSchemaInfo,
@@ -43,10 +45,6 @@ function compareCreateIdentity(left: PgObjectIdentity, right: PgObjectIdentity):
     return leftParts.length - rightParts.length;
 }
 
-function qualified(schema: string, name: string): string {
-    return quotePgIdentifier(schema) + "." + quotePgIdentifier(name);
-}
-
 export function renderPgType(type: PgTypeInfo): string {
     const base = qualified(type.schema, type.name);
     const modifiers = type.modifiers.length === 0 ? "" : "(" + type.modifiers.join(", ") + ")";
@@ -55,6 +53,13 @@ export function renderPgType(type: PgTypeInfo): string {
     const collation = type.collation === null || type.collation === "pg_catalog.default" ? ""
         : " COLLATE " + (collationParts?.length === 2 ? qualified(collationParts[0]!, collationParts[1]!) : qualified(type.schema, type.collation));
     return base + modifiers + arrays + collation;
+}
+
+export function columnDefinitionSql(column: Extract<PgObjectInfo, {kind: "column"}>): ValidationResult<string> {
+    if (column.identityDefinition !== null || column.generatedDefinition !== null) return fail("migration.unsupportedSchemaFeature", {column: column.identity.name, reason: "Identity and generated columns require explicit SQL"});
+    return {ok: true, value: renderPgType(column.type)
+        + (column.defaultExpression === null ? "" : ` DEFAULT ${column.defaultExpression}`)
+        + (column.nullable ? "" : " NOT NULL")};
 }
 
 function columnsOf(objects: readonly PgObjectInfo[], table: PgObjectIdentity): Extract<PgObjectInfo, {kind: "column"}>[] {
@@ -72,13 +77,12 @@ export function constraintSql(object: Extract<PgObjectInfo, {kind: "constraint"}
     }
     const tableName = qualified(object.identity.schema, table);
     const constraint = quotePgIdentifier(object.identity.name);
-    if (object.constraintKind === "primaryKey") {
+    if (!object.validated || !object.enforced || (object.initiallyDeferred && !object.deferrable)) return fail("migration.unsupportedSchemaFeature", {constraint: object.identity.name, reason: "These constraint attributes require explicit SQL"});
+    const timing = object.deferrable ? ` DEFERRABLE INITIALLY ${object.initiallyDeferred ? "DEFERRED" : "IMMEDIATE"}` : "";
+    if (object.constraintKind === "primaryKey" || object.constraintKind === "unique") {
         return {ok: true, value: "ALTER TABLE " + tableName + " ADD CONSTRAINT " + constraint
-            + " PRIMARY KEY (" + object.columns.map(quotePgIdentifier).join(", ") + ")"};
-    }
-    if (object.constraintKind === "unique") {
-        return {ok: true, value: "ALTER TABLE " + tableName + " ADD CONSTRAINT " + constraint
-            + " UNIQUE (" + object.columns.map(quotePgIdentifier).join(", ") + ")"};
+            + (object.constraintKind === "primaryKey" ? " PRIMARY KEY (" : " UNIQUE (")
+            + object.columns.map(quotePgIdentifier).join(", ") + ")" + timing};
     }
     if (object.constraintKind === "foreignKey") {
         if (object.target === null || object.pairs.length === 0) {
@@ -89,14 +93,14 @@ export function constraintSql(object: Extract<PgObjectInfo, {kind: "constraint"}
             value: "ALTER TABLE " + tableName + " ADD CONSTRAINT " + constraint
                 + " FOREIGN KEY (" + object.pairs.map(one => quotePgIdentifier(one.source)).join(", ") + ")"
                 + " REFERENCES " + qualified(object.target.schema, object.target.name)
-                + " (" + object.pairs.map(one => quotePgIdentifier(one.target)).join(", ") + ")",
+                + " (" + object.pairs.map(one => quotePgIdentifier(one.target)).join(", ") + ")" + timing,
         };
     }
     return fail("migration.unsupportedSchemaFeature", {constraint: object.identity.name, reason: "generated CHECK constraints are not supported"});
 }
 
 export function generateCreate(schema: PgSchemaInfo): ValidationResult<CreateSqlPlan> {
-    if (schema.formatVersion !== 1 || schema.engineVersion !== "18.6") {
+    if (schema.formatVersion !== 1 || schema.engineVersion !== POSTGRES_SUPPORT.version) {
         return fail("migration.unsupportedFormat", {reason: "unsupported PostgreSQL schema format/version"});
     }
     if (schema.schemas.length !== 1) {
@@ -110,6 +114,7 @@ export function generateCreate(schema: PgSchemaInfo): ValidationResult<CreateSql
             return fail("migration.unsupportedFormat", {reason: "duplicate PostgreSQL object identity", object: key});
         }
         identities.add(key);
+        if (object.kind === "table" && (object.persistence !== "permanent" || object.relationKind !== "r")) return fail("migration.unsupportedSchemaFeature", {table: object.identity.name, reason: "This table kind requires explicit SQL"});
         if (object.kind === "index" || object.kind === "view" || object.kind === "routine") {
             return fail("migration.unsupportedSchemaFeature", {
                 kind: object.kind,
@@ -132,8 +137,12 @@ export function generateCreate(schema: PgSchemaInfo): ValidationResult<CreateSql
         if (columns.length === 0) {
             return fail("migration.unsupportedSchemaFeature", {table: table.identity.name, reason: "table has no columns"});
         }
-        const definitions = columns.map(column => quotePgIdentifier(column.identity.name) + " " + renderPgType(column.type)
-            + (column.nullable ? "" : " NOT NULL"));
+        const definitions: string[] = [];
+        for (const column of columns) {
+            const definition = columnDefinitionSql(column);
+            if (!definition.ok) return definition;
+            definitions.push(quotePgIdentifier(column.identity.name) + " " + definition.value);
+        }
         statements.push({
             phase: "table",
             text: "CREATE TABLE " + qualified(table.identity.schema, table.identity.name) + " (" + definitions.join(", ") + ")",

@@ -236,7 +236,6 @@ async function validateManualSteps(
     const writerOrder = validateManualWriterOrder(ordered.value);
     if (!writerOrder.ok) return writerOrder;
 
-    const claimedChangeIds = new Set<string>();
     for (const step of ordered.value) {
         if (step.before.some(ref => ref.kind !== "check") || step.after.some(ref => ref.kind !== "check")) {
             return fail("migration.invalidResourceKind", {
@@ -268,7 +267,6 @@ async function validateManualSteps(
             }
         }
 
-        for (const changeId of step.implementsChanges) claimedChangeIds.add(changeId);
     }
 
     for (const step of ordered.value) {
@@ -289,7 +287,7 @@ async function validateManualSteps(
         ok: true,
         value: {
             steps: ordered.value,
-            claimedChangeIds,
+            claimedChangeIds: new Set(ordered.value.flatMap(step => step.implementsChanges)),
             before: checkpoints.before,
             checkpoints: checkpoints.checkpoints,
         },
@@ -394,13 +392,12 @@ export async function compileDraft(
         changeIds: [...step.implementsChanges],
         dataMigrationIds: [],
     }));
-    const operations = manualOperations;
     return compileGenerated(draft, runtime, inspected.value, loadedDesired.value.expectedSchema, residual.value, {
             formatVersion: 1,
             draftHash: draft.revisionHash,
             base: draft.base,
             migration: migrationForDraft(draft, manual.value),
-            operations,
+            operations: manualOperations,
             decisions: draft.decisions,
             checkpoints: manual.value.checkpoints,
             queryResources: Object.freeze(Object.create(null) as Record<string, never>),

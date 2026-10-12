@@ -111,6 +111,19 @@ tablas, columnas y constraints. Devuelve statements ordenados con `text` y `orde
 `current` es el schema observado y `changes` son los cambios ya evaluados; las
 decisiones y el código de transformaciones pertenecen a sus pasos propios.
 
+`dataDestinations` es un array opcional de `FieldRefInfo` existentes, con `side:
+"to"`: las columnas que recibirán un backfill. No se codifican nombres de campos
+como strings JSON. Sólo el `SET NOT NULL` se difiere hasta después del backfill;
+tipo y default se preparan antes. El ensamblador existente consume ese orden.
+Los renames de columnas también emiten los cambios simultáneos de atributos.
+
+La creación inicial y el DDL incremental comparten la misma definición SQL de
+columna y los renderers de tipos/constraints e identificadores. Los atributos
+físicos soportados se representan completos; columnas identity/generated y
+otras variantes no soportadas requieren SQL explícito. No se descartan atributos
+silenciosamente. Los defaults físicos se renderizan cuando están declarados en
+`PgSchemaInfo`; no se deducen de metadata arbitraria del backend.
+
 ```typescript
 const target = await loadSsot('dist/system.js');
 if (!target.ok) throw new Error(JSON.stringify(target.problems));
