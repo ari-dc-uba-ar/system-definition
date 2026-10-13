@@ -8,10 +8,10 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
 
 type Assert<T extends true> = T;
 
-type _EnvironmentEngine = Assert<Equal<EnvironmentInfo["engine"], typeof POSTGRES_SUPPORT.engine>>;
-type _EnvironmentVersion = Assert<Equal<EnvironmentInfo["version"], typeof POSTGRES_SUPPORT.version>>;
-type _EnvironmentServerVersion = Assert<Equal<EnvironmentInfo["serverVersionNum"], typeof POSTGRES_SUPPORT.serverVersionNum>>;
-type _SchemaVersion = Assert<Equal<PgSchemaInfo["engineVersion"], typeof POSTGRES_SUPPORT.version>>;
+export type _EnvironmentEngine = Assert<Equal<EnvironmentInfo["engine"], typeof POSTGRES_SUPPORT.engine>>;
+export type _EnvironmentVersion = Assert<Equal<EnvironmentInfo["version"], typeof POSTGRES_SUPPORT.version>>;
+export type _EnvironmentServerVersion = Assert<Equal<EnvironmentInfo["serverVersionNum"], typeof POSTGRES_SUPPORT.serverVersionNum>>;
+export type _SchemaVersion = Assert<Equal<PgSchemaInfo["engineVersion"], typeof POSTGRES_SUPPORT.version>>;
 
 // @ts-expect-error unsupported versions must not type-check as environment metadata
 const invalidEnvironmentVersion: EnvironmentInfo["version"] = "18.7";

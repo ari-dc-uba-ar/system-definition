@@ -44,7 +44,7 @@ import {
     type QueryRefInfo,
     type TransformationInfo,
 } from "../../src/migration-authoring";
-import {projectSchema, type PgSchemaInfo, type StorageContext} from "../../src/pg-schema";
+import {projectSchema, type StorageContext} from "../../src/pg-schema";
 import {buildSourceSelection} from "../../src/source-selection";
 
 function expectOk<T>(result: ValidationResult<T>, label: string): T {

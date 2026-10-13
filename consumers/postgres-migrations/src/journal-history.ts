@@ -26,7 +26,6 @@ import {
     validateConfigForScope,
     validateRelease,
     validateScope,
-    type Row,
 } from "./journal-internal";
 
 function decodeInstallationRow(value: unknown): ValidationResult<InstallationInfo> {

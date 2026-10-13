@@ -5,9 +5,9 @@ import {join} from "node:path";
 import {describe, it} from "mocha";
 import {captureSystemSnapshot, commonTypeDefs, commonTypeBehaviours, completeCoreField, defineTypes, defineRecord, withRecords, defineEntity, defineEntities, sqlTypes, type ValidationResult} from "system-definition";
 import {decodeSqlSsot} from "../src/sql-mapping";
-import {inferSsotMigration, generateSsotMigration} from "../src/ssot-authoring";
+import {inferSsotMigration, generateSsotMigration, readMigrationDraft} from "../src/ssot-authoring";
+import {computeDraftRevisionHash} from "../src/draft-revision";
 import {migrationDirectory, readStoredCatalog, readCatalogState} from "../src/migration-store";
-import {openArtifactDirectory} from "../src/artifact-files";
 import {verifyMigrationFiles} from "../src/migration-integrity";
 import {dispatchSsotAuthoring} from "../src/ssot-cli";
 import type {DatabaseSettings} from "../src/database-settings";
@@ -23,6 +23,31 @@ const settings: DatabaseSettings = {database: {database: "unused", schema: "app"
 async function temporary(body: (root: string) => Promise<void>) {const root = await mkdtemp(join(tmpdir(), "sd-ssot-authoring-")); try {await body(root);} finally {await rm(root, {recursive: true, force: true});}}
 
 describe("SSOT migration authoring without a project adapter", () => {
+    it("decodes every nested draft shape before a valid revision can reach assembly", () => temporary(async root => {
+        const file = join(root, "draft.json");
+        const draft = value(await inferSsotMigration(system, settings, root, "initial", file));
+        assert.deepEqual(value(await readMigrationDraft(file)), draft);
+        const malformed = [
+            {base: {}},
+            {renames: [{before: {entity: "items"}, after: {side: "to", entity: "items", field: "id"}}]},
+            {changes: [{...draft.changes[0], action: "remove", before: null}]},
+            {changes: [{...draft.changes[0], differences: [{path: [1], before: null, after: null}]}]},
+            {data: [{id: "broken", source: {}, writes: []}]},
+            {decisions: [{changeId: "missing", resolution: {kind: "migrate"}}]},
+            {manual: [{id: "broken"}]},
+            {pending: [{id: "p", kind: "made-up", subjects: [], messageKey: "p"}]},
+        ];
+        for (const patch of malformed) {
+            const candidate = structuredClone(draft);
+            Object.assign(candidate, patch);
+            candidate.revisionHash = value(computeDraftRevisionHash(candidate));
+            await writeFile(file, JSON.stringify(candidate));
+            const decoded = await readMigrationDraft(file);
+            assert.equal(decoded.ok, false, JSON.stringify(patch));
+            if (!decoded.ok) assert.equal(decoded.problems[0]?.messageKey, "migration.unsupportedFormat");
+        }
+    }));
+
     it("saves bound source/target states and catalog entries without connecting to a database", () => temporary(async root => {
         const draft = join(root, "draft.json");
         const inferred = value(await inferSsotMigration(system, settings, root, "initial", draft));

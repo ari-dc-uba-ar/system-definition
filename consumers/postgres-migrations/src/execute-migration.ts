@@ -6,7 +6,6 @@ import {
     sameReleaseRef,
     type MigrationInfo,
     type PublishedMigrationInfo,
-    type ReleaseRefInfo,
     type ResourceRefInfo,
     type SystemSnapshotInfo,
     type ValidationResult,

@@ -842,17 +842,6 @@ function writtenValuesVerificationSql(
     ].filter(Boolean).join("\n");
 }
 
-function pgRowIdentityPredicate(
-    fields: readonly string[],
-    leftAlias: string,
-    rightAlias: string,
-): string {
-    return fields.map(field => (
-        `${quotePgIdentifier(leftAlias)}.${quotePgIdentifier(field)} IS NOT DISTINCT FROM `
-        + `${quotePgIdentifier(rightAlias)}.${quotePgIdentifier(field)}`
-    )).join("\n            AND ");
-}
-
 function outputScopeForBeforeRow(write: Extract<WriteInfo, {kind: "update"}>): string {
     const pairs = write.match.map(pair => ({targetField: pair.targetField, output: pair.output}));
     return [

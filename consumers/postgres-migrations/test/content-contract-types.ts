@@ -12,7 +12,7 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
     : false;
 type Expect<T extends true> = T;
 
-type _QueryRefUsesSharedShape = Expect<Equal<QueryRefInfo, ContentRefInfo<"query">>>;
-type _QueryResourceUsesSharedShape = Expect<Equal<QueryResourceInfo, FileResourceInfo<"query">>>;
-type _MigrationRefUsesSharedShape = Expect<Equal<ResourceRefInfo, ContentRefInfo<"sql" | "check">>>;
-type _MigrationResourceUsesSharedShape = Expect<Equal<ResourceInfo, FileResourceInfo<"sql" | "check">>>;
+export type _QueryRefUsesSharedShape = Expect<Equal<QueryRefInfo, ContentRefInfo<"query">>>;
+export type _QueryResourceUsesSharedShape = Expect<Equal<QueryResourceInfo, FileResourceInfo<"query">>>;
+export type _MigrationRefUsesSharedShape = Expect<Equal<ResourceRefInfo, ContentRefInfo<"sql" | "check">>>;
+export type _MigrationResourceUsesSharedShape = Expect<Equal<ResourceInfo, FileResourceInfo<"sql" | "check">>>;

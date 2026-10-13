@@ -116,11 +116,6 @@ export async function openArtifactDirectory(directory: string): Promise<Artifact
     }}};
 }
 
-export async function readArtifactFile(directory: string, file: FileInfo): Promise<ArtifactResult<Uint8Array>> {
-    const opened = await openArtifactDirectory(directory);
-    return opened.ok ? opened.value.readVerified(file) : opened;
-}
-
 /** Publish exact bytes together. Callers decide whether an existing identity is
  * reusable; this filesystem operation never replaces it or serializes its payloads. */
 export async function publishArtifactDirectory(destination: string, files: ReadonlyMap<string, Uint8Array>): Promise<void> {

@@ -20,13 +20,13 @@ type Equal<A, B> = IsAssignable<A, B> extends true
     ? IsAssignable<B, A> extends true ? true : false
     : false;
 
-type _stateExact = Assert<Equal<CommitOutcomeState, ExpectedState>>;
+export type _stateExact = Assert<Equal<CommitOutcomeState, ExpectedState>>;
 
 type ExpectedContext = {
     journal: JournalConfig;
     scope: InstallationScope;
 };
-type _contextExact = Assert<Equal<CommitReconciliationContext, ExpectedContext>>;
+export type _contextExact = Assert<Equal<CommitReconciliationContext, ExpectedContext>>;
 
 type ExpectedInfo = {
     attemptId: string;
@@ -37,7 +37,7 @@ type ExpectedInfo = {
     retryAllowed: boolean;
     problems: readonly Problem[];
 };
-type _infoExact = Assert<Equal<CommitOutcomeInfo, ExpectedInfo>>;
+export type _infoExact = Assert<Equal<CommitOutcomeInfo, ExpectedInfo>>;
 
 const expectedSignature: (
     session: PgSession,

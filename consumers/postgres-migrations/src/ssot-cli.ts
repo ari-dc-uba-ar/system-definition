@@ -1,5 +1,5 @@
 import {readFile} from "node:fs/promises";
-import {join, resolve} from "node:path";
+import {resolve} from "node:path";
 import {pathToFileURL} from "node:url";
 import {isPlainObject, type ValidationResult} from "system-definition";
 import {loadSsot} from "./ssot";

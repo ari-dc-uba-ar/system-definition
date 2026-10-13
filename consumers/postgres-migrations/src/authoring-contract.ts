@@ -1,5 +1,7 @@
 import {
     childPath,
+    decodeReleaseRefInfo,
+    isSha256,
     decodeArray,
     hasExactKeys,
     decodeResourceRefInfo,
@@ -10,13 +12,14 @@ import {
     type ContentRefInfo,
     type FileInfo,
     type PersistenceInfo,
-    type JsonValue,
     type MigrationInfo,
     type ReleaseRefInfo,
     type ResourceRefInfo,
     type StructuralFailure,
     type ValidationResult,
 } from "system-definition";
+import {decodeFieldRefInfo} from "./data-authoring-codec";
+export {decodeFieldRefInfo} from "./data-authoring-codec";
 import type {PgObjectIdentity, PgSchemaInfo} from "./pg-schema";
 import {decodePgObjectIdentity} from "./pg-identity";
 import type {SchemaDifferenceInfo} from "./compare-schema";
@@ -38,6 +41,17 @@ export type AuthoringBaseInfo = {
     fromPersistenceHash: string;
     toPersistenceHash: string;
 };
+
+
+export function decodeAuthoringBase(value: unknown, path: string, invalid: StructuralFailure): ValidationResult<AuthoringBaseInfo> {
+    if (!isPlainObject(value) || !hasExactKeys(value, ["from", "to", "fromSnapshotHash", "toSnapshotHash", "fromPersistenceHash", "toPersistenceHash"])
+        || !isSha256(value.fromSnapshotHash) || !isSha256(value.toSnapshotHash)
+        || !isSha256(value.fromPersistenceHash) || !isSha256(value.toPersistenceHash)) return invalid(path, "invalid authoring base");
+    const from = decodeReleaseRefInfo(value.from, path + ".from", invalid); if (!from.ok) return from;
+    const to = decodeReleaseRefInfo(value.to, path + ".to", invalid); if (!to.ok) return to;
+    return {ok: true, value: {from: from.value, to: to.value, fromSnapshotHash: value.fromSnapshotHash, toSnapshotHash: value.toSnapshotHash,
+        fromPersistenceHash: value.fromPersistenceHash, toPersistenceHash: value.toPersistenceHash}};
+}
 
 export type ChangeImpact = "preserving" | "requiresDataCheck" | "destructive" | "unsupported";
 
@@ -83,26 +97,6 @@ export type DataDecisionInfo = {
 export type DestructiveDecisionInfo = Omit<DataDecisionInfo, "resolution"> & {
     resolution: Exclude<DataDecisionInfo["resolution"], {kind: "check"}>;
 };
-
-export function decodeFieldRefInfo(
-    value: unknown,
-    path: string,
-    invalid: StructuralFailure,
-): ValidationResult<FieldRefInfo> {
-    if (!isPlainObject(value)) return invalid(path, "expected a field reference");
-    const shape = exactKeys(value, ["side", "entity", "field"], path, invalid);
-    if (!shape.ok) return shape;
-    if (value.side !== "from" && value.side !== "to") {
-        return invalid(childPath(path, "side"), "field side must be from or to");
-    }
-    if (!isNonEmptyString(value.entity)) {
-        return invalid(childPath(path, "entity"), "field entity must not be empty");
-    }
-    if (!isNonEmptyString(value.field)) {
-        return invalid(childPath(path, "field"), "field name must not be empty");
-    }
-    return {ok: true, value: {side: value.side, entity: value.entity, field: value.field}};
-}
 
 export function decodeDataDecisionInfo(
     value: unknown,

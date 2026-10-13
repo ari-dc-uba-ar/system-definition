@@ -14,6 +14,9 @@ Apply verifies immutable files, catalog/history integrity and recorded-head drif
 Schema, data and permissions are checked before history/pointer success; failures retain their durable outcome.
 Ambiguous changes remain pending until draft-bound decisions are supplied. Standalone data SQL requires explicit effects.
 
+Drafts and immutable artifacts share typed boundary decoders; semantic checks use the decoded values.
+Manual and data authoring share dependency traversal while preserving their existing ordering policies.
+
 The library examples exercise generated-only, manual and mixed schema/data migrations on owned scratch databases.
 The SSOT CLI integration covers fresh roles, DML-only app access, upgrades, integrity/drift gates, locking and rollback.
 

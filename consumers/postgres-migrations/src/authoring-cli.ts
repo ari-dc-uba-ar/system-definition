@@ -21,12 +21,6 @@ export type AddDataAnswerInfo = {
     dataMigration: unknown;
 };
 
-export type AddDataAnswersInfo = {
-    formatVersion: 1;
-    draftHash: string;
-    answers: readonly AddDataAnswerInfo[];
-};
-
 export interface AuthoringDraftStore {
     readDraft(path: string): Promise<ValidationResult<MigrationDraftInfo>>;
     replaceDraftAtomic(path: string, next: MigrationDraftInfo): Promise<ValidationResult<true>>;

@@ -1,7 +1,7 @@
 import {problem, type ValidationResult} from "system-definition";
 import type {DatabaseSettings} from "./database-settings";
 import type {PgSchemaInfo, PgSession} from "./pg-schema";
-import {quotePgIdentifier as quote} from "./pg-sql";
+import {quotePgIdentifier as quote, quotePgLiteral as literal} from "./pg-sql";
 
 function invalid(reason: string): ValidationResult<never> {
     return {ok: false, problems: [problem(null, "migration.permissionsInvalid", "blocking", {reason})]};
@@ -10,7 +10,6 @@ function invalid(reason: string): ValidationResult<never> {
 /** Pure initial setup SQL; passwords come from transaction-local values at apply time. */
 export function databaseProvisioningSql(settings: DatabaseSettings, journalSchema?: string): readonly string[] {
     const {owner, appUser, database} = settings;
-    const literal = (value: string) => "'" + value.replaceAll("'", "''") + "'";
     const roleSql = (user: string, passwordSetting: string) => {
         const body = `BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = ${literal(user)}) THEN
@@ -63,11 +62,6 @@ export async function provisionDatabase(session: PgSession, settings: DatabaseSe
 }
 
 /** Current and future managed tables receive the same data-only app privileges. */
-export async function grantAppPermissions(session: PgSession, settings: DatabaseSettings, expected: PgSchemaInfo): Promise<ValidationResult<true>> {
-    for (const sql of appPermissionSql(settings, expected)) await session.query(sql, []);
-    return {ok: true, value: true};
-}
-
 /** Read-only verification against the declared identities and every managed table. */
 export async function verifyDatabasePermissions(session: PgSession, settings: DatabaseSettings, expected: PgSchemaInfo): Promise<ValidationResult<true>> {
     const tables = expected.objects.filter(object => object.kind === "table").map(object => object.identity.name);

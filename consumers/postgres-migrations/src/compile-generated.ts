@@ -1,5 +1,5 @@
 import {sha256Hex} from "./canonical-hash";
-import {decodeContentRefInfo, isPlainObject, problem, type MigrationInfo, type ResourceRefInfo, type ValidationResult} from "system-definition";
+import {problem, type MigrationInfo, type ValidationResult} from "system-definition";
 import type {AuthoringRuntime, CompiledAuthoringInfo, MigrationDraftInfo, StructureChangeInfo} from "./authoring-contract";
 import {compileDataMigration} from "./compile-data";
 import {compileMachineEntityReadQuery, compileMachinePortReadQuery} from "./data-validation";
@@ -9,9 +9,8 @@ import {createPgAstTools} from "./pg-ast";
 import {quotePgQualified} from "./pg-sql";
 import type {PgSchemaInfo} from "./pg-schema";
 import {validationArtifactEvidenceHash} from "./validation-artifact";
+import {orderDependencies, dependencyReachability} from "./dependency-order";
 import {samePgIdentity} from "./pg-identity";
-
-const hash = (text: string): string => sha256Hex(new TextEncoder().encode(text));
 
 function failed(reason: string): ValidationResult<never> {
     return {ok: false, problems: [problem(null, "migration.authoringInvalid", "blocking", {reason})]};
@@ -45,21 +44,8 @@ export async function compileGenerated(
     const ast = data === undefined ? undefined : await createPgAstTools();
     const validationArtifacts = data?.validationArtifacts ?? initial.validationArtifacts;
 
-    // Manual checkpoints use the same immutable query-resource registry as generated ones.
-    for (const checkpoint of checkpoints) for (const row of checkpoint.rows) {
-        if (!runtime.readQuery) return failed("Row checkpoints require a query reader");
-        if (!isPlainObject(row)) return failed("Malformed manual row checkpoint");
-        const query = decodeContentRefInfo(row.select, "$", "query", (_path, reason) => failed(reason));
-        if (!query.ok) return query;
-        const text = await runtime.readQuery(query.value);
-        if (!text.ok) return text;
-        const file = await emit({ref: query.value, text: text.value});
-        if (!file.ok) return file;
-        queryResources[query.value.name] = {kind: "query", file: file.value};
-    }
-
     async function sqlStep(id: string, text: string): Promise<ValidationResult<MigrationInfo["steps"][number]>> {
-        const ref = {name: id + ".sql", kind: "sql" as const, contentHash: hash(text)};
+        const ref = {name: id + ".sql", kind: "sql" as const, contentHash: sha256Hex(text)};
         const stored = await emit({ref, text});
         if (!stored.ok) return stored;
         if (stored.value.contentHash !== ref.contentHash) return failed("Artifact sink returned a different SQL hash");
@@ -70,18 +56,11 @@ export async function compileGenerated(
         if (data === undefined || ast === undefined || !runtime.readQuery) return failed("Data compilation requires queries, historical snapshots, transformations, codecs and validation artifacts");
         const byId = new Map(draft.data.map(migration => [migration.id, migration]));
         if (byId.size !== draft.data.length) return failed("Duplicate data migration id");
-        const ordered: typeof draft.data[number][] = [];
-        const remaining = new Map(byId);
-        while (remaining.size > 0) {
-            const ready = [...remaining.values()].filter(migration => migration.dependsOn.every(id => ordered.some(one => one.id === id)))
-                .sort((a, b) => a.id < b.id ? -1 : 1);
-            if (ready.length === 0) return failed("Unknown or cyclic data migration dependency");
-            for (const migration of ready) { ordered.push(migration); remaining.delete(migration.id); }
-        }
+        const ordered = orderDependencies(draft.data, "layers");
+        if (ordered === null) return failed("Unknown or cyclic data migration dependency");
         // All sources are captured before any write. An explicit dependency orders overlapping destinations.
         const writers = new Map<string, string>();
-        const reaches = (id: string, dependency: string): boolean =>
-            byId.get(id)!.dependsOn.some(parent => parent === dependency || reaches(parent, dependency));
+        const reaches = dependencyReachability(ordered);
         for (const migration of ordered) {
             const decoded = decodeDataMigration(data.context, migration);
             if (!decoded.ok) return decoded;
@@ -135,7 +114,7 @@ export async function compileGenerated(
                     `SELECT * FROM ${quotePgQualified("pg_temp", selection.table)}`, ast.machine);
                 if (!projected.ok) return projected;
                 const name = `validate:${migration.id}:${selection.phase}:${side}`;
-                const ref = {name: name + ".sql", kind: "query" as const, contentHash: hash(projected.value)};
+                const ref = {name: name + ".sql", kind: "query" as const, contentHash: sha256Hex(projected.value)};
                 const file = await emit({ref, text: projected.value});
                 if (!file.ok) return file;
                 queryResources[ref.name] = {kind: "query", file: file.value};
@@ -197,7 +176,7 @@ export async function compileGenerated(
                 const projected = compileMachineEntityReadQuery(data.context[side], entity, data.persistence, data.storage,
                     `SELECT * FROM ${quotePgQualified(data.storage.schema, entity)}`, ast.machine);
                 if (!projected.ok) return projected;
-                const ref = {name: `validate:${side}:${entity}.sql`, kind: "query" as const, contentHash: hash(projected.value)};
+                const ref = {name: `validate:${side}:${entity}.sql`, kind: "query" as const, contentHash: sha256Hex(projected.value)};
                 const file = await emit({ref, text: projected.value});
                 if (!file.ok) return file;
                 queryResources[ref.name] = {kind: "query", file: file.value};

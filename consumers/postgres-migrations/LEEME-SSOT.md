@@ -400,7 +400,8 @@ historia, deployment o replay. Guardar SQL no lo ejecuta.
 
 `provisionDatabase(session, settings)` usa la conexión administrativa inicial para
 crear roles faltantes y el schema del owner, con privilegios de datos para app.
-`grantAppPermissions` y `verifyDatabasePermissions` son pasos separados: el verifier
+`appPermissionSql` genera los grants guardados en la migración; se ejecutan como
+pasos de esa migración. `verifyDatabasePermissions`
 lee ownership y privilegios de todas las tablas esperadas y rechaza app administrativo,
 miembro de owner o con CREATE en el schema. Owner/app incluyen sus credenciales
 en los settings; el CLI sólo expone nombres.
@@ -452,3 +453,15 @@ las comprobaciones de forma del loader. Los objetos SQL soportados correlacionan
 su kind con la identidad y el parent. Las tentativas usan resultados tipados de
 conexión y una sola escritura inicial. ArtifactResult/ArtifactProblem son aliases
 de ValidationResult/Problem, sin una propiedad message paralela a messageKey.
+
+Los drafts también se decodifican completos en la lectura, antes de verificar su
+revisión. Las referencias de campos, dominios y ports usan un solo decoder
+compartido con las transformaciones y checkpoints inmutables. La compatibilidad
+con snapshots y transformaciones se comprueba después, sobre valores tipados.
+
+El ordenamiento de dependencias y la consulta de ancestros se comparten entre
+SQL manual y datos. Se conserva la política de orden existente: cola lexicográfica
+para SQL manual/DDL y capas completas para capturas de datos. Se eliminaron el
+loop inalcanzable de filas manuales, los wrappers sin consumidores y los helpers
+reemplazados por pasos persistidos. El compilador rechaza locales y parámetros
+sin uso; los checks de tipos siguen siendo aserciones exportadas.

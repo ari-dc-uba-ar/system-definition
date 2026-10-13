@@ -3,7 +3,6 @@ import {
     decodeFileInfo,
     decodeArray,
     decodeFileResourceInfo,
-    decodeReleaseRefInfo,
     decodeContentRefInfo,
     type ValidationResult,
     hasExactKeys,
@@ -27,7 +26,8 @@ import {
     type MigrationManifestInfo,
 } from "./artifact";
 import {canonicalJsonSha256, omitJsonObjectKeys} from "./canonical-hash";
-import {decodeDataDecisionInfo, decodeFieldRefInfo, type AuthoringCheckpointRowInfo, type CompiledAuthoringInfo} from "./authoring-contract";
+import {decodePortInfo} from "./data-authoring-codec";
+import {decodeAuthoringBase, decodeDataDecisionInfo, type AuthoringCheckpointRowInfo, type CompiledAuthoringInfo} from "./authoring-contract";
 import {decodeValidationArtifact} from "./validation-artifact";
 import type {PortInfo} from "./migration-authoring";
 
@@ -90,27 +90,20 @@ function decodeRow(value: unknown, path: string): ValidationResult<AuthoringChec
     if (!isPlainObject(value.ports)) return invalidAuthoring(path, "expected ports");
     const ports: Record<string, PortInfo> = Object.create(null);
     for (const [name, raw] of Object.entries(value.ports)) {
-        if (name.length === 0 || !isPlainObject(raw) || !hasExactKeys(raw, ["domain", "field"]) || !isPlainObject(raw.domain)
-            || !hasExactKeys(raw.domain, ["side", "type", "nullable"]) || (raw.domain.side !== "from" && raw.domain.side !== "to")
-            || typeof raw.domain.type !== "string" || raw.domain.type.length === 0 || typeof raw.domain.nullable !== "boolean") return invalidAuthoring(path, "invalid port");
-        const field = raw.field === null ? {ok: true as const, value: null} : decodeFieldRefInfo(raw.field, path, invalidAuthoring);
-        if (!field.ok) return field;
-        ports[name] = {domain: {side: raw.domain.side, type: raw.domain.type, nullable: raw.domain.nullable}, field: field.value};
+        if (name.length === 0) return invalidAuthoring(path, "empty port name");
+        const port = decodePortInfo(raw, path + ".ports." + name, invalidAuthoring);
+        if (!port.ok) return port;
+        ports[name] = port.value;
     }
     return {ok: true, value: {...common, ports}};
 }
 
 function decodeAuthoring(value: JsonValue, migration: MigrationInfo): ArtifactResult<CompiledAuthoringInfo> {
     if (!isObject(value) || !hasExactKeys(value, ["formatVersion", "draftHash", "base", "migration", "operations", "decisions", "checkpoints", "queryResources", "validationArtifacts", ...(Object.hasOwn(value, "states") ? ["states"] : []), ...(Object.hasOwn(value, "initial") ? ["initial"] : [])])
-        || value.formatVersion !== 1 || !isSha256(value.draftHash) || !isObject(value.base)
-        || !hasExactKeys(value.base, ["from", "to", "fromSnapshotHash", "toSnapshotHash", "fromPersistenceHash", "toPersistenceHash"])
-        || !isSha256(value.base.fromSnapshotHash) || !isSha256(value.base.toSnapshotHash)
-        || !isSha256(value.base.fromPersistenceHash) || !isSha256(value.base.toPersistenceHash)) return invalidAuthoring("$", "invalid authoring shape");
+        || value.formatVersion !== 1 || !isSha256(value.draftHash)) return invalidAuthoring("$", "invalid authoring shape");
     if (!sameJson(value.migration, migration)) return failure("migration.invalidReference", {reason: "authoring migration does not match immutable manifest"});
-    const from = decodeReleaseRefInfo(value.base.from, "base.from", invalidAuthoring);
-    if (!from.ok) return from;
-    const to = decodeReleaseRefInfo(value.base.to, "base.to", invalidAuthoring);
-    if (!to.ok) return to;
+    const base = decodeAuthoringBase(value.base, "base", invalidAuthoring);
+    if (!base.ok) return base;
     const operations = decodeArray(value.operations, "operations", invalidAuthoring, (raw, path): ValidationResult<CompiledAuthoringInfo["operations"][number]> => {
         if (!isPlainObject(raw) || !hasExactKeys(raw, ["id", "stepIds", "changeIds", "dataMigrationIds"]) || typeof raw.id !== "string" || raw.id.length === 0) return invalidAuthoring(path, "invalid operation");
         const stepIds = stringArray(raw.stepIds, path + ".stepIds"); if (!stepIds.ok) return stepIds;
@@ -147,8 +140,7 @@ function decodeAuthoring(value: JsonValue, migration: MigrationInfo): ArtifactRe
     const initial = Object.hasOwn(value, "initial") ? decodeContentRefInfo(value.initial, "initial", "sql", invalidAuthoring) : {ok: true as const, value: undefined};
     if (!initial.ok) return initial;
     return {ok: true, value: {formatVersion: 1, draftHash: value.draftHash,
-        base: {from: from.value, to: to.value, fromSnapshotHash: value.base.fromSnapshotHash, toSnapshotHash: value.base.toSnapshotHash,
-            fromPersistenceHash: value.base.fromPersistenceHash, toPersistenceHash: value.base.toPersistenceHash},
+        base: base.value,
         migration, operations: operations.value, decisions: decisions.value, checkpoints: checkpoints.value, queryResources,
         validationArtifacts: validationArtifacts.value, ...(states === undefined ? {} : {states}), ...(initial.value === undefined ? {} : {initial: initial.value})}};
 }

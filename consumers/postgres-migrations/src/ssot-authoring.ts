@@ -4,7 +4,7 @@ import {completeMigrationCatalog, isPlainObject, sameReleaseRef, type Validation
 import {parseJsonBytes, sha256Hex} from "./artifact";
 import type {DatabaseSettings} from "./database-settings";
 import type {SqlSsotInfo} from "./sql-mapping";
-import {createMigrationDraft} from "./migration-draft";
+import {createMigrationDraft, decodeMigrationDraftInfo} from "./migration-draft";
 import {computeDraftRevisionHash} from "./draft-revision";
 import {assembleMigration} from "./authoring";
 import type {AuthoringRuntime, CompiledAuthoringInfo, MigrationDraftInfo} from "./authoring-contract";
@@ -13,18 +13,16 @@ import {runAddSqlSession, type AddSqlContractInfo} from "./authoring-cli";
 import {databaseProvisioningSql, appPermissionSql} from "./database-permissions";
 import {saveMigrationArtifact} from "./migration-artifact";
 import {isSafeArtifactPath} from "./artifact-files";
-import {captureMigrationState, initializeMigrationStore, invalidStore, jsonBytes, migrationDirectory, readCatalogState, readStateBytes, stateFile, stateReference, writeJsonAtomic, type MigrationStateInfo} from "./migration-store";
+import {captureMigrationState, initializeMigrationStore, invalidStore, jsonBytes, migrationDirectory, readCatalogState, readStateBytes, stateFile, stateReference, writeJsonAtomic} from "./migration-store";
 
 export type SsotAuthoringRuntime = Pick<AuthoringRuntime, "readSql" | "readQuery" | "loadDataContext">;
 
 export async function readMigrationDraft(file: string): Promise<ValidationResult<MigrationDraftInfo>> {
     const parsed = parseJsonBytes(await readFile(file), file, false);
     if (!parsed.ok) return parsed;
-    const raw = parsed.value;
-    if (!isPlainObject(raw) || raw.formatVersion !== 1 || typeof raw.id !== "string" || typeof raw.revisionHash !== "string" || !isPlainObject(raw.base)
-        || !["renames", "changes", "data", "decisions", "manual", "pending"].every(key => Array.isArray(raw[key]))) return invalidStore("Malformed migration draft");
-    // JSON is decoded at this boundary; semantic effect/reference checks belong to assembly.
-    const draft = raw as unknown as MigrationDraftInfo;
+    const decoded = decodeMigrationDraftInfo(parsed.value);
+    if (!decoded.ok) return decoded;
+    const draft = decoded.value;
     const revision = computeDraftRevisionHash(draft);
     return revision.ok && revision.value !== draft.revisionHash ? invalidStore("Stale draft revision") : revision.ok ? {ok: true, value: draft} : revision;
 }

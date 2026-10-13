@@ -2,14 +2,12 @@ import {
     problem,
     sameReleaseRef,
     type MigrationInfo,
-    type ReleaseRefInfo,
     type ResourceRefInfo,
     type ValidationResult,
 } from "system-definition";
 import type {
     AuthoringRuntime,
     CompiledAuthoringInfo,
-    FieldRefInfo,
     ManualStepInfo,
     MigrationDraftInfo,
     RenameInfo,
@@ -21,7 +19,7 @@ import {pgIdentityKey, samePgIdentity} from "./pg-identity";
 import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo} from "./pg-schema";
 import {prepareManualSqlResource} from "./sql-resource";
 import {validateMigrationDecisions} from "./migration-decisions";
-import {orderDependencies} from "./dependency-order";
+import {orderDependencies, dependencyReachability} from "./dependency-order";
 import {isFieldRename} from "./authoring-contract";
 
 export * from "./authoring-contract";
@@ -115,30 +113,9 @@ function orderedManualSteps(manual: readonly ManualStepInfo[]): ValidationResult
     return {ok: true, value: ordered};
 }
 
-function transitivelyDependsOn(
-    stepId: string,
-    dependencyId: string,
-    byId: ReadonlyMap<string, ManualStepInfo>,
-    memo: Map<string, ReadonlySet<string>>,
-): boolean {
-    const cached = memo.get(stepId);
-    if (cached !== undefined) return cached.has(dependencyId);
-
-    const found = new Set<string>();
-    const stack = [...(byId.get(stepId)?.dependsOn ?? [])];
-    while (stack.length > 0) {
-        const current = stack.pop() as string;
-        if (found.has(current)) continue;
-        found.add(current);
-        stack.push(...(byId.get(current)?.dependsOn ?? []));
-    }
-    memo.set(stepId, found);
-    return found.has(dependencyId);
-}
 
 function validateManualWriterOrder(steps: readonly ManualStepInfo[]): ValidationResult<true> {
-    const byId = new Map(steps.map(step => [step.id, step] as const));
-    const memo = new Map<string, ReadonlySet<string>>();
+    const reaches = dependencyReachability(steps);
     for (let leftIndex = 0; leftIndex < steps.length; leftIndex++) {
         const left = steps[leftIndex] as ManualStepInfo;
         const leftMutations = new Set([...left.writes, ...left.destroys].map(pgIdentityKey));
@@ -147,8 +124,8 @@ function validateManualWriterOrder(steps: readonly ManualStepInfo[]): Validation
             const right = steps[rightIndex] as ManualStepInfo;
             const overlaps = [...right.writes, ...right.destroys].some(identity => leftMutations.has(pgIdentityKey(identity)));
             if (!overlaps) continue;
-            const ordered = transitivelyDependsOn(left.id, right.id, byId, memo)
-                || transitivelyDependsOn(right.id, left.id, byId, memo);
+            const ordered = reaches(left.id, right.id)
+                || reaches(right.id, left.id);
             if (!ordered) {
                 return fail("migration.authoringInvalid", {
                     firstStepId: left.id,

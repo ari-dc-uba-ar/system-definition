@@ -8,6 +8,7 @@ import {
     type ReleaseRefInfo,
     type ValidationResult,
 } from "system-definition";
+import {quotePgLiteral} from "./pg-sql";
 import type {PgSession, SqlParameter} from "./pg-schema";
 import {isPgNonEmptyText} from "./pg-text";
 import {
@@ -34,20 +35,12 @@ export function isFinishedAttemptState(value: unknown): value is Exclude<Attempt
     return isAttemptState(value) && value !== ATTEMPT_STATE.running;
 }
 
-export function sqlTextLiteral(value: string): string {
-    return "'" + value.replaceAll("'", "''") + "'";
-}
-
-export function sqlTextLiterals(values: readonly string[]): string {
-    return values.map(sqlTextLiteral).join(",");
-}
-
 export function sqlAttemptState(state: AttemptState): string {
-    return sqlTextLiteral(state);
+    return quotePgLiteral(state);
 }
 
 export function sqlAttemptStates(states: readonly AttemptState[]): string {
-    return sqlTextLiterals(states);
+    return states.map(quotePgLiteral).join(",");
 }
 
 export function failure<T>(

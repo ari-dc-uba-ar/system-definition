@@ -1,6 +1,6 @@
 import {strict as assert} from "node:assert";
 import {describe, it} from "mocha";
-import type {Problem, ReleaseRefInfo, ValidationResult} from "system-definition";
+import type {ReleaseRefInfo, ValidationResult} from "system-definition";
 import type {PgObjectInfo, PgSchemaInfo, PgSession, SqlParameter} from "../src/pg-schema";
 import {
     verifyRelease,
@@ -33,10 +33,6 @@ type QueryResult = {rows: readonly Readonly<Record<string, unknown>>[]; rowCount
 
 type StudentRow = {alumno: string; apellido: string; nombres: string; email: string | null};
 type ContactRow = {alumno: string; email: string};
-
-function problem(messageKey: string, details: Readonly<Record<string, string>> = {}): Problem {
-    return {field: null, messageKey, severity: "blocking", details};
-}
 
 function releaseRow(current: ReleaseRefInfo): Readonly<Record<string, unknown>> {
     return {

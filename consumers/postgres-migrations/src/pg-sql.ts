@@ -13,3 +13,7 @@ export function quotePgIdentifier(identifier: string): string {
 export function quotePgQualified(left: string, right: string): string {
     return quotePgIdentifier(left) + "." + quotePgIdentifier(right);
 }
+
+export function quotePgLiteral(value: string): string {
+    return "'" + value.replaceAll("'", "''") + "'";
+}

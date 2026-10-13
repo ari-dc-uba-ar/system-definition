@@ -12,7 +12,6 @@ import {
     verifyHistory,
     withMigrationLock,
     type AttemptInfo,
-    type InstallationInfo,
     type InstallationScope,
     type JournalConfig,
     type MigrationHistoryInfo,

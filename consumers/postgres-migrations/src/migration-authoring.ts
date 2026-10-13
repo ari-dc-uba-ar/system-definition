@@ -1,5 +1,6 @@
 import {
     childPath,
+    decodeArray,
     decodeContentRefInfo,
     exactOptionalKeys,
     isNonEmptyString,
@@ -12,6 +13,8 @@ import {
     problem,
     toJsonValue,
 } from "system-definition";
+
+import {decodeDataMigrationShape, decodeDomainRefInfo, decodePortInfo} from "./data-authoring-codec";
 
 export type SnapshotSide = "from" | "to";
 
@@ -396,16 +399,14 @@ export type CompatibleDataMigration<
 
 type JsonObject = {readonly [key: string]: JsonValue};
 
-type DecodeResult<T> = ValidationResult<T>;
-
-function invalid(path: string, reason: string): DecodeResult<never> {
+function invalid(path: string, reason: string): ValidationResult<never> {
     return {
         ok: false,
         problems: [problem(null, "migration.authoringInvalid", "blocking", {path, reason})],
     };
 }
 
-function isObject(value: JsonValue): value is JsonObject {
+function isObject(value: JsonValue | undefined): value is JsonObject {
     return isPlainObject(value);
 }
 
@@ -414,119 +415,48 @@ function exactKeys(
     required: readonly string[],
     optional: readonly string[],
     path: string,
-): DecodeResult<true> {
+): ValidationResult<true> {
     return exactOptionalKeys(value, required, optional, path, invalid);
 }
 
-function nonEmptyString(value: JsonValue | undefined, path: string): DecodeResult<string> {
+function nonEmptyString(value: JsonValue | undefined, path: string): ValidationResult<string> {
     if (!isNonEmptyString(value)) {
         return invalid(path, "expected a non-empty string");
     }
     return {ok: true, value};
 }
 
-function stringValue(value: JsonValue | undefined, path: string): DecodeResult<string> {
-    if (typeof value !== "string") return invalid(path, "expected a string");
-    return {ok: true, value};
-}
-
-function stringArray(value: JsonValue | undefined, path: string): DecodeResult<readonly string[]> {
-    if (!Array.isArray(value)) return invalid(path, "expected an array of strings");
-    const result: string[] = [];
-    const seen = new Set<string>();
-    for (let index = 0; index < value.length; index++) {
-        const one = value[index];
-        if (typeof one !== "string" || one.length === 0) {
-            return invalid(path + "[" + index + "]", "expected a non-empty string");
-        }
-        if (seen.has(one)) return invalid(path + "[" + index + "]", "duplicate value");
-        seen.add(one);
-        result.push(one);
-    }
-    return {ok: true, value: result};
-}
-
 function snapshotFor(context: AuthoringContext, side: SnapshotSide): SystemSnapshotInfo {
     return side === "from" ? context.from : context.to;
 }
 
-function decodeSide(value: JsonValue | undefined, path: string): DecodeResult<SnapshotSide> {
-    if (value !== "from" && value !== "to") return invalid(path, "expected from or to");
-    return {ok: true, value};
+function validateFieldRef(context: AuthoringContext, ref: FieldRefInfo, path: string, side?: SnapshotSide, entity?: string): ValidationResult<FieldRefInfo> {
+    if (side !== undefined && ref.side !== side) return invalid(path, "field reference is on the wrong snapshot side");
+    if (entity !== undefined && ref.entity !== entity) return invalid(path, "field reference targets the wrong entity");
+    const found = snapshotFor(context, ref.side).entities[ref.entity];
+    if (found === undefined || found.fields[ref.field] === undefined) return invalid(path, "unknown entity or field");
+    return {ok: true, value: ref};
 }
 
-function decodeFieldRef(
-    context: AuthoringContext,
-    value: JsonValue | undefined,
-    path: string,
-    requiredSide?: SnapshotSide,
-    requiredEntity?: string,
-): DecodeResult<FieldRefInfo> {
-    if (!isObject(value as JsonValue)) return invalid(path, "expected a field reference");
-    const object = value as JsonObject;
-    const keys = exactKeys(object, ["side", "entity", "field"], [], path);
-    if (!keys.ok) return keys;
-    const side = decodeSide(object.side, childPath(path, "side"));
-    if (!side.ok) return side;
-    if (requiredSide !== undefined && side.value !== requiredSide) {
-        return invalid(childPath(path, "side"), "field reference is on the wrong snapshot side");
-    }
-    const entity = nonEmptyString(object.entity, childPath(path, "entity"));
-    if (!entity.ok) return entity;
-    if (requiredEntity !== undefined && entity.value !== requiredEntity) {
-        return invalid(childPath(path, "entity"), "field reference targets the wrong entity");
-    }
-    const field = nonEmptyString(object.field, childPath(path, "field"));
-    if (!field.ok) return field;
-
-    const snapshot = snapshotFor(context, side.value);
-    const entityInfo = snapshot.entities[entity.value];
-    if (entityInfo === undefined) return invalid(childPath(path, "entity"), "unknown entity");
-    if (entityInfo.fields[field.value] === undefined) return invalid(childPath(path, "field"), "unknown field");
-    return {ok: true, value: {side: side.value, entity: entity.value, field: field.value}};
+function validateDomain(context: AuthoringContext, domain: DomainRefInfo, path: string, side?: SnapshotSide): ValidationResult<DomainRefInfo> {
+    if (side !== undefined && domain.side !== side) return invalid(path, "domain is on the wrong snapshot side");
+    if (!snapshotFor(context, domain.side).typeNames.includes(domain.type)) return invalid(path, "unknown type for snapshot side");
+    return {ok: true, value: domain};
 }
 
-function decodeDomain(
-    context: AuthoringContext,
-    value: JsonValue | undefined,
-    path: string,
-    requiredSide?: SnapshotSide,
-): DecodeResult<DomainRefInfo> {
-    if (!isObject(value as JsonValue)) return invalid(path, "expected a domain reference");
-    const object = value as JsonObject;
-    const keys = exactKeys(object, ["side", "type", "nullable"], [], path);
-    if (!keys.ok) return keys;
-    const side = decodeSide(object.side, childPath(path, "side"));
-    if (!side.ok) return side;
-    if (requiredSide !== undefined && side.value !== requiredSide) {
-        return invalid(childPath(path, "side"), "domain is on the wrong snapshot side");
-    }
-    const type = nonEmptyString(object.type, childPath(path, "type"));
-    if (!type.ok) return type;
-    if (typeof object.nullable !== "boolean") {
-        return invalid(childPath(path, "nullable"), "expected a boolean");
-    }
-    const snapshot = snapshotFor(context, side.value);
-    if (!snapshot.typeNames.includes(type.value)) {
-        return invalid(childPath(path, "type"), "unknown type for snapshot side");
-    }
-    return {ok: true, value: {side: side.value, type: type.value, nullable: object.nullable}};
+function decodeDomain(context: AuthoringContext, value: JsonValue | undefined, path: string): ValidationResult<DomainRefInfo> {
+    const domain = decodeDomainRefInfo(value, path, invalid);
+    return domain.ok ? validateDomain(context, domain.value, path) : domain;
 }
 
 export function sameDomainRef(left: DomainRefInfo, right: DomainRefInfo): boolean {
     return left.side === right.side && left.type === right.type && left.nullable === right.nullable;
 }
 
-function sourceCompatible(source: DomainRefInfo, input: DomainRefInfo): boolean {
+function domainAssignable(source: DomainRefInfo, input: DomainRefInfo): boolean {
     return source.side === input.side
         && source.type === input.type
         && (!source.nullable || input.nullable);
-}
-
-function outputCompatible(output: DomainRefInfo, target: DomainRefInfo): boolean {
-    return output.side === target.side
-        && output.type === target.type
-        && (!output.nullable || target.nullable);
 }
 
 function fieldDomain(context: AuthoringContext, ref: FieldRefInfo): DomainRefInfo {
@@ -534,35 +464,21 @@ function fieldDomain(context: AuthoringContext, ref: FieldRefInfo): DomainRefInf
     return {side: ref.side, type: field.type, nullable: field.nullable};
 }
 
-function decodePort(
-    context: AuthoringContext,
-    value: JsonValue,
-    path: string,
-    role: "transformationInput" | "transformationOutput" | "source",
-): DecodeResult<PortInfo> {
-    if (!isObject(value)) return invalid(path, "expected a port");
-    const keys = exactKeys(value, ["domain", "field"], [], path);
-    if (!keys.ok) return keys;
-    const expectedSide = role === "transformationOutput" ? "to" : "from";
-    const domain = decodeDomain(context, value.domain, childPath(path, "domain"), expectedSide);
-    if (!domain.ok) return domain;
-    if (value.field === null) return {ok: true, value: {domain: domain.value, field: null}};
-
-    const field = decodeFieldRef(context, value.field, childPath(path, "field"), expectedSide);
-    if (!field.ok) return field;
-    const actual = fieldDomain(context, field.value);
-    if (role === "source") {
-        /* A source selection may explicitly widen NOT NULL to nullable (LEFT JOIN),
-           but it may never narrow a nullable historical field. */
-        if (actual.side !== domain.value.side
-            || actual.type !== domain.value.type
-            || (actual.nullable && !domain.value.nullable)) {
-            return invalid(childPath(path, "domain"), "source domain disagrees with referenced field");
-        }
-    } else if (!sameDomainRef(actual, domain.value)) {
-        return invalid(childPath(path, "domain"), "domain disagrees with referenced field");
+function validatePort(context: AuthoringContext, port: PortInfo, path: string, role: "transformationInput" | "transformationOutput" | "source"): ValidationResult<PortInfo> {
+    const side = role === "transformationOutput" ? "to" : "from";
+    const domain = validateDomain(context, port.domain, path + ".domain", side); if (!domain.ok) return domain;
+    if (port.field !== null) {
+        const field = validateFieldRef(context, port.field, path + ".field", side); if (!field.ok) return field;
+        const actual = fieldDomain(context, field.value);
+        // LEFT JOIN sources can widen nullability; transformation ports must match exactly.
+        if (!(role === "source" ? domainAssignable(actual, port.domain) : sameDomainRef(actual, port.domain))) return invalid(path + ".domain", "domain disagrees with referenced field");
     }
-    return {ok: true, value: {domain: domain.value, field: field.value}};
+    return {ok: true, value: port};
+}
+
+function decodePort(context: AuthoringContext, value: JsonValue, path: string, role: "transformationInput" | "transformationOutput" | "source"): ValidationResult<PortInfo> {
+    const port = decodePortInfo(value, path, invalid);
+    return port.ok ? validatePort(context, port.value, path, role) : port;
 }
 
 export function decodeValidationPorts(context: AuthoringContext, value: unknown, side: SnapshotSide): ValidationResult<Readonly<Record<string, PortInfo>>> {
@@ -576,10 +492,10 @@ function decodePortMap(
     value: JsonValue | undefined,
     path: string,
     role: "transformationInput" | "transformationOutput" | "source",
-): DecodeResult<Readonly<Record<string, PortInfo>>> {
-    if (!isObject(value as JsonValue)) return invalid(path, "expected a port map");
+): ValidationResult<Readonly<Record<string, PortInfo>>> {
+    if (!isObject(value)) return invalid(path, "expected a port map");
     const result: Record<string, PortInfo> = Object.create(null) as Record<string, PortInfo>;
-    for (const [name, raw] of Object.entries(value as JsonObject)) {
+    for (const [name, raw] of Object.entries(value)) {
         if (name.length === 0 || name.startsWith("__")) {
             return invalid(childPath(path, name), "invalid port name");
         }
@@ -594,10 +510,10 @@ function decodeDomainMap(
     context: AuthoringContext,
     value: JsonValue | undefined,
     path: string,
-): DecodeResult<Readonly<Record<string, DomainRefInfo>>> {
-    if (!isObject(value as JsonValue)) return invalid(path, "expected a domain map");
+): ValidationResult<Readonly<Record<string, DomainRefInfo>>> {
+    if (!isObject(value)) return invalid(path, "expected a domain map");
     const result: Record<string, DomainRefInfo> = Object.create(null) as Record<string, DomainRefInfo>;
-    for (const [name, raw] of Object.entries(value as JsonObject)) {
+    for (const [name, raw] of Object.entries(value)) {
         if (name.length === 0 || name.startsWith("__")) {
             return invalid(childPath(path, name), "invalid parameter name");
         }
@@ -608,29 +524,18 @@ function decodeDomainMap(
     return {ok: true, value: result};
 }
 
-function decodeQueryRef(value: JsonValue | undefined, path: string): DecodeResult<QueryRefInfo> {
+function decodeQueryRef(value: JsonValue | undefined, path: string): ValidationResult<QueryRefInfo> {
     return decodeContentRefInfo(value, path, "query", invalid);
 }
 
-function decodeCheckRef(value: JsonValue, path: string): DecodeResult<ResourceRefInfo> {
-    return decodeContentRefInfo(value, path, "check", invalid);
-}
-
-function decodeCheckArray(value: JsonValue | undefined, path: string): DecodeResult<readonly ResourceRefInfo[]> {
-    if (!Array.isArray(value)) return invalid(path, "expected an array of check references");
-    const result: ResourceRefInfo[] = [];
-    for (let index = 0; index < value.length; index++) {
-        const decoded = decodeCheckRef(value[index]!, path + "[" + index + "]");
-        if (!decoded.ok) return decoded;
-        result.push(decoded.value);
-    }
-    return {ok: true, value: result};
+function decodeCheckArray(value: JsonValue | undefined, path: string): ValidationResult<readonly ResourceRefInfo[]> {
+    return decodeArray(value, path, invalid, (raw, at) => decodeContentRefInfo(raw, at, "check", invalid));
 }
 
 function decodeTransformationJson(
     context: AuthoringContext,
     value: JsonValue,
-): DecodeResult<TransformationInfo> {
+): ValidationResult<TransformationInfo> {
     const path = "$";
     if (!isObject(value)) return invalid(path, "expected a transformation object");
     const keys = exactKeys(
@@ -695,276 +600,59 @@ function decodeTransformationJson(
     };
 }
 
-function decodeMachineValue(
-    context: AuthoringContext,
-    value: JsonValue,
-    path: string,
-): DecodeResult<MachineValueInfo> {
-    if (!isObject(value)) return invalid(path, "expected a machine value");
-    const keys = exactKeys(value, ["domain", "value"], [], path);
-    if (!keys.ok) return keys;
-    const domain = decodeDomain(context, value.domain, childPath(path, "domain"));
-    if (!domain.ok) return domain;
-    if (value.value !== null && typeof value.value !== "string") {
-        return invalid(childPath(path, "value"), "machine values are strings or null");
+function decodeDataMigrationJson(context: AuthoringContext, value: JsonValue): ValidationResult<DataMigrationInfo> {
+    const decoded = decodeDataMigrationShape(value, "$", invalid);
+    if (!decoded.ok) return decoded;
+    const migration = decoded.value;
+    const transformation = context.transformations[migration.transformation];
+    if (transformation === undefined) return invalid("$.transformation", "unknown transformation");
+    const {source} = migration;
+    const inputNames = Object.keys(transformation.inputs);
+    if (Object.keys(source.ports).length !== inputNames.length || inputNames.some(name => !Object.hasOwn(source.ports, name))) return invalid("$.source.ports", "source ports must exactly match transformation inputs");
+    for (const [name, port] of Object.entries(source.ports)) {
+        const valid = validatePort(context, port, childPath("$.source.ports", name), "source"); if (!valid.ok) return valid;
+        if (!domainAssignable(port.domain, transformation.inputs[name]!.domain)) return invalid(childPath("$.source.ports", name), "source port is incompatible with transformation input");
     }
-    if (value.value === null && !domain.value.nullable) {
-        return invalid(childPath(path, "value"), "null is not permitted by the domain");
+    if (source.identity.length === 0) return invalid("$.source.identity", "identity must not be empty");
+    for (const name of source.identity) {
+        const port = source.ports[name];
+        if (port === undefined || port.domain.nullable) return invalid("$.source.identity", "identity must name non-null source ports");
     }
-    return {ok: true, value: {domain: domain.value, value: value.value}};
-}
-
-function decodeArguments(
-    context: AuthoringContext,
-    value: JsonValue | undefined,
-    transformation: TransformationInfo,
-    path: string,
-): DecodeResult<Readonly<Record<string, MachineValueInfo>>> {
-    if (!isObject(value as JsonValue)) return invalid(path, "expected an argument map");
-    const object = value as JsonObject;
-    const expected = Object.keys(transformation.parameters);
-    const actual = Object.keys(object);
-    if (actual.length !== expected.length || expected.some(name => !Object.prototype.hasOwnProperty.call(object, name))) {
-        return invalid(path, "argument names must exactly match transformation parameters");
+    const parameterNames = Object.keys(transformation.parameters);
+    if (Object.keys(migration.arguments).length !== parameterNames.length || parameterNames.some(name => !Object.hasOwn(migration.arguments, name))) return invalid("$.arguments", "argument names must exactly match transformation parameters");
+    for (const [name, argument] of Object.entries(migration.arguments)) {
+        const at = childPath("$.arguments", name);
+        const domain = validateDomain(context, argument.domain, at); if (!domain.ok) return domain;
+        if (argument.value === null && !argument.domain.nullable) return invalid(at, "null is not permitted by the domain");
+        if (!sameDomainRef(argument.domain, transformation.parameters[name]!)) return invalid(at, "argument domain is incompatible with transformation parameter");
     }
-    const result: Record<string, MachineValueInfo> = Object.create(null) as Record<string, MachineValueInfo>;
-    for (const name of expected) {
-        const decoded = decodeMachineValue(context, object[name]!, childPath(path, name));
-        if (!decoded.ok) return decoded;
-        if (!sameDomainRef(decoded.value.domain, transformation.parameters[name]!)) {
-            return invalid(childPath(path, name), "argument domain is incompatible with transformation parameter");
+    for (const [index, write] of migration.writes.entries()) {
+        const at = "$.writes[" + index + "]";
+        const entity = context.to.entities[write.entity];
+        if (entity === undefined) return invalid(at, "unknown destination entity");
+        const targets = new Set<string>();
+        for (const binding of write.values) {
+            const output = transformation.outputs[binding.output];
+            if (output === undefined) return invalid(at, "unknown transformation output");
+            const target = validateFieldRef(context, binding.target, at, "to", write.entity); if (!target.ok) return target;
+            if (!domainAssignable(output.domain, fieldDomain(context, target.value))) return invalid(at, "output domain is incompatible with target field");
+            if (targets.has(binding.target.field)) return invalid(at, "duplicate target field");
+            targets.add(binding.target.field);
         }
-        result[name] = decoded.value;
-    }
-    return {ok: true, value: result};
-}
-
-function decodeOutputBinding(
-    context: AuthoringContext,
-    value: JsonValue,
-    transformation: TransformationInfo,
-    entity: string,
-    path: string,
-): DecodeResult<OutputBindingInfo> {
-    if (!isObject(value)) return invalid(path, "expected an output binding");
-    const keys = exactKeys(value, ["output", "target"], [], path);
-    if (!keys.ok) return keys;
-    const output = nonEmptyString(value.output, childPath(path, "output"));
-    if (!output.ok) return output;
-    const outputPort = transformation.outputs[output.value];
-    if (outputPort === undefined) return invalid(childPath(path, "output"), "unknown transformation output");
-    const target = decodeFieldRef(context, value.target, childPath(path, "target"), "to", entity);
-    if (!target.ok) return target;
-    if (!outputCompatible(outputPort.domain, fieldDomain(context, target.value))) {
-        return invalid(childPath(path, "target"), "output domain is incompatible with target field");
-    }
-    return {ok: true, value: {output: output.value, target: target.value}};
-}
-
-function decodeBindings(
-    context: AuthoringContext,
-    value: JsonValue | undefined,
-    transformation: TransformationInfo,
-    entity: string,
-    path: string,
-): DecodeResult<readonly OutputBindingInfo[]> {
-    if (!Array.isArray(value)) return invalid(path, "expected an array of output bindings");
-    const result: OutputBindingInfo[] = [];
-    const targets = new Set<string>();
-    for (let index = 0; index < value.length; index++) {
-        const decoded = decodeOutputBinding(context, value[index]!, transformation, entity, path + "[" + index + "]");
-        if (!decoded.ok) return decoded;
-        if (targets.has(decoded.value.target.field)) {
-            return invalid(path + "[" + index + "]", "duplicate target field");
-        }
-        targets.add(decoded.value.target.field);
-        result.push(decoded.value);
-    }
-    return {ok: true, value: result};
-}
-
-function decodeMatch(
-    context: AuthoringContext,
-    value: JsonValue | undefined,
-    transformation: TransformationInfo,
-    entity: string,
-    path: string,
-): DecodeResult<readonly MatchPairInfo[]> {
-    if (!Array.isArray(value)) return invalid(path, "expected a match array");
-    const entityInfo = context.to.entities[entity];
-    if (entityInfo === undefined) return invalid(path, "unknown destination entity");
-    const result: MatchPairInfo[] = [];
-    const fields = new Set<string>();
-    for (let index = 0; index < value.length; index++) {
-        const itemPath = path + "[" + index + "]";
-        const raw = value[index]!;
-        if (!isObject(raw)) return invalid(itemPath, "expected a match pair");
-        const keys = exactKeys(raw, ["output", "targetField"], [], itemPath);
-        if (!keys.ok) return keys;
-        const output = nonEmptyString(raw.output, childPath(itemPath, "output"));
-        if (!output.ok) return output;
-        const port = transformation.outputs[output.value];
-        if (port === undefined) return invalid(childPath(itemPath, "output"), "unknown transformation output");
-        const targetField = nonEmptyString(raw.targetField, childPath(itemPath, "targetField"));
-        if (!targetField.ok) return targetField;
-        const targetInfo = entityInfo.fields[targetField.value];
-        if (targetInfo === undefined) return invalid(childPath(itemPath, "targetField"), "unknown target field");
-        const targetDomain: DomainRefInfo = {side: "to", type: targetInfo.type, nullable: targetInfo.nullable};
-        if (!outputCompatible(port.domain, targetDomain)) {
-            return invalid(itemPath, "match output is incompatible with target field");
-        }
-        if (fields.has(targetField.value)) return invalid(itemPath, "duplicate match target field");
-        fields.add(targetField.value);
-        result.push({output: output.value, targetField: targetField.value});
-    }
-    return {ok: true, value: result};
-}
-
-function decodeWrite(
-    context: AuthoringContext,
-    value: JsonValue,
-    transformation: TransformationInfo,
-    path: string,
-): DecodeResult<WriteInfo> {
-    if (!isObject(value)) return invalid(path, "expected a write");
-    if (value.kind !== "insert" && value.kind !== "update") {
-        return invalid(childPath(path, "kind"), "expected insert or update");
-    }
-    const required = value.kind === "insert"
-        ? ["kind", "entity", "values", "key"]
-        : ["kind", "entity", "values", "match", "whenMissing"];
-    const keys = exactKeys(value, required, [], path);
-    if (!keys.ok) return keys;
-    const entity = nonEmptyString(value.entity, childPath(path, "entity"));
-    if (!entity.ok) return entity;
-    if (context.to.entities[entity.value] === undefined) {
-        return invalid(childPath(path, "entity"), "unknown destination entity");
-    }
-    const values = decodeBindings(context, value.values, transformation, entity.value, childPath(path, "values"));
-    if (!values.ok) return values;
-
-    if (value.kind === "insert") {
-        const key = stringArray(value.key, childPath(path, "key"));
-        if (!key.ok) return key;
-        for (const field of key.value) {
-            if (context.to.entities[entity.value]!.fields[field] === undefined) {
-                return invalid(childPath(path, "key"), "insert key names an unknown target field");
+        if (write.kind === "insert") {
+            if (write.key.some(name => entity.fields[name] === undefined)) return invalid(at, "insert key names an unknown target field");
+        } else {
+            const matched = new Set<string>();
+            for (const pair of write.match) {
+                const output = transformation.outputs[pair.output], field = entity.fields[pair.targetField];
+                if (output === undefined || field === undefined) return invalid(at, "unknown match output or target field");
+                if (!domainAssignable(output.domain, {side: "to", type: field.type, nullable: field.nullable})) return invalid(at, "match output is incompatible with target field");
+                if (matched.has(pair.targetField)) return invalid(at, "duplicate match target field");
+                matched.add(pair.targetField);
             }
         }
-        return {ok: true, value: {kind: "insert", entity: entity.value, values: values.value, key: key.value}};
     }
-
-    const match = decodeMatch(context, value.match, transformation, entity.value, childPath(path, "match"));
-    if (!match.ok) return match;
-    if (value.whenMissing !== "error" && value.whenMissing !== "insert") {
-        return invalid(childPath(path, "whenMissing"), "expected error or insert");
-    }
-    return {
-        ok: true,
-        value: {
-            kind: "update",
-            entity: entity.value,
-            values: values.value,
-            match: match.value,
-            whenMissing: value.whenMissing,
-        },
-    };
-}
-
-function decodeDataMigrationJson(
-    context: AuthoringContext,
-    value: JsonValue,
-): DecodeResult<DataMigrationInfo> {
-    const path = "$";
-    if (!isObject(value)) return invalid(path, "expected a data migration object");
-    const keys = exactKeys(
-        value,
-        ["id", "source", "transformation", "arguments", "writes"],
-        ["description", "dependsOn", "conservationChecks"],
-        path,
-    );
-    if (!keys.ok) return keys;
-    const id = nonEmptyString(value.id, "$.id");
-    if (!id.ok) return id;
-    const description = value.description === undefined
-        ? {ok: true as const, value: ""}
-        : stringValue(value.description, "$.description");
-    if (!description.ok) return description;
-    const dependsOn = value.dependsOn === undefined
-        ? {ok: true as const, value: [] as readonly string[]}
-        : stringArray(value.dependsOn, "$.dependsOn");
-    if (!dependsOn.ok) return dependsOn;
-    const transformationName = nonEmptyString(value.transformation, "$.transformation");
-    if (!transformationName.ok) return transformationName;
-    const transformation = context.transformations[transformationName.value];
-    if (transformation === undefined) return invalid("$.transformation", "unknown transformation");
-
-    if (!isObject(value.source as JsonValue)) return invalid("$.source", "expected a source selection");
-    const source = value.source as JsonObject;
-    const sourceKeys = exactKeys(source, ["query", "ports", "identity"], ["coverageChecks"], "$.source");
-    if (!sourceKeys.ok) return sourceKeys;
-    const sourceQuery = decodeQueryRef(source.query, "$.source.query");
-    if (!sourceQuery.ok) return sourceQuery;
-    const ports = decodePortMap(context, source.ports, "$.source.ports", "source");
-    if (!ports.ok) return ports;
-    const expectedInputNames = Object.keys(transformation.inputs);
-    const sourceNames = Object.keys(ports.value);
-    if (sourceNames.length !== expectedInputNames.length
-        || expectedInputNames.some(name => !Object.prototype.hasOwnProperty.call(ports.value, name))) {
-        return invalid("$.source.ports", "source ports must exactly match transformation inputs");
-    }
-    for (const name of expectedInputNames) {
-        if (!sourceCompatible(ports.value[name]!.domain, transformation.inputs[name]!.domain)) {
-            return invalid(childPath("$.source.ports", name), "source port is incompatible with transformation input");
-        }
-    }
-    const identity = stringArray(source.identity, "$.source.identity");
-    if (!identity.ok) return identity;
-    if (identity.value.length === 0) return invalid("$.source.identity", "identity must not be empty");
-    for (const name of identity.value) {
-        const port = ports.value[name];
-        if (port === undefined) return invalid("$.source.identity", "identity names an unknown source port");
-        if (port.domain.nullable) return invalid("$.source.identity", "identity ports must be non-null");
-    }
-    const coverageChecks = source.coverageChecks === undefined
-        ? {ok: true as const, value: [] as readonly ResourceRefInfo[]}
-        : decodeCheckArray(source.coverageChecks, "$.source.coverageChecks");
-    if (!coverageChecks.ok) return coverageChecks;
-
-    const argumentsResult = decodeArguments(context, value.arguments, transformation, "$.arguments");
-    if (!argumentsResult.ok) return argumentsResult;
-
-    if (!Array.isArray(value.writes)) return invalid("$.writes", "expected an array of writes");
-    const writes: WriteInfo[] = [];
-    for (let index = 0; index < value.writes.length; index++) {
-        const decoded = decodeWrite(context, value.writes[index]!, transformation, "$.writes[" + index + "]");
-        if (!decoded.ok) return decoded;
-        writes.push(decoded.value);
-    }
-
-    const conservationChecks = value.conservationChecks === undefined
-        ? {ok: true as const, value: [] as readonly ResourceRefInfo[]}
-        : decodeCheckArray(value.conservationChecks, "$.conservationChecks");
-    if (!conservationChecks.ok) return conservationChecks;
-
-    return {
-        ok: true,
-        value: {
-            id: id.value,
-            description: description.value,
-            dependsOn: dependsOn.value,
-            source: {
-                query: sourceQuery.value,
-                ports: ports.value,
-                identity: identity.value,
-                coverageChecks: coverageChecks.value,
-            },
-            transformation: transformationName.value,
-            arguments: argumentsResult.value,
-            writes,
-            conservationChecks: conservationChecks.value,
-        },
-    };
+    return decoded;
 }
 
 export function defineTransformation<const D extends TransformationDef>(

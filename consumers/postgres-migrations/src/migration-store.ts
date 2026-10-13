@@ -1,7 +1,7 @@
 import {mkdir, readFile, rename, writeFile} from "node:fs/promises";
 import {join, resolve} from "node:path";
 import {randomUUID} from "node:crypto";
-import {completeMigrationCatalog, decodePublishedMigrationInfo, decodeReleaseRefInfo, isPlainObject, problem, sameReleaseRef, type FileInfo, type MigrationCatalogInfo, type PublishedMigrationInfo, type ReleaseRefInfo, type ValidationResult} from "system-definition";
+import {completeMigrationCatalog, decodeArray, decodePublishedMigrationInfo, decodeReleaseRefInfo, isPlainObject, problem, sameReleaseRef, type FileInfo, type MigrationCatalogInfo, type PublishedMigrationInfo, type ReleaseRefInfo, type ValidationResult} from "system-definition";
 import {canonicalBytes, parseJsonBytes, loadReleaseArtifact, sha256Hex} from "./artifact";
 import {isSafeArtifactPath, openArtifactDirectory} from "./artifact-files";
 import {decodeSqlSsot, projectSsotSchema, type SqlSsotInfo} from "./sql-mapping";
@@ -52,18 +52,12 @@ export async function readStoredCatalog(root: string): Promise<ValidationResult<
     if (!parsed.ok) return parsed;
     const raw = parsed.value;
     if (!isPlainObject(raw) || !Array.isArray(raw.releases) || !Array.isArray(raw.migrations) || (raw.baselineDirectory !== undefined && typeof raw.baselineDirectory !== "string")) return invalidStore("Malformed migration catalog");
-    const releases: ReleaseRefInfo[] = [], migrations: PublishedMigrationInfo[] = [];
-    for (const rawRef of raw.releases) {
-        const ref = decodeReleaseRefInfo(rawRef, "catalog.releases", (_path, reason) => invalidStore(reason));
-        if (!ref.ok) return ref;
-        releases.push(ref.value);
-    }
-    for (const rawMigration of raw.migrations) {
-        const migration = decodePublishedMigrationInfo(rawMigration, "catalog.migrations", (_path, reason) => invalidStore(reason));
-        if (!migration.ok) return migration;
-        migrations.push(migration.value);
-    }
-    const catalog = completeMigrationCatalog(releases, migrations);
+    const invalid = (_path: string, reason: string) => invalidStore(reason);
+    const releases = decodeArray(raw.releases, "catalog.releases", invalid, (value, path) => decodeReleaseRefInfo(value, path, invalid));
+    if (!releases.ok) return releases;
+    const migrations = decodeArray(raw.migrations, "catalog.migrations", invalid, (value, path) => decodePublishedMigrationInfo(value, path, invalid));
+    if (!migrations.ok) return migrations;
+    const catalog = completeMigrationCatalog(releases.value, migrations.value);
     if (!catalog.ok) return catalog;
     if (catalog.value.systemId !== raw.systemId) return invalidStore("Catalog system mismatch");
     return {ok: true, value: {...catalog.value, ...(raw.baselineDirectory === undefined ? {} : {baselineDirectory: raw.baselineDirectory})}};

@@ -47,7 +47,6 @@ export type ValidationArtifactHost = {
 
 type JsonObject = Readonly<Record<string, JsonValue>>;
 
-const encoder = new TextEncoder();
 
 function invalid<T>(reason: string, details: Readonly<Record<string, string>> = {}): ValidationResult<T> {
     return {

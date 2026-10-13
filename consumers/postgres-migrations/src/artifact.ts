@@ -359,12 +359,6 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
     return error instanceof Error && "code" in error;
 }
 
-/** Complete the immutable identity before verification, without writing files. */
-export function describeReleaseArtifact(draft: ReleaseArtifactDraft): ArtifactResult<ReleaseManifestInfo> {
-    const prepared = prepareArtifact(draft);
-    return prepared.ok ? {ok: true, value: prepared.value.manifest} : prepared;
-}
-
 export async function publishReleaseArtifact(root: string, draft: ReleaseArtifactDraft): Promise<ArtifactResult<ReleaseArtifact>> {
     const prepared = prepareArtifact(draft);
     if (!prepared.ok) return prepared;

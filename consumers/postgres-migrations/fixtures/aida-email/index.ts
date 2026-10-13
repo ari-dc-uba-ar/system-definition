@@ -239,7 +239,7 @@ export async function verifyAidaEmailFixture(session: PgSession): Promise<Valida
     return {ok: true, value: true};
 }
 
-export function executionContext(migration: PublishedMigrationInfo): MigrationExecutionContext {
+export function executionContext(_migration: PublishedMigrationInfo): MigrationExecutionContext {
     const source: ReleaseExecutionState = {
         expectedSchema: projectedA(), inspection: aidaEmailInspection, managedData: [], invariantChecks: [],
     };

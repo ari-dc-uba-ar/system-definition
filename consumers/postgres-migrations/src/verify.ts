@@ -27,11 +27,8 @@ import {pgIdentityKey} from "./pg-identity";
 import {
     projectSchema,
     type CreateResourceInfo,
-    type PgObjectIdentity,
-    type PgObjectInfo,
     type PgSchemaInfo,
     type PgSession,
-    type ResolvedSqlResource,
     type StorageContext,
 } from "./pg-schema";
 import {executeMigrationPath} from "./runner";

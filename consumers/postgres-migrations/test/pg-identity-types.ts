@@ -6,7 +6,7 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
     : false;
 type Assert<T extends true> = T;
 
-type _IdentityTypeHasOneShape = Assert<Equal<IdentityOwnerType, SchemaCompatibilityType>>;
+export type _IdentityTypeHasOneShape = Assert<Equal<IdentityOwnerType, SchemaCompatibilityType>>;
 
 const valid: IdentityOwnerType = {schema: "app", kind: "table", name: "x", parentName: null, signature: []};
 void valid;
