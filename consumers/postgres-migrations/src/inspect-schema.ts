@@ -361,6 +361,7 @@ WITH managed_schemas AS (
       JOIN pg_catalog.pg_class AS tbl ON tbl.oid = i.indrelid
       JOIN managed_schemas AS n ON n.oid = tbl.relnamespace
       LEFT JOIN pg_catalog.pg_constraint AS owner_con ON owner_con.conindid = i.indexrelid
+       AND owner_con.contype IN ('p', 'u', 'x')
       LEFT JOIN pg_catalog.pg_class AS owner_tbl ON owner_tbl.oid = owner_con.conrelid
       LEFT JOIN pg_catalog.pg_namespace AS owner_ns ON owner_ns.oid = owner_tbl.relnamespace
 ), views_inventory AS (
