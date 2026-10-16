@@ -33,37 +33,29 @@ export function createMigrationManifest(compiled: CompiledAuthoringInfo, files: 
 
 /** Render the saved resources in execution order. Checks still require the migration runner. */
 export function migrationSql(compiled: CompiledAuthoringInfo, files: AuthoringFiles, initialReview?: string): string {
-    const clean = (text: string) => text.replace(/[\r\n]/g, " ");
-    const sections = [`-- Migration: ${clean(compiled.migration.id)}\n-- Run with postgres-migrations; the runner enforces checks, validators and history.\n`];
-    const used = new Set<string>();
-    const resource = (name: string, label: string) => {
+    const sections: string[] = [];
+    const resource = (name: string) => {
         const item = files.resources.get(name);
         if (item === undefined) throw new Error("Missing migration resource: " + name);
-        used.add(item.ref.contentHash);
-        sections.push(`-- ${clean(label)}\n${item.text}`);
+        sections.push(item.text.trimEnd());
     };
     if (compiled.initial !== undefined || initialReview !== undefined) {
-        sections.push("-- Phase 1: initialUser (administrator)\n-- Passwords are supplied by the runner from database settings.\nBEGIN;\n");
-        if (compiled.initial !== undefined) resource(compiled.initial.name, "Create owner/app roles and their schemas");
-        else sections.push("-- Historical role setup was external; this is the configured setup declaration.\n" + initialReview);
-        sections.push("COMMIT;\n");
+        sections.push("BEGIN;");
+        if (compiled.initial !== undefined) resource(compiled.initial.name);
+        else if (initialReview !== undefined) sections.push(initialReview.trimEnd());
+        sections.push("COMMIT;");
     }
-    sections.push("-- Phase 2: owner (migration transaction)\nBEGIN;\n");
-    for (const ref of compiled.migration.before) resource(ref.name, "Before check: " + ref.name);
-    for (const [index, step] of compiled.migration.steps.entries()) {
-        const title = step.id.startsWith("structure:") ? files.resources.get(step.run.name)?.text.split("\n")[0] ?? step.id : step.id;
-        resource(step.run.name, String(index + 1).padStart(3, "0") + " " + title);
+    sections.push("BEGIN;");
+    for (const ref of compiled.migration.before) resource(ref.name);
+    for (const step of compiled.migration.steps) {
+        resource(step.run.name);
         for (const checkpoint of compiled.checkpoints.filter(one => one.afterStep === step.id)) {
-            for (const ref of checkpoint.checks) resource(ref.name, "Checkpoint check: " + ref.name);
-            for (const row of checkpoint.rows) sections.push("-- Historical row validation: " + clean(row.id) + "\n");
+            for (const ref of checkpoint.checks) resource(ref.name);
         }
     }
-    for (const ref of compiled.migration.after) resource(ref.name, "After check: " + ref.name);
-    sections.push("-- The runner verifies schema/data/permissions and records history before COMMIT.\nCOMMIT;\n");
-    for (const item of files.resources.values()) {
-        if (!used.has(item.ref.contentHash)) sections.push(`-- Supporting SQL/query (loaded separately): ${clean(item.ref.name)}\n${item.text.split("\n").map(line => "-- " + line).join("\n")}`);
-    }
-    return sections.join("\n");
+    for (const ref of compiled.migration.after) resource(ref.name);
+    sections.push("COMMIT;");
+    return sections.join("\n\n") + "\n";
 }
 
 /** Compact storage preserves the exact virtual file bytes expected by existing readers. */

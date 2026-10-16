@@ -11,6 +11,7 @@ import type {AuthoringRuntime, CompiledAuthoringInfo, MigrationDraftInfo} from "
 import {AuthoringFiles} from "./authoring-files";
 import {runAddSqlSession, type AddSqlContractInfo} from "./authoring-cli";
 import {databaseProvisioningSql, appPermissionSql} from "./database-permissions";
+import {inferStructureChanges} from "./infer";
 import {saveMigrationArtifact} from "./migration-artifact";
 import {isSafeArtifactPath} from "./artifact-files";
 import {captureMigrationState, initializeMigrationStore, invalidStore, jsonBytes, migrationDirectory, readCatalogState, readStateBytes, stateFile, stateReference, writeJsonAtomic} from "./migration-store";
@@ -101,7 +102,9 @@ export async function generateSsotMigration(system: SqlSsotInfo, settings: Datab
     if (catalog.value.migrations.length === 0 && Object.keys(from.value.ssot.entities).length === 0) {
         compiled.initial = await resource("initial-users.sql", databaseProvisioningSql(settings, settings.database.schema + "_migrations").join("\n"));
     }
-    const grants = appPermissionSql(settings, to.value.schema).join("\n");
+    const changes = inferStructureChanges(draft.base, from.value.schema, to.value.schema, draft.renames);
+    if (!changes.ok) return changes;
+    const grants = appPermissionSql(settings, changes.value).join("\n");
     if (grants !== "") {
         const run = await resource("app-permissions.sql", grants);
         compiled.migration = {...compiled.migration, steps: [...compiled.migration.steps, {id: "app-permissions", run}]};

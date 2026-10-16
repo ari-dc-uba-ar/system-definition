@@ -64,6 +64,16 @@ no lee variables de entorno específicas de la aplicación.
 `loadDatabaseSettings` carga este valor sin conectarse ni modificar
 roles. El usuario owner ejecuta migraciones y el appUser opera los datos.
 
+Cada migración otorga `SELECT, INSERT, UPDATE, DELETE` únicamente sobre las tablas
+que crea. Alterar, renombrar o eliminar tablas existentes no repite esos grants;
+si no se crean tablas, no se agrega un paso de permisos. El aprovisionamiento no
+otorga privilegios por defecto sobre tablas futuras y revoca la antigua regla
+automática si estaba configurada, conservando los grants de tablas existentes. La aplicación sigue
+verificando los permisos de todas las tablas administradas antes de confirmar.
+El SQL generado conserva los comentarios escritos por el autor y omite los
+encabezados, rótulos por paso y explicaciones automáticas redundantes; las
+conexiones, verificaciones y recursos auxiliares permanecen en los metadatos.
+
 ```sh
 postgres-migrations capture --ssot dist/system.js --database dist/database.js
 ```

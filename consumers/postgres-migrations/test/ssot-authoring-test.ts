@@ -64,6 +64,11 @@ describe("SSOT migration authoring without a project adapter", () => {
         const script = await readFile(join(directory, "0001_initial.sql"), "utf8");
         assert.ok(script.includes('CREATE ROLE "owner"') && script.includes('CREATE ROLE "app"'));
         assert.ok(script.includes('TO "app"'));
+        assert.deepEqual(script.match(/GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE[^;]+;/g), [
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "app"."items" TO "app";',
+        ]);
+        assert.ok(!/ALTER DEFAULT PRIVILEGES[^;]+\bGRANT\b/.test(script));
+        assert.ok(!/^--/m.test(script));
         assert.ok(verified.authoring.initial);
         const metadataFile = join(directory, "metadata.json"), metadata = JSON.parse(await readFile(metadataFile, "utf8"));
         metadata["states/to.json"].releaseId = "changed";
@@ -77,14 +82,43 @@ describe("SSOT migration authoring without a project adapter", () => {
         value(await generateSsotMigration(system, settings, root, draft));
         const data = value(await inferSsotMigration(system, settings, root, "data-only", draft));
         assert.equal(data.changes.length, 0);
-        const published = value(await generateSsotMigration(system, settings, root, draft, {}, {text: 'UPDATE "app"."items" SET "id" = "id" + 1;',
+        const published = value(await generateSsotMigration(system, settings, root, draft, {}, {text: '-- Recompute sample identifiers.\nUPDATE "app"."items" SET "id" = "id" + 1;',
             contract: {id: "increment", resourceName: "increment.sql", dependsOn: [], implementsChanges: [], reads: [],
                 writes: [{schema: "app", kind: "table", name: "items", parentName: null, signature: []}], destroys: [], before: [], after: [], rowChecks: []}}));
         const verified = value(await verifyMigrationFiles(migrationDirectory(root, published), published));
-        assert.equal(verified.authoring.migration.steps.length, 2);
+        assert.equal(verified.authoring.migration.steps.length, 1);
+        const script = await readFile(join(migrationDirectory(root, published), "0002_data-only.sql"), "utf8");
+        assert.ok(script.includes('-- Recompute sample identifiers.'));
+        assert.ok(!script.includes("GRANT "));
+        assert.ok(!script.includes("-- Run with") && !script.includes("-- Phase") && !script.includes("-- 001"));
         const catalog = value(await readStoredCatalog(root));
         assert.equal(catalog.migrations.length, 2);
         assert.deepEqual(value(await readCatalogState(root, catalog, 1)).schema, value(await readCatalogState(root, catalog, 2)).schema);
+    }));
+    it("grants only the added table during an upgrade and omits permissions when only a column is added", () => temporary(async root => {
+        const draft = join(root, "draft.json");
+        value(await inferSsotMigration(system, settings, root, "initial", draft));
+        value(await generateSsotMigration(system, settings, root, draft));
+        const added = value(decodeSqlSsot({...snapshot, entities: {
+            ...snapshot.entities, extras: {...snapshot.entities.items, name: "extras"},
+        }}, mapping));
+        value(await inferSsotMigration(added, settings, root, "add_table", draft));
+        const published = value(await generateSsotMigration(added, settings, root, draft));
+        const script = await readFile(join(migrationDirectory(root, published), "0002_add_table.sql"), "utf8");
+        assert.deepEqual(script.match(/GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE[^;]+;/g), [
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "app"."extras" TO "app";',
+        ]);
+        const changed = value(decodeSqlSsot({...snapshot, entities: {
+            ...added.ssot.entities, items: {...snapshot.entities.items, fields: {
+                ...snapshot.entities.items.fields, notes: {name: "notes", type: "text", nullable: true},
+            }},
+        }}, mapping));
+        value(await inferSsotMigration(changed, settings, root, "add_column", draft));
+        const altered = value(await generateSsotMigration(changed, settings, root, draft));
+        assert.ok(!altered.migration.steps.some(step => step.id === "app-permissions"));
+        const alteredScript = await readFile(join(migrationDirectory(root, altered), "0003_add_column.sql"), "utf8");
+        assert.ok(!alteredScript.includes("GRANT "));
+        value(await verifyMigrationFiles(migrationDirectory(root, altered), altered));
     }));
     it("rejects a changed backend before saving SQL and rejects unsafe migration IDs", () => temporary(async root => {
         const draft = join(root, "draft.json");

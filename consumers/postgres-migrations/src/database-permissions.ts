@@ -1,6 +1,7 @@
 import {problem, type ValidationResult} from "system-definition";
 import type {DatabaseSettings} from "./database-settings";
 import type {PgSchemaInfo, PgSession} from "./pg-schema";
+import type {StructureChangeInfo} from "./authoring-contract";
 import {quotePgIdentifier as quote, quotePgLiteral as literal} from "./pg-sql";
 
 function invalid(reason: string): ValidationResult<never> {
@@ -28,12 +29,14 @@ END;`;
             `CREATE SCHEMA IF NOT EXISTS ${quote(name)} AUTHORIZATION ${ownerName};\n`),
         `REVOKE CREATE ON SCHEMA ${schema} FROM PUBLIC, ${appName};\n`,
         `GRANT USAGE ON SCHEMA ${schema} TO ${appName};\n`,
-        `ALTER DEFAULT PRIVILEGES FOR ROLE ${ownerName} IN SCHEMA ${schema} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${appName};\n`,
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${ownerName} IN SCHEMA ${schema} REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM ${appName};\n`,
     ];
 }
-export function appPermissionSql(settings: DatabaseSettings, expected: PgSchemaInfo): readonly string[] {
-    return expected.objects.filter(object => object.kind === "table").map(object =>
-        `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${quote(object.identity.schema)}.${quote(object.identity.name)} TO ${quote(settings.appUser.user)};\n`);
+/** Only newly created managed tables receive automatic CRUD grants. */
+export function appPermissionSql(settings: DatabaseSettings, changes: readonly StructureChangeInfo[]): readonly string[] {
+    return changes.flatMap(change => change.action === "add" && change.after.kind === "table" ? [
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${quote(change.after.schema)}.${quote(change.after.name)} TO ${quote(settings.appUser.user)};\n`,
+    ] : []);
 }
 
 /** Initial administrative connection; no data/schema migration is executed here. */
@@ -61,7 +64,6 @@ export async function provisionDatabase(session: PgSession, settings: DatabaseSe
     }
 }
 
-/** Current and future managed tables receive the same data-only app privileges. */
 /** Read-only verification against the declared identities and every managed table. */
 export async function verifyDatabasePermissions(session: PgSession, settings: DatabaseSettings, expected: PgSchemaInfo): Promise<ValidationResult<true>> {
     const tables = expected.objects.filter(object => object.kind === "table").map(object => object.identity.name);

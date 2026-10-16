@@ -2,7 +2,7 @@
 const assert = require("node:assert/strict");
 const {randomUUID} = require("node:crypto");
 const {createPostgresScratch, connectPostgres} = require("../dist/src/pg-session.js");
-const {provisionDatabase, verifyDatabasePermissions} = require("../dist/src/database-permissions.js");
+const {appPermissionSql, provisionDatabase, verifyDatabasePermissions} = require("../dist/src/database-permissions.js");
 const {quotePgIdentifier} = require("../dist/src/pg-sql.js");
 const value = result => {if (!result.ok) throw new Error(JSON.stringify(result.problems)); return result.value;};
 async function main() {
@@ -17,13 +17,22 @@ async function main() {
         value(await provisionDatabase(handle.session, settings));
         owner = await connectPostgres({...settings.database, ...settings.owner});
         app = await connectPostgres({...settings.database, ...settings.appUser});
+        await owner.query('ALTER DEFAULT PRIVILEGES FOR ROLE ' + quotePgIdentifier(settings.owner.user) + ' IN SCHEMA "app" GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ' + quotePgIdentifier(settings.appUser.user), []);
+        value(await provisionDatabase(handle.session, settings));
         await owner.query('CREATE TABLE "app"."items" (id integer PRIMARY KEY)', []);
         const expected = {formatVersion: 1, engineVersion: "18.6", schemas: ["app"], objects: [{kind: "table", identity: {schema: "app", kind: "table", name: "items", parentName: null, signature: []}, persistence: "permanent", relationKind: "r"}]};
+        assert.equal((await verifyDatabasePermissions(owner, settings, expected)).ok, false);
+        await assert.rejects(app.query('SELECT * FROM "app"."items"', []));
+        const changes = [{id: "create-items", origin: "inferred", impact: "preserving", differences: [], affectedFields: [], dependsOn: [],
+            action: "add", before: null, after: expected.objects[0].identity}];
+        for (const sql of appPermissionSql(settings, changes)) await owner.query(sql, []);
         value(await verifyDatabasePermissions(owner, settings, expected));
         await app.query('INSERT INTO "app"."items" VALUES (1)', []);
         assert.equal((await owner.query('SELECT count(*)::integer AS count FROM "app"."items"', [])).rows[0].count, 1);
         await assert.rejects(app.query('ALTER TABLE "app"."items" ADD COLUMN denied text', []));
         await assert.rejects(app.query('CREATE TABLE "app"."denied" (id integer)', []));
+        await owner.query('CREATE TABLE "app"."unmanaged" (id integer)', []);
+        await assert.rejects(app.query('SELECT * FROM "app"."unmanaged"', []));
         await owner.query('GRANT CREATE ON SCHEMA "app" TO ' + quotePgIdentifier(settings.appUser.user), []);
         assert.equal((await verifyDatabasePermissions(owner, settings, expected)).ok, false);
         await owner.query('REVOKE CREATE ON SCHEMA "app" FROM ' + quotePgIdentifier(settings.appUser.user), []);
