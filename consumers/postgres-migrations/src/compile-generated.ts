@@ -11,6 +11,7 @@ import type {PgSchemaInfo} from "./pg-schema";
 import {validationArtifactEvidenceHash} from "./validation-artifact";
 import {orderDependencies, dependencyReachability} from "./dependency-order";
 import {samePgIdentity} from "./pg-identity";
+import {deduplicateMigrationChecks} from "./check-references";
 
 function failed(reason: string): ValidationResult<never> {
     return {ok: false, problems: [problem(null, "migration.authoringInvalid", "blocking", {reason})]};
@@ -22,7 +23,7 @@ export async function compileGenerated(
     inspected: PgSchemaInfo, desired: PgSchemaInfo,
     residual: readonly StructureChangeInfo[], initial: CompiledAuthoringInfo,
 ): Promise<ValidationResult<CompiledAuthoringInfo>> {
-    if (residual.length === 0 && draft.data.length === 0 && initial.migration.steps.length === 0 && !runtime.finalSteps?.length) return {ok: true, value: initial};
+    if (residual.length === 0 && draft.data.length === 0 && initial.migration.steps.length === 0 && !runtime.finalSteps?.length) return {ok: true, value: deduplicateMigrationChecks(initial)};
     if (runtime.emitResource === undefined) {
         return failed("Migration assembly requires an artifact sink");
     }
@@ -194,8 +195,8 @@ export async function compileGenerated(
         const stored = await emit({ref, text: text.value});
         if (!stored.ok) return stored;
     }
-    return {ok: true, value: {
+    return {ok: true, value: deduplicateMigrationChecks({
         ...initial, operations, checkpoints, queryResources, validationArtifacts,
         migration: {...initial.migration, before, steps: allSteps},
-    }};
+    })};
 }

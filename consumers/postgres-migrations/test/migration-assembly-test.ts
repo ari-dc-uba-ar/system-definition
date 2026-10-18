@@ -93,7 +93,34 @@ describe("minimal migration assembly and saving", () => {
         const approved = {...draft, decisions: draft.changes.filter(change => change.impact === "requiresDataCheck").map(change => ({changeId: change.id, source: null, partitionCheck: null, resolution: {kind: "check" as const, run: check}}))};
         const files = new AuthoringFiles();
         const assembled = value(await assembleMigration(approved, source, desired, {...runtime(files), async readSql() {return {ok: true, value: text};}}));
-        assert.ok(assembled.migration.before.some(ref => ref.name === check.name));
+        assert.ok(approved.decisions.length > 1);
+        assert.deepEqual(assembled.migration.before, [check]);
+        assert.deepEqual(assembled.decisions, approved.decisions);
         assert.equal(files.resources.get(check.name)?.text, text);
+    });
+    it("deduplicates within a checkpoint while preserving checks at different migration stages", async () => {
+        const draft = value(createMigrationDraft("checkpoints", base, desired, system, "app"));
+        const checkText = "SELECT true AS ok;\n";
+        const first = {kind: "check" as const, name: "first-check.sql", contentHash: sha256Hex(checkText)};
+        const second = {...first, name: "second-check.sql"};
+        const runText = "SELECT 1;\n";
+        const run = (name: string) => ({kind: "sql" as const, name, contentHash: sha256Hex(runText)});
+        draft.manual = [
+            {id: "first", run: run("first.sql"), dependsOn: [], implementsChanges: [], reads: [], writes: [], destroys: [],
+                before: [first, first, second], after: [first, first], rowChecks: []},
+            {id: "second", run: run("second.sql"), dependsOn: ["first"], implementsChanges: [], reads: [], writes: [], destroys: [],
+                before: [first, second, second], after: [first, first], rowChecks: []},
+        ];
+        draft.revisionHash = value(computeDraftRevisionHash(draft));
+        const files = new AuthoringFiles();
+        const assembled = value(await assembleMigration(draft, desired, desired, {...runtime(files),
+            async readSql(ref) {return {ok: true, value: ref.kind === "check" ? checkText : runText};},
+        }));
+        assert.deepEqual(assembled.migration.before, [first, second]);
+        assert.deepEqual(assembled.checkpoints.map(({afterStep, checks}) => ({afterStep, checks})), [
+            {afterStep: "first", checks: [first, second]},
+            {afterStep: "second", checks: [first]},
+        ]);
+        assert.deepEqual(draft.manual[0]?.before, [first, first, second]);
     });
 });

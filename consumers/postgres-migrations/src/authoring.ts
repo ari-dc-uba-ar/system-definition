@@ -19,6 +19,7 @@ import {pgIdentityKey, samePgIdentity} from "./pg-identity";
 import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo} from "./pg-schema";
 import {prepareManualSqlResource} from "./sql-resource";
 import {validateMigrationDecisions} from "./migration-decisions";
+import {deduplicateMigrationChecks} from "./check-references";
 import {orderDependencies, dependencyReachability} from "./dependency-order";
 import {isFieldRename} from "./authoring-contract";
 
@@ -268,12 +269,12 @@ async function prepareAssembly(draft: MigrationDraftInfo, changes: readonly Stru
     if (!decisions.ok) return decisions;
     const manual = await validateManualSteps(desired, draft.manual, runtime);
     if (!manual.ok) return manual;
-    return {ok: true, value: {manual: manual.value, initial: {
+    return {ok: true, value: {manual: manual.value, initial: deduplicateMigrationChecks({
         formatVersion: 1, draftHash: draft.revisionHash, base: draft.base,
         migration: migrationForDraft(draft, manual.value), decisions: draft.decisions,
         operations: manual.value.steps.map(step => ({id: "manual:" + step.id, stepIds: [step.id], changeIds: [...step.implementsChanges], dataMigrationIds: []})),
         checkpoints: manual.value.checkpoints, queryResources: {}, validationArtifacts: [],
-    }}};
+    })}};
 }
 
 /** Assemble from supplied schemas and declared effects; verification is a separate step. */
