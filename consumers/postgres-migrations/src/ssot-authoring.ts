@@ -1,6 +1,7 @@
 import {readFile, mkdir, unlink} from "node:fs/promises";
 import {dirname, join} from "node:path";
-import {completeMigrationCatalog, isPlainObject, sameReleaseRef, type ValidationResult} from "system-definition";
+import {completeMigrationCatalog, isPlainObject, sameReleaseRef, type ResourceRefInfo, type ValidationResult} from "system-definition";
+import {cleanupMigrationInputs} from "./authoring-inputs";
 import {parseJsonBytes, sha256Hex} from "./artifact";
 import type {DatabaseSettings} from "./database-settings";
 import type {SqlSsotInfo} from "./sql-mapping";
@@ -73,6 +74,7 @@ export async function generateSsotMigration(system: SqlSsotInfo, settings: Datab
     if (bindings.some(([hash, value]) => hash !== sha256Hex(jsonBytes(value)))) return invalidStore("Draft snapshot or SQL mapping binding changed", "migration.checksumMismatch");
     if (catalog.value.releases.some(release => release.releaseId === to.value.releaseId)) return invalidStore("Migration release id is already used");
     const files = new AuthoringFiles();
+    const consumedResources = new Map<string, ResourceRefInfo>();
     let draft = loaded.value;
     if (sql !== undefined) {
         const ref = {name: sql.contract.resourceName, kind: "sql" as const, contentHash: sha256Hex(sql.text)};
@@ -86,7 +88,9 @@ export async function generateSsotMigration(system: SqlSsotInfo, settings: Datab
     const readSql: NonNullable<AuthoringRuntime["readSql"]> = async ref => {
         const resource = files.resources.get(ref.name);
         if (resource !== undefined && resource.ref.contentHash === ref.contentHash) return {ok: true, value: resource.text};
-        return runtime.readSql ? runtime.readSql(ref) : invalidStore("Missing authored SQL/check resource: " + ref.name);
+        const result = runtime.readSql ? await runtime.readSql(ref) : invalidStore("Missing authored SQL/check resource: " + ref.name);
+        if (result.ok) consumedResources.set(ref.name, ref);
+        return result;
     };
     const assembled = await assembleMigration(draft, from.value.schema, to.value.schema, {...runtime, readSql, emitResource: files.emitResource.bind(files)});
     if (!assembled.ok) return assembled;
@@ -117,6 +121,7 @@ export async function generateSsotMigration(system: SqlSsotInfo, settings: Datab
     const next = completeMigrationCatalog([...catalog.value.releases, published.value.migration.to], [...catalog.value.migrations, published.value]);
     if (!next.ok) return next;
     await writeJsonAtomic(join(root, "catalog.json"), {...next.value, ...(catalog.value.baselineDirectory === undefined ? {} : {baselineDirectory: catalog.value.baselineDirectory})}, true);
+    await cleanupMigrationInputs(root, draftFile, draft, [...consumedResources.values()]);
     if (draftFile === join(root, "draft.json")) {await unlink(draftFile); await unlink(draftFile + ".states.json");}
     return published;
 }

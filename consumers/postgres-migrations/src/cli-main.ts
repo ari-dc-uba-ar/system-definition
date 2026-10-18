@@ -9,6 +9,7 @@ import {assessDatabase} from "./assessment";
 import {dispatchSsotAuthoring, dispatchSsotApply, loadMigrationInputs} from "./ssot-cli";
 import {readMigrationDraft} from "./ssot-authoring";
 import {collectMigrationDecisions} from "./migration-decisions";
+import {recordMigrationAnswers} from "./authoring-inputs";
 import {invalidStore, readStoredCatalog, writeJsonAtomic} from "./migration-store";
 import {migrationStatus} from "./apply-migrations";
 
@@ -61,8 +62,12 @@ const handlers: Record<CliCommand, (flags: Flags) => Promise<ValidationResult<un
         const draftFile = resolve(required(flags, "draft")), answersFile = resolve(required(flags, "answers"));
         const draft = await readMigrationDraft(draftFile);
         if (!draft.ok) return draft;
-        const decided = collectMigrationDecisions(draft.value, JSON.parse(await readFile(answersFile, "utf8")));
-        if (decided.ok) await writeJsonAtomic(draftFile, decided.value);
+        const bytes = await readFile(answersFile);
+        const decided = collectMigrationDecisions(draft.value, JSON.parse(bytes.toString("utf8")));
+        if (decided.ok) {
+            await recordMigrationAnswers(draftFile, draft.value.id, answersFile, bytes);
+            await writeJsonAtomic(draftFile, decided.value);
+        }
         return decided;
     },
     async status(flags) {
