@@ -48,7 +48,7 @@ integration("existing-schema handoff: PostgreSQL type modifiers", () => {
     it("retains bounded character, numeric and timestamp declarations read from real catalogs", async () => {
         await withScratchSchema(async (session, schema) => {
             await session.query(`CREATE TABLE "${schema}".items (
-                label varchar(64), unbounded varchar, amount numeric(12, 2), recorded_at timestamp(3)
+                label varchar(64), unbounded varchar, amount numeric(12, 2), rounded numeric(12, -2), recorded_at timestamp(3), exact_time time(0), zoned_at timestamp(0) with time zone
             )`, []);
             const observed = value(await inspectSchema(session, {schemas: [schema], excluded: []}));
             assert.deepEqual(observed.unknown, []);
@@ -56,6 +56,9 @@ integration("existing-schema handoff: PostgreSQL type modifiers", () => {
             assert.deepEqual(column(observed.schema.objects, "unbounded").type.modifiers, []);
             assert.deepEqual(column(observed.schema.objects, "amount").type.modifiers, ["12", "2"]);
             assert.deepEqual(column(observed.schema.objects, "recorded_at").type.modifiers, ["3"]);
+            assert.deepEqual(column(observed.schema.objects, "rounded").type.modifiers, ["12", "-2"]);
+            assert.deepEqual(column(observed.schema.objects, "exact_time").type.modifiers, ["0"]);
+            assert.deepEqual(column(observed.schema.objects, "zoned_at").type.modifiers, ["0"]);
         });
     });
 

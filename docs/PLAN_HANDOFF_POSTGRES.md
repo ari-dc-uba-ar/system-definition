@@ -1,8 +1,8 @@
 # Adopción de un esquema existente: primer paso
 
-Rama: `feat/existing-schema-handoff`, creada desde `refactor/migrations-full`.
+Rama: `refactor/migrations-full`. Por indicación del propietario, el commit inicial de pruebas se incorporó a esta rama y se eliminó la rama adicional.
 
-El propietario eligió ampliar el consumidor PostgreSQL de system-definition para conservar el contrato persistente de Meta. Producción usa PostgreSQL 16.15; la disponibilidad de un respaldo restaurado todavía no está confirmada. No se modificó ningún servidor de producción.
+El propietario eligió ampliar el consumidor PostgreSQL de system-definition para conservar el contrato persistente de Meta. Producción usa PostgreSQL 16.15; el propietario confirmó que no hay una copia de respaldo o restauración disponible para el ensayo. No se modificó ningún servidor de producción.
 
 ## Primer contrato sometido a revisión
 
@@ -24,11 +24,11 @@ node --enable-source-maps node_modules/mocha/bin/mocha.js --exit consumers/postg
 
 Sin esa variable las pruebas quedan pendientes para que la suite ordinaria no conecte por su cuenta a una base. El fixture no carga archivos .env y revierte su transacción incluso ante una aserción fallida.
 
-Se respeta la regla de CLAUDE.md: mostrar los rojos y esperar la revisión del programador antes de corregir. No se modificó código de implementación.
+El propietario revisó y aceptó los dos contratos. La inspección ya conserva los parámetros que PostgreSQL imprime mediante format_type; también se verifican precisión cero y escala numérica negativa. Compilación y consistencia de documentación correctas. Suite completa del consumidor en Linux, con las pruebas reales habilitadas: **249 correctas**. En Windows, 247 pruebas pasaron y dos no pudieron crear los enlaces simbólicos de sus fixtures; ambas pasaron en Linux. Todos los recursos temporales fueron eliminados.
 
 ## Trabajo posterior a la revisión
 
-1. Corregir la inspección de modificadores y demostrar los verdes sobre PostgreSQL real.
+1. **Completado:** corregir la inspección de modificadores y demostrar los verdes sobre PostgreSQL real.
 2. Revisar la representación de tipos parametrizados y los contratos existentes de mapping/proyección, manteniendo compatibilidad para los consumidores actuales.
 3. Incorporar de forma incremental identidades, nombres físicos y atributos de constraints/índices, con pruebas de adopción y deriva. No confundir ejecutar SQL explícito con poder representar y verificar el estado resultante.
 4. Preparar la adopción de una línea de base observada, sin recrear tablas pobladas ni simular el historial de Django.

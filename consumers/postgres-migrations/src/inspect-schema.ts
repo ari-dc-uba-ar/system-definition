@@ -291,7 +291,15 @@ WITH managed_schemas AS (
 ), columns_inventory AS (
     SELECT 'column'::text, n.nspname, a.attname, c.relname, ARRAY[]::text[],
            NULL::text, NULL::text,
-           tn.nspname, t.typname, ARRAY[]::text[], GREATEST(a.attndims, 0),
+           tn.nspname, t.typname,
+           CASE WHEN a.atttypmod < 0 THEN ARRAY[]::text[] ELSE COALESCE(
+               pg_catalog.regexp_split_to_array(
+                   (pg_catalog.regexp_match(
+                       pg_catalog.format_type(a.atttypid, a.atttypmod), '\\(([^()]*)\\)'
+                   ))[1], '\\s*,\\s*'
+               ), ARRAY[]::text[]
+           ) END,
+           GREATEST(a.attndims, 0),
            CASE WHEN a.attcollation = 0 THEN NULL ELSE cn.nspname || '.' || co.collname END,
            NOT a.attnotnull,
            pg_catalog.pg_get_expr(ad.adbin, ad.adrelid, true),
