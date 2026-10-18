@@ -110,8 +110,8 @@ describe("PostgreSQL schema projection and clean creation", () => {
         assert.deepEqual(clases.primaryKey.columns, ["periodo", "materia", "orden"]);
         assert.equal(clases.columns.find((one: {name: string}) => one.name === "periodo")?.nullable, false);
         assert.deepEqual(clases.foreignKeys[0]?.columns, [
-            {source: "periodo", target: "periodo"},
             {source: "materia", target: "materia"},
+            {source: "periodo", target: "periodo"},
         ]);
 
         const materias = projected.value.tables.find((one: {name: string}) => one.name === "materias");

@@ -402,7 +402,9 @@ export function projectSchema(
                 return fail("migration.unsupportedSchemaFeature", {constraint: name.value, reason: "constraint name collision"});
             }
             constraintNames.add(name.value);
-            const pairs = Object.entries(fk.fields).map(([source, target]) => ({source, target}));
+            const pairs = Object.entries(fk.fields)
+                .sort(([left], [right]) => compareUtf16(left, right))
+                .map(([source, target]) => ({source, target}));
             foreignKeys.push({
                 name: name.value,
                 columns: pairs.map(one => ({...one})),
