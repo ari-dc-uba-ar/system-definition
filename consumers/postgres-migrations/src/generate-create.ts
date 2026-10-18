@@ -1,6 +1,7 @@
 import {compareUtf16, problem, type ValidationResult} from "system-definition";
 import {pgIdentityKey} from "./pg-identity";
 import {POSTGRES_SUPPORT} from "./postgres-support";
+import {readSingleSqlStatement, type SqlSyntaxToken} from "./sql-resource";
 import {
     quotePgIdentifier,
     quotePgQualified as qualified,
@@ -11,7 +12,7 @@ import {
     type SqlParameter,
 } from "./pg-schema";
 
-export type CreateSqlPhase = "table" | "local-constraint" | "foreign-key";
+export type CreateSqlPhase = "table" | "local-constraint" | "index" | "foreign-key";
 
 export type CreateSqlStatement = {
     phase: CreateSqlPhase;
@@ -56,8 +57,18 @@ export function renderPgType(type: PgTypeInfo): string {
 }
 
 export function columnDefinitionSql(column: Extract<PgObjectInfo, {kind: "column"}>): ValidationResult<string> {
-    if (column.identityDefinition !== null || column.generatedDefinition !== null) return fail("migration.unsupportedSchemaFeature", {column: column.identity.name, reason: "Identity and generated columns require explicit SQL"});
+    if (column.generatedDefinition !== null) return fail("migration.unsupportedSchemaFeature", {column: column.identity.name, reason: "Generated expressions require explicit SQL"});
+    let identity = "";
+    if (column.identityDefinition !== null) {
+        if (!["a", "d"].includes(column.identityDefinition) || column.nullable || column.defaultExpression !== null
+            || column.type.schema !== "pg_catalog" || !["int2", "int4", "int8"].includes(column.type.name)
+            || column.type.arrayDimensions !== 0 || column.type.modifiers.length !== 0) {
+            return fail("migration.unsupportedSchemaFeature", {column: column.identity.name, reason: "Unsupported identity attributes"});
+        }
+        identity = ` GENERATED ${column.identityDefinition === "a" ? "ALWAYS" : "BY DEFAULT"} AS IDENTITY`;
+    }
     return {ok: true, value: renderPgType(column.type)
+        + identity
         + (column.defaultExpression === null ? "" : ` DEFAULT ${column.defaultExpression}`)
         + (column.nullable ? "" : " NOT NULL")};
 }
@@ -96,7 +107,72 @@ export function constraintSql(object: Extract<PgObjectInfo, {kind: "constraint"}
                 + " (" + object.pairs.map(one => quotePgIdentifier(one.target)).join(", ") + ")" + timing,
         };
     }
-    return fail("migration.unsupportedSchemaFeature", {constraint: object.identity.name, reason: "generated CHECK constraints are not supported"});
+    const checked = readSingleSqlStatement(object.definition);
+    if (!checked.ok) return checked;
+    const tokens = checked.value.tokens;
+    const complete = word(tokens[0], "alter") && word(tokens[1], "table")
+        && identifier(tokens[2], object.identity.schema) && symbol(tokens[3], ".") && identifier(tokens[4], table)
+        && word(tokens[5], "add") && word(tokens[6], "constraint") && identifier(tokens[7], object.identity.name);
+    if (object.deferrable || object.target !== null || object.pairs.length !== 0 || !isCheckDefinition(complete ? tokens.slice(8) : tokens)) {
+        return fail("migration.unsupportedSchemaFeature", {constraint: object.identity.name, reason: "Unsupported CHECK definition or attributes"});
+    }
+    return {ok: true, value: complete ? checked.value.text : `ALTER TABLE ${tableName} ADD CONSTRAINT ${constraint} ${checked.value.text}`};
+}
+
+function word(token: SqlSyntaxToken | undefined, expected: string): boolean {
+    return token?.kind === "word" && token.text === expected;
+}
+
+function identifier(token: SqlSyntaxToken | undefined, expected: string): boolean {
+    return (token?.kind === "word" || token?.kind === "identifier") && token.text === expected;
+}
+
+function symbol(token: SqlSyntaxToken | undefined, expected: string): boolean {
+    return token?.kind === "symbol" && token.text === expected;
+}
+
+function isCheckDefinition(tokens: readonly SqlSyntaxToken[]): boolean {
+    if (!word(tokens[0], "check") || !symbol(tokens[1], "(")) return false;
+    let depth = 0;
+    for (let index = 1; index < tokens.length; index++) {
+        if (symbol(tokens[index], "(")) depth++;
+        if (symbol(tokens[index], ")")) depth--;
+        if (depth === 0) {
+            const tail = tokens.slice(index + 1);
+            return index > 2 && (tail.length === 0 || (tail.length === 2 && word(tail[0], "no") && word(tail[1], "inherit")));
+        }
+    }
+    return false;
+}
+
+/** Bind the single CREATE INDEX statement to its recorded index and parent identities. */
+export function indexSql(object: Extract<PgObjectInfo, {kind: "index"}>): ValidationResult<string> {
+    if (!object.valid || !object.ready || object.ownerConstraint !== null || object.identity.parentName === null) {
+        return fail("migration.unsupportedSchemaFeature", {index: object.identity.name, reason: "Only valid ready independent indexes can be generated"});
+    }
+    const checked = readSingleSqlStatement(object.definition);
+    if (!checked.ok) return checked;
+    const tokens = checked.value.tokens;
+    let position = 0;
+    if (!word(tokens[position++], "create")) return invalidIndex(object);
+    const unique = word(tokens[position], "unique");
+    if (unique) position++;
+    if (!word(tokens[position++], "index") || !identifier(tokens[position++], object.identity.name)
+        || !word(tokens[position++], "on")) return invalidIndex(object);
+    const only = word(tokens[position], "only");
+    if (only) position++;
+    if (symbol(tokens[position + 1], ".")) {
+        if (!identifier(tokens[position++], object.identity.schema)) return invalidIndex(object);
+        position++;
+    }
+    if (!identifier(tokens[position++], object.identity.parentName)) return invalidIndex(object);
+    const suffix = checked.value.text.slice(tokens[position - 1].end);
+    if (!word(tokens[position], "using") && !symbol(tokens[position], "(")) return invalidIndex(object);
+    return {ok: true, value: `CREATE ${unique ? "UNIQUE " : ""}INDEX ${quotePgIdentifier(object.identity.name)} ON ${only ? "ONLY " : ""}${qualified(object.identity.schema, object.identity.parentName)}${suffix}`};
+}
+
+function invalidIndex(object: Extract<PgObjectInfo, {kind: "index"}>): ValidationResult<never> {
+    return fail("migration.unsupportedSchemaFeature", {index: object.identity.name, reason: "CREATE INDEX must match its recorded name and qualified parent table"});
 }
 
 export function generateCreate(schema: PgSchemaInfo): ValidationResult<CreateSqlPlan> {
@@ -115,7 +191,7 @@ export function generateCreate(schema: PgSchemaInfo): ValidationResult<CreateSql
         }
         identities.add(key);
         if (object.kind === "table" && (object.persistence !== "permanent" || object.relationKind !== "r")) return fail("migration.unsupportedSchemaFeature", {table: object.identity.name, reason: "This table kind requires explicit SQL"});
-        if (object.kind === "index" || object.kind === "view" || object.kind === "routine") {
+        if (object.kind === "view" || object.kind === "routine") {
             return fail("migration.unsupportedSchemaFeature", {
                 kind: object.kind,
                 object: object.identity.name,
@@ -129,6 +205,9 @@ export function generateCreate(schema: PgSchemaInfo): ValidationResult<CreateSql
         .sort((a, b) => compareCreateIdentity(a.identity, b.identity));
     const constraints = schema.objects
         .filter((one): one is Extract<PgObjectInfo, {kind: "constraint"}> => one.kind === "constraint")
+        .sort((a, b) => compareCreateIdentity(a.identity, b.identity));
+    const indexes = schema.objects
+        .filter((one): one is Extract<PgObjectInfo, {kind: "index"}> => one.kind === "index")
         .sort((a, b) => compareCreateIdentity(a.identity, b.identity));
 
     const statements: CreateSqlStatement[] = [];
@@ -154,6 +233,21 @@ export function generateCreate(schema: PgSchemaInfo): ValidationResult<CreateSql
         const sql = constraintSql(constraint);
         if (!sql.ok) return sql;
         statements.push({phase: "local-constraint", text: sql.value, values: []});
+    }
+    for (const index of indexes) {
+        if (index.ownerConstraint !== null) {
+            const owner = constraints.find(one => pgIdentityKey(one.identity) === pgIdentityKey(index.ownerConstraint!));
+            if (!index.valid || !index.ready || owner === undefined || !["primaryKey", "unique"].includes(owner.constraintKind)) {
+                return fail("migration.unsupportedSchemaFeature", {index: index.identity.name, reason: "Backing index requires its recorded key constraint"});
+            }
+            continue;
+        }
+        if (!tables.some(table => table.identity.schema === index.identity.schema && table.identity.name === index.identity.parentName)) {
+            return fail("migration.unsupportedSchemaFeature", {index: index.identity.name, reason: "Index parent table is missing"});
+        }
+        const sql = indexSql(index);
+        if (!sql.ok) return sql;
+        statements.push({phase: "index", text: sql.value, values: []});
     }
     for (const constraint of constraints.filter(one => one.constraintKind === "foreignKey")) {
         const sql = constraintSql(constraint);

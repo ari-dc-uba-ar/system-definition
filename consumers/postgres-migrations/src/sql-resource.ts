@@ -17,7 +17,11 @@ export type PreparedSqlResource = {
 
 type ParsedStatement = PreparedSqlStatement & {
     words: readonly string[];
+    tokens: readonly SqlSyntaxToken[];
 };
+
+/** Quoted content stays opaque when checking a generated statement's outer shape. */
+export type SqlSyntaxToken = {kind: "word" | "identifier" | "symbol" | "literal"; text: string; end: number};
 
 function fail<T>(
     messageKey: string,
@@ -60,6 +64,8 @@ function parseSql(text: string): ValidationResult<readonly ParsedStatement[]> {
     const statements: ParsedStatement[] = [];
     let statementStart = 0;
     let words: string[] = [];
+    let tokens: SqlSyntaxToken[] = [];
+    let identifier = "";
     let word = "";
     let index = 0;
     let mode: "normal" | "single" | "double" | "lineComment" | "blockComment" | "dollar" = "normal";
@@ -69,6 +75,7 @@ function parseSql(text: string): ValidationResult<readonly ParsedStatement[]> {
     const flushWord = (): void => {
         if (word.length > 0) {
             words.push(word.toLowerCase());
+            tokens.push({kind: "word", text: word.toLowerCase(), end: index});
             word = "";
         }
     };
@@ -76,9 +83,10 @@ function parseSql(text: string): ValidationResult<readonly ParsedStatement[]> {
         flushWord();
         const value = text.slice(statementStart, end).trim();
         if (value.length > 0 && words.length > 0) {
-            statements.push({text: value, words});
+            statements.push({text: value, words, tokens});
         }
         words = [];
+        tokens = [];
         statementStart = end + 1;
     };
 
@@ -95,16 +103,23 @@ function parseSql(text: string): ValidationResult<readonly ParsedStatement[]> {
                 index += 2;
                 continue;
             }
-            if (char === "'") mode = "normal";
+            if (char === "'") {
+                tokens[tokens.length - 1].end = index + 1;
+                mode = "normal";
+            }
             index++;
             continue;
         }
         if (mode === "double") {
             if (char === '"' && next === '"') {
+                identifier += '"';
                 index += 2;
                 continue;
             }
-            if (char === '"') mode = "normal";
+            if (char === '"') {
+                tokens.push({kind: "identifier", text: identifier, end: index + 1});
+                mode = "normal";
+            } else identifier += char;
             index++;
             continue;
         }
@@ -131,6 +146,7 @@ function parseSql(text: string): ValidationResult<readonly ParsedStatement[]> {
         if (mode === "dollar") {
             if (text.startsWith(dollarTag, index)) {
                 index += dollarTag.length;
+                tokens[tokens.length - 1].end = index;
                 mode = "normal";
                 continue;
             }
@@ -140,12 +156,14 @@ function parseSql(text: string): ValidationResult<readonly ParsedStatement[]> {
 
         if (char === "'") {
             flushWord();
+            tokens.push({kind: "literal", text: "", end: index + 1});
             mode = "single";
             index++;
             continue;
         }
         if (char === '"') {
             flushWord();
+            identifier = "";
             mode = "double";
             index++;
             continue;
@@ -167,6 +185,7 @@ function parseSql(text: string): ValidationResult<readonly ParsedStatement[]> {
             const tag = dollarTagAt(text, index);
             if (tag !== null) {
                 flushWord();
+                tokens.push({kind: "literal", text: "", end: index + tag.length});
                 dollarTag = tag;
                 mode = "dollar";
                 index += tag.length;
@@ -183,9 +202,12 @@ function parseSql(text: string): ValidationResult<readonly ParsedStatement[]> {
         const wordChar = (code >= 48 && code <= 57)
             || (code >= 65 && code <= 90)
             || (code >= 97 && code <= 122)
-            || code === 95 || code === 36;
+            || code === 95 || code === 36 || code >= 128;
         if (wordChar) word += char;
-        else flushWord();
+        else {
+            flushWord();
+            if (char.trim().length > 0) tokens.push({kind: "symbol", text: char, end: index + 1});
+        }
         index++;
     }
 
@@ -194,7 +216,7 @@ function parseSql(text: string): ValidationResult<readonly ParsedStatement[]> {
     }
     flushWord();
     const tail = text.slice(statementStart).trim();
-    if (tail.length > 0 && words.length > 0) statements.push({text: tail, words});
+    if (tail.length > 0 && words.length > 0) statements.push({text: tail, words, tokens});
     if (statements.length === 0) {
         return fail("migration.unsupportedSql", {reason: "SQL resource must contain at least one statement"});
     }
@@ -228,6 +250,18 @@ function isForbiddenStatement(words: readonly string[]): string | null {
         return "nextval/setval have non-transactional sequence effects";
     }
     return null;
+}
+
+/** Reuse resource lexical and transaction checks for one catalog-derived definition. */
+export function readSingleSqlStatement(text: string): ValidationResult<{text: string; tokens: readonly SqlSyntaxToken[]}> {
+    const parsed = parseSql(text);
+    if (!parsed.ok) return parsed;
+    if (parsed.value.length !== 1) return fail("migration.unsupportedSql", {reason: "Expected exactly one SQL statement"});
+    const statement = parsed.value[0];
+    const forbidden = isForbiddenStatement(statement.words);
+    if (forbidden !== null) return fail("migration.unsupportedSql", {reason: forbidden});
+    const offset = text.indexOf(statement.text);
+    return {ok: true, value: {text: statement.text, tokens: statement.tokens.map(token => ({...token, end: token.end - offset}))}};
 }
 
 function prepare(

@@ -70,5 +70,19 @@ describe("pure migration difference classification", () => {
         };
         assert.equal(classify([people, name], [people, name, unique]).differences[0]?.impact, "requiresDataCheck");
         assert.equal(classify([people, name, unique], [people, name]).differences[0]?.impact, "preserving");
+        const check: PgObjectInfo = {...unique, constraintKind: "check", definition: "CHECK (length(name) > 0)"};
+        assert.equal(classify([people, name], [people, name, check]).differences[0]?.impact, "requiresDataCheck");
+        assert.ok(classify([], [people, name, check]).differences.every(diff => diff.impact === "preserving"));
+    });
+    it("requires data checks for standalone index additions and edits on existing tables", () => {
+        const index: PgObjectInfo = {
+            kind: "index", identity: {schema: "app", kind: "index", name: "people_name_idx", parentName: "people", signature: []},
+            definition: "CREATE UNIQUE INDEX people_name_idx ON app.people (name) WHERE name IS NOT NULL",
+            ownerConstraint: null, valid: true, ready: true,
+        };
+        assert.equal(classify([people, name], [people, name, index]).differences[0]?.impact, "requiresDataCheck");
+        assert.equal(classify([people, name, index], [people, name, {...index, definition: "CREATE UNIQUE INDEX people_name_idx ON app.people (name)"}]).differences[0]?.impact, "requiresDataCheck");
+        assert.equal(classify([people, name, index], [people, name]).differences[0]?.impact, "preserving");
+        assert.ok(classify([], [people, name, index]).differences.every(diff => diff.impact === "preserving"));
     });
 });

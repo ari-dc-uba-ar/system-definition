@@ -6,6 +6,10 @@ import type {ValidationResult} from "system-definition";
 import {inspectSchema} from "../src/inspect-schema";
 import {compareSchemas} from "../src/compare-schema";
 import type {PgObjectInfo, PgSession} from "../src/pg-schema";
+import {generateCreate} from "../src/generate-create";
+import {generateStructureSql} from "../src/generate-structure";
+import {inferStructureChanges} from "../src/infer";
+import {normalizePgSchema} from "../src/normalize-schema";
 
 // Use an explicitly supplied disposable database. Never load application .env files here.
 const connectionString = process.env.POSTGRES_HANDOFF_TEST_URL;
@@ -74,4 +78,66 @@ integration("existing-schema handoff: PostgreSQL type modifiers", () => {
                 difference.path.includes("label") && difference.path.includes("modifiers")));
         });
     });
+});
+
+integration("existing-schema handoff: generated SQL preserves real database behavior", () => {
+    for (const generation of ["clean", "incremental"] as const) {
+        for (const mode of ["BY DEFAULT", "ALWAYS"] as const) {
+            it(`round-trips ${generation} creation with ${mode} identity, CHECK and partial uniqueness`, async () => {
+                await withScratchSchema(async (session, namespace) => {
+                    const table = `"${namespace}".items`;
+                    await session.query(`CREATE TABLE ${table} (
+                        id bigint GENERATED ${mode} AS IDENTITY CONSTRAINT legacy_primary PRIMARY KEY,
+                        counter integer NOT NULL DEFAULT 0 CONSTRAINT legacy_nonnegative CHECK (counter >= 0),
+                        slug varchar(64) NOT NULL, active boolean NOT NULL DEFAULT true
+                    )`, []);
+                    await session.query(`CREATE UNIQUE INDEX legacy_active_slug ON ${table} (slug) WHERE active`, []);
+                    const recorded = value(await inspectSchema(session, {schemas: [namespace], excluded: []}));
+                    assert.deepEqual(recorded.unknown, []);
+                    const target = await normalizePgSchema(recorded.schema);
+                    let statements: readonly string[];
+                    if (generation === "clean") {
+                        statements = value(generateCreate(target)).statements.map(statement => statement.text);
+                    } else {
+                        const base = {
+                            from: {systemId: "handoff", releaseId: "empty", releaseHash: "1".repeat(64)},
+                            to: {systemId: "handoff", releaseId: "adopted", releaseHash: "2".repeat(64)},
+                            fromSnapshotHash: "3".repeat(64), toSnapshotHash: "4".repeat(64),
+                            fromPersistenceHash: "5".repeat(64), toPersistenceHash: "6".repeat(64),
+                        };
+                        const empty = {...target, objects: []};
+                        const changes = value(inferStructureChanges(base, empty, target, []));
+                        statements = value(generateStructureSql(changes, empty, target)).map(statement => statement.text);
+                    }
+                    // This is the test-owned table; its replacement stays inside the fixture transaction.
+                    await session.query(`DROP TABLE ${table}`, []);
+                    for (const statement of statements) await session.query(statement, []);
+                    const observed = value(await inspectSchema(session, {schemas: [namespace], excluded: []}));
+                    const compared = value(compareSchemas(target, {...observed, schema: await normalizePgSchema(observed.schema)}));
+                    assert.deepEqual(compared, {equal: true, differences: []});
+
+                    const inserted = await session.query(`INSERT INTO ${table} (slug) VALUES ('same') RETURNING id`, []);
+                    assert.equal(String(inserted.rows[0]?.id), "1");
+                    await session.query(`INSERT INTO ${table} (slug, active) VALUES ('same', false)`, []);
+                    for (const [sql, code] of [
+                        [`INSERT INTO ${table} (slug, counter) VALUES ('bad', -1)`, "23514"],
+                        [`INSERT INTO ${table} (slug) VALUES ('same')`, "23505"],
+                    ]) {
+                        await session.query("SAVEPOINT expected_rejection", []);
+                        await assert.rejects(session.query(sql, []), error =>
+                            typeof error === "object" && error !== null && "code" in error && error.code === code);
+                        await session.query("ROLLBACK TO SAVEPOINT expected_rejection", []);
+                    }
+                    if (mode === "ALWAYS") {
+                        await session.query("SAVEPOINT expected_identity_rejection", []);
+                        await assert.rejects(session.query(`INSERT INTO ${table} (id, slug) VALUES (100, 'manual')`, []), error =>
+                            typeof error === "object" && error !== null && "code" in error && error.code === "428C9");
+                        await session.query("ROLLBACK TO SAVEPOINT expected_identity_rejection", []);
+                    } else {
+                        await session.query(`INSERT INTO ${table} (id, slug) VALUES (100, 'manual')`, []);
+                    }
+                });
+            });
+        }
+    }
 });

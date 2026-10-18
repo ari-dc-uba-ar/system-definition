@@ -1,6 +1,6 @@
 import {problem, type ValidationResult} from "system-definition";
 import type {FieldRefInfo, StructureChangeInfo} from "./authoring-contract";
-import {columnDefinitionSql, constraintSql, renderPgType} from "./generate-create";
+import {columnDefinitionSql, constraintSql, indexSql, renderPgType} from "./generate-create";
 import {samePgIdentity} from "./pg-identity";
 import {quotePgIdentifier as quote, quotePgQualified as qualified} from "./pg-sql";
 import type {PgObjectInfo, PgSchemaInfo} from "./pg-schema";
@@ -63,6 +63,11 @@ export function generateStructureSql(
                 if (!generated.ok) return generated;
                 text = generated.value;
                 order = object.constraintKind === "foreignKey" ? 80 : 70;
+            } else if (object.kind === "index") {
+                const generated = indexSql(object);
+                if (!generated.ok) return generated;
+                text = generated.value;
+                order = 75;
             }
         } else if (change.action === "remove") {
             if (object.kind === "column") {
@@ -75,6 +80,12 @@ export function generateStructureSql(
             if (object.kind === "constraint") { text = `ALTER TABLE ${parent} DROP CONSTRAINT ${quote(identity.name)}`; order = 0; }
             if (object.kind === "index" && object.ownerConstraint === null) { text = `DROP INDEX ${name}`; order = 0; }
             if (object.kind === "view") { text = `DROP VIEW ${name}`; order = 0; }
+        } else if (change.action === "alter" && before?.kind === "index" && after?.kind === "index") {
+            const generated = indexSql(after);
+            if (!generated.ok) return generated;
+            statements.push({change, text: `DROP INDEX ${qualified(before.identity.schema, before.identity.name)};\n`, order: 0});
+            text = generated.value;
+            order = 75;
         } else if (change.action === "alter" && before?.kind === "constraint" && after?.kind === "constraint") {
             const generated = constraintSql(after);
             if (!generated.ok) return generated;

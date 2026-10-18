@@ -23,7 +23,7 @@ export function classifySchemaDifference(difference: SchemaDifferenceInfo): Chan
             return kind === "constraint" || kind === "index" || kind === "view" ? "preserving" : "unsupported";
         }
         if (kind === "column") return object.nullable === true ? "preserving" : "requiresDataCheck";
-        if (kind === "constraint") return object.constraintKind === "check" ? "unsupported" : "requiresDataCheck";
+        if (kind === "constraint" || kind === "index") return "requiresDataCheck";
         return kind === "table" ? "preserving" : "unsupported";
     }
     if (kind === "column") {
@@ -33,7 +33,7 @@ export function classifySchemaDifference(difference: SchemaDifferenceInfo): Chan
         if (attribute === "defaultExpression") return "preserving";
         return "unsupported";
     }
-    if (kind === "constraint") return "requiresDataCheck";
+    if (kind === "constraint" || kind === "index") return "requiresDataCheck";
     return "unsupported";
 }
 
