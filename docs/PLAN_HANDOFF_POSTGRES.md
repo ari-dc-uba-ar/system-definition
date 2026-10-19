@@ -58,7 +58,7 @@ Pendiente: que el mapping y la proyección desde el SSOT tipado puedan expresar 
 
 ## Tercer contrato sometido a revisión: descripción física desde el SSOT
 
-Se propone un export opcional `postgresStorage`, propiedad del consumidor PostgreSQL,
+Se aprobó e implementó un export opcional `postgresStorage`, propiedad del consumidor PostgreSQL,
 junto a los exports actuales `ssot` y `sqlMapping`. Sus claves hacen referencia a
 entidades y campos del SSOT; no redefine campos, nullability ni las columnas de la
 PK. Ejemplo mínimo de este paso:
@@ -80,12 +80,12 @@ export const postgresStorage = {
 `sqlMapping` sigue eligiendo explícitamente el tipo PostgreSQL de cada tipo lógico;
 los modificadores son parámetros físicos numéricos de una columna. Se decodifican
 y validan según el tipo, no se insertan strings arbitrarios en SQL. El descriptor
-será serializable y tendrá un contrato público tipado que rechace referencias
+es serializable y tiene un contrato público tipado que rechaza referencias
 desconocidas en compilación y runtime. El core de dominio permanece agnóstico de
 PostgreSQL. Sin el export opcional, los consumidores y estados archivados actuales
 deben conservar su comportamiento y hashes.
 
-Las cuatro pruebas de `ssot-storage-handoff-test.ts` **compilan y fallan**:
+Las cuatro pruebas de `ssot-storage-handoff-test.ts` compilaban y fallaban en `0b3c4c1`:
 
 1. varchar(64) proyecta [] en lugar de ['64'] porque el loader ignora el export.
 2. La identidad queda null en vez de 'd'; el mismo contrato exige conservar el
@@ -97,9 +97,22 @@ Las cuatro pruebas de `ssot-storage-handoff-test.ts` **compilan y fallan**:
    que los metadatos sobrevivan al archivo y recarga del estado, participen en el
    hash y que un schema archivado manipulado no pase la verificación.
 
-No se corrigió la implementación de este contrato: pendiente de la revisión del
-programador exigida por CLAUDE.md. Las 264 pruebas anteriores pasaban en el commit
-verde `9422e79`. No hace falta base de datos para repetir los cuatro rojos:
+El propietario aprobó el contrato y sus expectativas. Las cuatro pruebas ya pasan,
+junto con verificaciones de tipos en ambos sentidos, rechazos estáticos y runtime,
+parámetros según el tipo SQL, nombres/collisions y validación de proyección directa.
+Un fixture conserva exactamente los bytes y hash anteriores a este export opcional.
+El estado capturado se vuelve a decodificar y la recarga incluye los metadatos.
+
+Compilación y consistencia de documentación correctas. **275 pruebas correctas** en
+Linux, siete con PostgreSQL 18.6 habilitado. La prueba nueva carga el módulo, archiva
+y recarga su estado, crea el schema, verifica igualdad mediante assessSchema,
+asigna un ID y rechaza un string demasiado largo. Luego amplía varchar(64) a
+varchar(128) con cambios inferidos/generados, conserva la fila original, acepta
+el nuevo límite y vuelve a verificar igualdad. Se revirtió la transacción y se
+eliminaron base y rol temporales. No se conectó a producción.
+
+Para repetir las pruebas del contrato (la prueba PostgreSQL queda pendiente sin
+`POSTGRES_HANDOFF_TEST_URL`):
 
 ```sh
 node node_modules/typescript/bin/tsc -p consumers/postgres-migrations

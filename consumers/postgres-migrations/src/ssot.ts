@@ -5,5 +5,5 @@ import {decodeSqlSsot, type SqlSsotInfo} from "./sql-mapping";
 
 export async function loadSsot(file: string): Promise<ValidationResult<SqlSsotInfo>> {
     const module = await import(pathToFileURL(resolve(file)).href);
-    return decodeSqlSsot(module.ssot, module.sqlMapping);
+    return decodeSqlSsot(module.ssot, module.sqlMapping, module.postgresStorage);
 }

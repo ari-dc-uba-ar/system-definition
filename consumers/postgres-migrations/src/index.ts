@@ -44,5 +44,6 @@ export * from "./assessment";
 export * from "./classify-schema";
 export * from "./migration-decisions";
 export * from "./sql-mapping";
+export * from "./postgres-storage";
 export * from "./generate-migration";
 export * from "./apply-migrations";

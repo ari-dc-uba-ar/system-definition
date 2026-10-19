@@ -21,6 +21,36 @@ incluye 17 tipos escalares SQL; el mapeo tipado exige todas las claves registrad
 en el SSOT y sólo permite esas elecciones. Los tipos lógicos propios pueden usar
 cualquier elección explícita: por ejemplo, `edad: sqlTypes.smallint`.
 
+Para conservar almacenamiento existente, el mismo módulo puede exportar
+`postgresStorage`, una descripción opcional del consumidor PostgreSQL:
+
+```typescript
+import type {PostgresStorageDef} from '@system-definition/postgres-migrations';
+export const postgresStorage = {
+    entities: {
+        items: {
+            columns: {id: {identity: 'byDefault'}, slug: {typeModifiers: [64]}},
+            primaryKey: {name: 'legacy_items_pk'},
+        },
+    },
+} satisfies PostgresStorageDef<typeof ssot>;
+```
+
+Las entidades y campos deben existir en el SSOT. Sus tipos lógicos, nullability y
+columnas de la PK siguen viniendo de ese modelo; el descriptor agrega parámetros
+físicos numéricos, modo de identidad (`byDefault` o `always`) y nombre de PK.
+Las identidades requieren enteros no nulleables. Se rechazan claves desconocidas,
+referencias inválidas, nombres que PostgreSQL truncaría y colisiones de nombres.
+Los parámetros se validan según el tipo elegido en `sqlMapping`: longitud de
+[varchar](https://www.postgresql.org/docs/18/datatype-character.html), precisión y
+escala [numeric](https://www.postgresql.org/docs/18/datatype-numeric.html), o precisión
+de [time/timestamp](https://www.postgresql.org/docs/18/datatype-datetime.html).
+
+Los metadatos se conservan en estados archivados, participan en el hash de release
+y se verifican al recargar. Si no se exportan, se conserva el formato y los hashes
+anteriores. Esto todavía no describe todos los atributos de claves/índices ni
+opciones o valores actuales de secuencias; tampoco adopta por sí solo una base.
+
 El consumidor carga ese módulo y usa el decoder existente del core:
 
 ```typescript
@@ -128,8 +158,9 @@ Los índices de claves se crean mediante sus constraints, sin duplicarlos.
 Agregar CHECKs o índices a tablas existentes requiere decisiones de datos; la
 generación no omite esa revisión ni ejecuta índices concurrentes.
 
-Esto no amplía por sí solo `sqlMapping` ni la proyección del SSOT: todavía no
-expresan todas las características de un esquema heredado. Las identidades no
+El descriptor opcional `postgresStorage` amplía la proyección para parámetros de
+columnas, identidades y nombres de PK; todavía no expresa todas las características
+de un esquema heredado. Las identidades no
 registran opciones ni estado de sus secuencias. Las expresiones generadas, vistas
 y rutinas siguen necesitando SQL explícito y estados esperados verificables.
 
