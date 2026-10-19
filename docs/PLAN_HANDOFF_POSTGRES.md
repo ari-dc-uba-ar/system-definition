@@ -123,3 +123,58 @@ Esto es el primer incremento del descriptor, no su cobertura completa: nombres y
 atributos de FKs/UKs, CHECKs/índices, secuencias y adopción verificada requieren los
 pasos siguientes. No se propone sustituir el SSOT por un catálogo PostgreSQL escrito
 a mano, ni cambiar el contrato genérico PersistenceInfo del core en este paso.
+
+## Cuarto contrato sometido a revisión: nombres y timing de FKs/UKs
+
+El esquema sintético de Meta tiene 121 FKs, todas inicialmente diferidas. Aunque
+el generador de bajo nivel conserva ese timing, la proyección del SSOT sigue
+generando nombres y claves no diferibles. El siguiente incremento mantiene el
+descriptor aprobado y agrega mapas por nombre lógico de FK/UK existente:
+
+```typescript
+export const postgresStorage = {
+    entities: {
+        items: {
+            foreignKeys: {
+                parent: {name: 'legacy_parent_fk', deferrable: true, initiallyDeferred: true},
+            },
+            uniqueKeys: {
+                slug: {name: 'legacy_slug_key', deferrable: true, initiallyDeferred: false},
+            },
+        },
+    },
+};
+```
+
+Las columnas, pares y destino se derivan de las relaciones del SSOT. Estos mapas
+no los vuelven a declarar. Omitir atributos conserva defaults actuales: nombre
+generado y clave no diferible; `initiallyDeferred: true` exige `deferrable: true`.
+Referencias desconocidas, booleanos inválidos, nombres truncados y colisiones se
+rechazan. La descripción tipada debe limitar los nombres de ambos mapas a las
+claves realmente declaradas en la entidad. Estados ya archivados deben conservar
+bytes/hashes; los atributos nuevos deben participar en hashes y recarga.
+
+Cuatro pruebas nuevas en `ssot-key-storage-test.ts` compilan y fallan:
+
+1. FK con nombre físico y timing inicialmente diferido; conserva pares/destino,
+   actualiza la proyección tabular y genera el SQL correspondiente.
+2. UK con nombre físico y timing diferible inicialmente inmediato; conserva sus
+   columnas, actualiza la proyección tabular y genera el SQL correspondiente.
+3. Aceptar el contrato válido y rechazar referencias/timing/nombres inválidos o
+   intentos de volver a definir los pares o columnas.
+4. Archivar/recargar timing y nombres, distinguiendo hashes cuando sólo cambia el
+   timing sin cambiar el SSOT ni el mapping genérico.
+
+Resultado: **0 correctas, 4 fallidas** por atributos PostgreSQL todavía desconocidos.
+No se corrigió su implementación: pendiente de la revisión del programador exigida
+por CLAUDE.md. El último incremento verde es `257c87e`, con 275 pruebas correctas.
+Repetición sin base de datos:
+
+```sh
+node node_modules/typescript/bin/tsc -p consumers/postgres-migrations
+node --enable-source-maps node_modules/mocha/bin/mocha.js --exit consumers/postgres-migrations/dist/test/ssot-key-storage-test.js
+```
+
+Este incremento conserva las acciones SQL por defecto; no infiere CASCADE a partir
+de `on_delete` de Django. Acciones SQL no predeterminadas, CHECKs/índices desde el
+SSOT, secuencias y adopción verificada siguen pendientes de sus propios contratos.
