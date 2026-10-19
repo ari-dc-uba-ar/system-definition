@@ -55,3 +55,58 @@ Verificación: compilación y **264 pruebas correctas** del consumidor en Linux,
 Se recreó además todo el esquema sintético de Meta por ambos caminos: **483 sentencias** de creación limpia (68 tablas, 152 constraints locales, 142 índices y 121 FKs), y **1.052 sentencias** incrementales (68 tablas, 569 columnas, 273 constraints y 142 índices). Ambas inspecciones normalizadas compararon iguales, con **cero diferencias**. Las transacciones se revirtieron y se eliminaron base y rol propios. Esto prueba reproducción del esquema registrado, no transferencia de filas ni estado de secuencias, permisos o compatibilidad de producción.
 
 Pendiente: que el mapping y la proyección desde el SSOT tipado puedan expresar fielmente esas mismas características. La generación desde `PgSchemaInfo` no completa ese contrato ni adopta una base existente.
+
+## Tercer contrato sometido a revisión: descripción física desde el SSOT
+
+Se propone un export opcional `postgresStorage`, propiedad del consumidor PostgreSQL,
+junto a los exports actuales `ssot` y `sqlMapping`. Sus claves hacen referencia a
+entidades y campos del SSOT; no redefine campos, nullability ni las columnas de la
+PK. Ejemplo mínimo de este paso:
+
+```typescript
+export const postgresStorage = {
+    entities: {
+        items: {
+            columns: {
+                id: {identity: "byDefault"},
+                slug: {typeModifiers: [64]},
+            },
+            primaryKey: {name: "legacy_items_pk"},
+        },
+    },
+};
+```
+
+`sqlMapping` sigue eligiendo explícitamente el tipo PostgreSQL de cada tipo lógico;
+los modificadores son parámetros físicos numéricos de una columna. Se decodifican
+y validan según el tipo, no se insertan strings arbitrarios en SQL. El descriptor
+será serializable y tendrá un contrato público tipado que rechace referencias
+desconocidas en compilación y runtime. El core de dominio permanece agnóstico de
+PostgreSQL. Sin el export opcional, los consumidores y estados archivados actuales
+deben conservar su comportamiento y hashes.
+
+Las cuatro pruebas de `ssot-storage-handoff-test.ts` **compilan y fallan**:
+
+1. varchar(64) proyecta [] en lugar de ['64'] porque el loader ignora el export.
+2. La identidad queda null en vez de 'd'; el mismo contrato exige conservar el
+   nombre físico de la PK, derivando sus columnas desde el SSOT.
+3. Un nombre de entidad inexistente es aceptado; también se exige rechazar campos
+   desconocidos, modos inválidos, modificadores inválidos e intentos de redefinir
+   nullability en esta descripción física.
+4. varchar(64) y varchar(128) producen el mismo hash de release. El contrato exige
+   que los metadatos sobrevivan al archivo y recarga del estado, participen en el
+   hash y que un schema archivado manipulado no pase la verificación.
+
+No se corrigió la implementación de este contrato: pendiente de la revisión del
+programador exigida por CLAUDE.md. Las 264 pruebas anteriores pasaban en el commit
+verde `9422e79`. No hace falta base de datos para repetir los cuatro rojos:
+
+```sh
+node node_modules/typescript/bin/tsc -p consumers/postgres-migrations
+node --enable-source-maps node_modules/mocha/bin/mocha.js --exit consumers/postgres-migrations/dist/test/ssot-storage-handoff-test.js
+```
+
+Esto es el primer incremento del descriptor, no su cobertura completa: nombres y
+atributos de FKs/UKs, CHECKs/índices, secuencias y adopción verificada requieren los
+pasos siguientes. No se propone sustituir el SSOT por un catálogo PostgreSQL escrito
+a mano, ni cambiar el contrato genérico PersistenceInfo del core en este paso.
