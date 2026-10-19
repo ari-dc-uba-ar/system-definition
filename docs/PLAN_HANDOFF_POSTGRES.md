@@ -154,7 +154,7 @@ rechazan. La descripción tipada debe limitar los nombres de ambos mapas a las
 claves realmente declaradas en la entidad. Estados ya archivados deben conservar
 bytes/hashes; los atributos nuevos deben participar en hashes y recarga.
 
-Cuatro pruebas nuevas en `ssot-key-storage-test.ts` compilan y fallan:
+Cuatro pruebas nuevas en `ssot-key-storage-test.ts` compilaban y fallaban en `eb67d8d`:
 
 1. FK con nombre físico y timing inicialmente diferido; conserva pares/destino,
    actualiza la proyección tabular y genera el SQL correspondiente.
@@ -165,10 +165,13 @@ Cuatro pruebas nuevas en `ssot-key-storage-test.ts` compilan y fallan:
 4. Archivar/recargar timing y nombres, distinguiendo hashes cuando sólo cambia el
    timing sin cambiar el SSOT ni el mapping genérico.
 
-Resultado: **0 correctas, 4 fallidas** por atributos PostgreSQL todavía desconocidos.
-No se corrigió su implementación: pendiente de la revisión del programador exigida
-por CLAUDE.md. El último incremento verde es `257c87e`, con 275 pruebas correctas.
-Repetición sin base de datos:
+Resultado inicial: **0 correctas, 4 fallidas** por atributos PostgreSQL todavía
+desconocidos. Tras revisar la diferencia entre relaciones existentes y proyección,
+el propietario indicó que los mecanismos comunes pertenecen a system-definition,
+las definiciones particulares a Meta y que no se duplique funcionalidad. Se
+implementó este cableado en el proyector y renderer ya existentes. Las cuatro
+pruebas pasan, con contratos de tipos exactos para nombres lógicos y defaults
+compatibles cuando los atributos se omiten. Repetición sin base de datos:
 
 ```sh
 node node_modules/typescript/bin/tsc -p consumers/postgres-migrations
@@ -178,3 +181,42 @@ node --enable-source-maps node_modules/mocha/bin/mocha.js --exit consumers/postg
 Este incremento conserva las acciones SQL por defecto; no infiere CASCADE a partir
 de `on_delete` de Django. Acciones SQL no predeterminadas, CHECKs/índices desde el
 SSOT, secuencias y adopción verificada siguen pendientes de sus propios contratos.
+
+## Revisión de responsabilidades y reutilización: 2026-10-19
+
+Se auditaron los cambios desde `3fe482d`. Inspección, generación SQL, normalización,
+metadatos físicos serializables y verificación del estado son mecanismos generales
+del consumidor PostgreSQL. No contienen entidades, nombres, límites concretos,
+permisos de negocio ni condiciones de ejecución de Meta. El core no se modificó.
+Las definiciones/valores de cada aplicación permanecen fuera del consumidor.
+
+Se corrigieron superposiciones de implementación:
+
+- El decoder físico reutiliza `exactOptionalKeys`, sin repetir el chequeo de claves
+  opcionales del core.
+- Se eliminó `applyPostgresStorage`, que recorría y modificaba por separado las dos
+  representaciones de schema después de proyectar. `projectSchema` recibe los
+  atributos y construye ambos resultados una sola vez.
+- La resolución física existente es compartida; el decoder usa los tipos
+  PostgreSQL resueltos, no un segundo registro paralelo de elecciones SQL.
+- Proyección y generación comparten el formato del timing de constraints. Los
+  atributos de timing del descriptor se derivan del contrato PgObjectInfo existente.
+- La validación de nombres almacenados usa el mismo guard de identificadores.
+  Los fixtures de claves se comparten entre contratos y pruebas reales.
+
+La extensión no agrega un segundo motor de migraciones, un segundo modelo de
+relaciones ni un parser SQL independiente. Conserva los renderers de columnas y
+constraints, scanner de recursos SQL, parser PostgreSQL, store/hashes e historial
+existentes. La documentación específica del caso permanece como evidencia.
+
+Verificación: **285 pruebas correctas** del consumidor en Linux, nueve sobre
+PostgreSQL 18.6. Las dos nuevas pruebas reales recrean estados archivados por vías
+limpia/incremental: insertan un hijo antes de su padre, verifican rechazo inmediato
+de unicidad, permiten corregir una duplicación al diferir la UK, rechazan una FK
+inválida y detectan deriva cuando cambia el timing. Se revirtieron las transacciones
+y se eliminaron base/rol de scratch.
+
+ssot2026 compiló backend y frontend y pasó sus **tres pruebas de loader/CLI** contra
+la biblioteca actual en un contenedor desechable. Se usaron dependencias ya
+instaladas y salida temporal, sin editar ese repositorio ni conectar su base. El
+checkout local no tenía jose instalado; esa limitación no se corrigió alterándolo.

@@ -1,16 +1,21 @@
-import {childPath, isPlainObject, problem, sqlTypes, toJsonValue, type SqlType, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
-import type {PgTypeInfo, ProjectedPgSchemaInfo} from "./pg-schema";
-import {isPgNonEmptyText} from "./pg-text";
+import {childPath, exactOptionalKeys, isPlainObject, problem, toJsonValue, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
+import type {PgObjectInfo, PgTypeRepresentation} from "./pg-schema";
+import {isPgStoredIdentifier} from "./pg-sql";
 
 export type PostgresIdentityMode = "byDefault" | "always";
 export type PostgresColumnStorageDef = {
     typeModifiers?: readonly number[] | null;
     identity?: PostgresIdentityMode | null;
 };
+type ConstraintTiming = Pick<Extract<PgObjectInfo, {kind: "constraint"}>, "deferrable" | "initiallyDeferred">;
+export type PostgresKeyStorageDef = Partial<ConstraintTiming> & {name?: string | null};
+export type PostgresKeyStorageInfo = ConstraintTiming & {name: string | null};
 export type PostgresStorageDef<TSnapshot extends Pick<SystemSnapshotInfo, "entities">> = {
     entities: {readonly [E in keyof TSnapshot["entities"]]?: {
         columns?: {readonly [F in keyof TSnapshot["entities"][E]["fields"]]?: PostgresColumnStorageDef};
         primaryKey?: {name: string} | null;
+        foreignKeys?: keyof TSnapshot["entities"][E]["fks"] extends never ? never : {readonly [K in keyof TSnapshot["entities"][E]["fks"]]?: PostgresKeyStorageDef};
+        uniqueKeys?: keyof TSnapshot["entities"][E]["uks"] extends never ? never : {readonly [K in keyof TSnapshot["entities"][E]["uks"]]?: PostgresKeyStorageDef};
     }};
 };
 export type PostgresColumnStorageInfo = {
@@ -21,6 +26,8 @@ export type PostgresStorageInfo = {
     entities: Readonly<Record<string, {
         columns: Readonly<Record<string, PostgresColumnStorageInfo>>;
         primaryKey: {name: string} | null;
+        foreignKeys?: Readonly<Record<string, PostgresKeyStorageInfo>>;
+        uniqueKeys?: Readonly<Record<string, PostgresKeyStorageInfo>>;
     }>>;
 };
 
@@ -30,12 +37,12 @@ function invalid(path: string, reason: string): ValidationResult<never> {
 
 function objectKeys(value: unknown, keys: readonly string[], path: string): ValidationResult<Readonly<Record<string, unknown>>> {
     if (!isPlainObject(value)) return invalid(path, "Expected a PostgreSQL storage object");
-    const extra = Object.keys(value).find(key => !keys.includes(key));
-    return extra === undefined ? {ok: true, value} : invalid(childPath(path, extra), "Unknown PostgreSQL storage attribute");
+    const shape = exactOptionalKeys(value, [], keys, path, invalid);
+    return shape.ok ? {ok: true, value} : shape;
 }
 
 /** PostgreSQL 18 type parameters; numeric(p) is printed by the catalog as numeric(p,0). */
-function typeModifiers(value: unknown, type: SqlType, path: string): ValidationResult<readonly number[] | null> {
+function typeModifiers(value: unknown, type: PgTypeRepresentation, path: string): ValidationResult<readonly number[] | null> {
     if (value === undefined || value === null) return {ok: true, value: null};
     if (!Array.isArray(value)) return invalid(path, "Expected numeric type parameters");
     const numbers: number[] = [];
@@ -45,22 +52,22 @@ function typeModifiers(value: unknown, type: SqlType, path: string): ValidationR
     }
     if (numbers.length === 0) return {ok: true, value: numbers};
     const [precision, scale = 0] = numbers;
-    const supported = type === sqlTypes.varchar ? numbers.length === 1 && precision >= 1 && precision <= 10_485_760
-        : type === sqlTypes.numeric ? numbers.length <= 2 && precision >= 1 && precision <= 1000 && scale >= -1000 && scale <= 1000
-        : [sqlTypes.time, sqlTypes.timestamp, sqlTypes.timestampWithTimeZone].some(one => one === type)
-            && numbers.length === 1 && precision >= 0 && precision <= 6;
-    if (!supported) return invalid(path, "Unsupported parameters for SQL type " + type);
-    return {ok: true, value: type === sqlTypes.numeric ? [precision, scale] : numbers};
+    const supported = type.schema === "pg_catalog" && (type.name === "varchar" ? numbers.length === 1 && precision >= 1 && precision <= 10_485_760
+        : type.name === "numeric" ? numbers.length <= 2 && precision >= 1 && precision <= 1000 && scale >= -1000 && scale <= 1000
+        : ["time", "timestamp", "timestamptz"].includes(type.name)
+            && numbers.length === 1 && precision >= 0 && precision <= 6);
+    if (!supported) return invalid(path, "Unsupported parameters for SQL type " + type.schema + "." + type.name);
+    return {ok: true, value: type.name === "numeric" ? [precision, scale] : numbers};
 }
 
-function decodeColumn(value: unknown, type: SqlType, nullable: boolean, path: string): ValidationResult<PostgresColumnStorageInfo> {
+function decodeColumn(value: unknown, type: PgTypeRepresentation, nullable: boolean, path: string): ValidationResult<PostgresColumnStorageInfo> {
     const object = objectKeys(value, ["typeModifiers", "identity"], path);
     if (!object.ok) return object;
     const modifiers = typeModifiers(object.value.typeModifiers, type, childPath(path, "typeModifiers"));
     if (!modifiers.ok) return modifiers;
     const identity = object.value.identity ?? null;
     if (identity !== null && identity !== "byDefault" && identity !== "always") return invalid(childPath(path, "identity"), "Unknown identity mode");
-    if (identity !== null && (nullable || ![sqlTypes.smallint, sqlTypes.integer, sqlTypes.bigint].some(one => one === type))) {
+    if (identity !== null && (nullable || type.schema !== "pg_catalog" || !["int2", "int4", "int8"].includes(type.name))) {
         return invalid(path, "An identity requires a non-nullable integer column");
     }
     return {ok: true, value: {typeModifiers: modifiers.value, identity}};
@@ -71,11 +78,32 @@ function decodePrimaryKey(value: unknown, path: string): ValidationResult<{name:
     const object = objectKeys(value, ["name"], path);
     if (!object.ok) return object;
     const name = object.value.name;
-    if (!isPgNonEmptyText(name) || new TextEncoder().encode(name).length > 63) return invalid(path, "Invalid PostgreSQL primary-key name");
+    if (!isPgStoredIdentifier(name)) return invalid(path, "Invalid PostgreSQL primary-key name");
     return {ok: true, value: {name}};
 }
 
-export function decodePostgresStorage(value: unknown, snapshot: SystemSnapshotInfo, mapping: Readonly<Record<string, SqlType>>): ValidationResult<PostgresStorageInfo> {
+function decodeKeys(value: unknown, known: Readonly<Record<string, unknown>>, path: string): ValidationResult<Readonly<Record<string, PostgresKeyStorageInfo>> | undefined> {
+    if (value === undefined) return {ok: true, value: undefined};
+    if (!isPlainObject(value)) return invalid(path, "Expected a key map");
+    const keys: [string, PostgresKeyStorageInfo][] = [];
+    for (const [key, raw] of Object.entries(value)) {
+        const keyPath = childPath(path, key);
+        if (!Object.hasOwn(known, key)) return invalid(keyPath, "Unknown logical key");
+        const attrs = objectKeys(raw, ["name", "deferrable", "initiallyDeferred"], keyPath);
+        if (!attrs.ok) return attrs;
+        const name = attrs.value.name ?? null;
+        if (name !== null && !isPgStoredIdentifier(name)) return invalid(childPath(keyPath, "name"), "Invalid PostgreSQL constraint name");
+        const deferrable = attrs.value.deferrable === undefined ? false : attrs.value.deferrable;
+        const initiallyDeferred = attrs.value.initiallyDeferred === undefined ? false : attrs.value.initiallyDeferred;
+        if (typeof deferrable !== "boolean" || typeof initiallyDeferred !== "boolean" || (initiallyDeferred && !deferrable)) {
+            return invalid(keyPath, "Invalid constraint timing");
+        }
+        keys.push([key, {name, deferrable, initiallyDeferred}]);
+    }
+    return {ok: true, value: Object.fromEntries(keys)};
+}
+
+export function decodePostgresStorage(value: unknown, snapshot: SystemSnapshotInfo, mapping: Readonly<Record<string, PgTypeRepresentation>>): ValidationResult<PostgresStorageInfo> {
     const copied = toJsonValue(value);
     if (!copied.ok) return copied;
     const root = objectKeys(copied.value, ["entities"], "$[\"postgresStorage\"]");
@@ -86,7 +114,7 @@ export function decodePostgresStorage(value: unknown, snapshot: SystemSnapshotIn
         const path = childPath("$[\"postgresStorage\"][\"entities\"]", entityName);
         if (!Object.hasOwn(snapshot.entities, entityName)) return invalid(path, "Unknown entity");
         const entity = snapshot.entities[entityName];
-        const attrs = objectKeys(raw, ["columns", "primaryKey"], path);
+        const attrs = objectKeys(raw, ["columns", "primaryKey", "foreignKeys", "uniqueKeys"], path);
         if (!attrs.ok) return attrs;
         const columnsPath = childPath(path, "columns");
         const rawColumns = attrs.value.columns === undefined ? {} : attrs.value.columns;
@@ -104,51 +132,13 @@ export function decodePostgresStorage(value: unknown, snapshot: SystemSnapshotIn
         }
         const primaryKey = decodePrimaryKey(attrs.value.primaryKey, childPath(path, "primaryKey"));
         if (!primaryKey.ok) return primaryKey;
-        entities.push([entityName, {columns: Object.fromEntries(columns), primaryKey: primaryKey.value}]);
+        const foreignKeys = decodeKeys(attrs.value.foreignKeys, entity.fks, childPath(path, "foreignKeys"));
+        if (!foreignKeys.ok) return foreignKeys;
+        const uniqueKeys = decodeKeys(attrs.value.uniqueKeys, entity.uks, childPath(path, "uniqueKeys"));
+        if (!uniqueKeys.ok) return uniqueKeys;
+        entities.push([entityName, {columns: Object.fromEntries(columns), primaryKey: primaryKey.value,
+            ...(foreignKeys.value === undefined ? {} : {foreignKeys: foreignKeys.value}),
+            ...(uniqueKeys.value === undefined ? {} : {uniqueKeys: uniqueKeys.value})}]);
     }
     return {ok: true, value: {entities: Object.fromEntries(entities)}};
-}
-
-function columnType(type: PgTypeInfo, attrs: PostgresColumnStorageInfo | undefined): PgTypeInfo {
-    return attrs?.typeModifiers === null || attrs?.typeModifiers === undefined ? type
-        : {...type, modifiers: attrs.typeModifiers.map(String)};
-}
-
-function own<T>(map: Readonly<Record<string, T>> | undefined, key: string): T | undefined {
-    return map !== undefined && Object.hasOwn(map, key) ? map[key] : undefined;
-}
-
-/** Overlay physical attributes only; logical fields, nullability and key membership stay derived. */
-export function applyPostgresStorage(schema: ProjectedPgSchemaInfo, storage: PostgresStorageInfo): ValidationResult<ProjectedPgSchemaInfo> {
-    const objects = schema.objects.map(object => {
-        const entity = object.identity.parentName === null ? undefined : own(storage.entities, object.identity.parentName);
-        if (object.kind === "column") {
-            const attrs = own(entity?.columns, object.identity.name);
-            return {...object, type: columnType(object.type, attrs), identityDefinition: attrs?.identity === "always" ? "a"
-                : attrs?.identity === "byDefault" ? "d" : object.identityDefinition};
-        }
-        if (object.kind === "constraint" && object.constraintKind === "primaryKey" && entity?.primaryKey) {
-            return {...object, identity: {...object.identity, name: entity.primaryKey.name}};
-        }
-        return object;
-    });
-    const relations = new Set<string>();
-    const constraints = new Set<string>();
-    for (const object of objects) {
-        if (object.kind === "constraint") {
-            const key = JSON.stringify([object.identity.schema, object.identity.parentName, object.identity.name]);
-            if (constraints.has(key)) return invalid("$[\"postgresStorage\"]", "Constraint name collision");
-            constraints.add(key);
-        }
-        if (object.kind === "table" || (object.kind === "constraint" && ["primaryKey", "unique"].includes(object.constraintKind))) {
-            const key = JSON.stringify([object.identity.schema, object.identity.name]);
-            if (relations.has(key)) return invalid("$[\"postgresStorage\"]", "Table or backing-index name collision");
-            relations.add(key);
-        }
-    }
-    return {ok: true, value: {...schema, objects, tables: schema.tables.map(table => {
-        const attrs = own(storage.entities, table.name);
-        return {...table, columns: table.columns.map(column => ({...column, type: columnType(column.type, own(attrs?.columns, column.name))})),
-            primaryKey: {...table.primaryKey, name: attrs?.primaryKey?.name ?? table.primaryKey.name}};
-    })}};
 }

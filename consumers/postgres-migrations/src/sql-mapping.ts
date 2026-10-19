@@ -1,6 +1,6 @@
 import {decodePersistence, decodeSystemSnapshot, problem, sqlTypes, type PersistenceInfo, type SqlType, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
-import {projectSchema, type PgTypeRepresentation} from "./pg-schema";
-import {applyPostgresStorage, decodePostgresStorage, type PostgresStorageInfo} from "./postgres-storage";
+import {projectSchema, resolvePhysicalTypes, type PgTypeRepresentation} from "./pg-schema";
+import {decodePostgresStorage, type PostgresStorageInfo} from "./postgres-storage";
 
 export type SqlSsotInfo = {ssot: SystemSnapshotInfo; persistence: PersistenceInfo & {representations: {postgres: Readonly<Record<string, SqlType>>}}; postgresStorage?: PostgresStorageInfo};
 const pgType = (name: string): PgTypeRepresentation => ({schema: "pg_catalog", name, modifiers: []});
@@ -26,7 +26,9 @@ export function decodeSqlSsot(value: unknown, sqlMapping: unknown, postgresStora
     if (!isSqlMapping(mapping)) return {ok: false, problems: [problem(null, "migration.invalidReference", "blocking", {reason: "Unknown SQL type; use the system-definition sqlTypes vocabulary"})]};
     const system: SqlSsotInfo = {ssot: ssot.value, persistence: {...persistence.value, representations: {postgres: mapping}}};
     if (postgresStorage === undefined) return {ok: true, value: system};
-    const storage = decodePostgresStorage(postgresStorage, ssot.value, mapping);
+    const types = resolvePhysicalTypes(ssot.value, system.persistence, {representation: "postgres", physicalTypes});
+    if (!types.ok) return types;
+    const storage = decodePostgresStorage(postgresStorage, ssot.value, types.value);
     if (!storage.ok) return storage;
     const withStorage = {...system, postgresStorage: storage.value};
     const projection = projectSsotSchema(withStorage, "public");
@@ -35,8 +37,5 @@ export function decodeSqlSsot(value: unknown, sqlMapping: unknown, postgresStora
 
 /** Direct projection of the supplied mapping; no logical-name or TypeScript-type guesses. */
 export function projectSsotSchema(system: SqlSsotInfo, schema: string) {
-    const projected = projectSchema(system.ssot, system.persistence, {schema, representation: "postgres", physicalTypes});
-    if (!projected.ok || system.postgresStorage === undefined) return projected;
-    const storage = decodePostgresStorage(system.postgresStorage, system.ssot, system.persistence.representations.postgres);
-    return storage.ok ? applyPostgresStorage(projected.value, storage.value) : storage;
+    return projectSchema(system.ssot, system.persistence, {schema, representation: "postgres", physicalTypes, postgresStorage: system.postgresStorage});
 }

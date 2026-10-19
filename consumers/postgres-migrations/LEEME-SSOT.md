@@ -31,6 +31,8 @@ export const postgresStorage = {
         items: {
             columns: {id: {identity: 'byDefault'}, slug: {typeModifiers: [64]}},
             primaryKey: {name: 'legacy_items_pk'},
+            foreignKeys: {parent: {name: 'legacy_parent_fk', deferrable: true, initiallyDeferred: true}},
+            uniqueKeys: {slug: {name: 'legacy_slug_key', deferrable: true}},
         },
     },
 } satisfies PostgresStorageDef<typeof ssot>;
@@ -39,6 +41,11 @@ export const postgresStorage = {
 Las entidades y campos deben existir en el SSOT. Sus tipos lógicos, nullability y
 columnas de la PK siguen viniendo de ese modelo; el descriptor agrega parámetros
 físicos numéricos, modo de identidad (`byDefault` o `always`) y nombre de PK.
+Los mapas opcionales `foreignKeys` y `uniqueKeys` referencian las claves lógicas ya
+declaradas y pueden conservar su nombre físico y flags `deferrable` e
+`initiallyDeferred`. No redefinen columnas, pares ni destinos. Omitir atributos
+conserva nombres generados y claves no diferibles; `initiallyDeferred: true`
+requiere `deferrable: true`.
 Las identidades requieren enteros no nulleables. Se rechazan claves desconocidas,
 referencias inválidas, nombres que PostgreSQL truncaría y colisiones de nombres.
 Los parámetros se validan según el tipo elegido en `sqlMapping`: longitud de
@@ -50,6 +57,11 @@ Los metadatos se conservan en estados archivados, participan en el hash de relea
 y se verifican al recargar. Si no se exportan, se conserva el formato y los hashes
 anteriores. Esto todavía no describe todos los atributos de claves/índices ni
 opciones o valores actuales de secuencias; tampoco adopta por sí solo una base.
+La decodificación reutiliza `exactOptionalKeys` del core y la resolución física
+existente. `projectSchema` consume estos atributos al construir sus dos vistas
+del mismo esquema; no hay una segunda proyección aplicada después. El SQL de
+constraints reutiliza el renderer existente. Los valores concretos de nombres,
+límites y políticas pertenecen a cada aplicación.
 
 El consumidor carga ese módulo y usa el decoder existente del core:
 
@@ -159,7 +171,7 @@ Agregar CHECKs o índices a tablas existentes requiere decisiones de datos; la
 generación no omite esa revisión ni ejecuta índices concurrentes.
 
 El descriptor opcional `postgresStorage` amplía la proyección para parámetros de
-columnas, identidades y nombres de PK; todavía no expresa todas las características
+columnas, identidades, nombres de PK/FK/UK y timing de FKs/UKs; todavía no expresa todas las características
 de un esquema heredado. Las identidades no
 registran opciones ni estado de sus secuencias. Las expresiones generadas, vistas
 y rutinas siguen necesitando SQL explícito y estados esperados verificables.

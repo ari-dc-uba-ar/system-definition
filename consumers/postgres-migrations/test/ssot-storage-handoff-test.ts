@@ -17,6 +17,7 @@ import type {PostgresColumnStorageDef, PostgresStorageDef} from "../src/postgres
 import type {PgSession} from "../src/pg-schema";
 import {generateCreate} from "../src/generate-create";
 import {generateMigrationSql} from "../src/generate-migration";
+import {projectSchema} from "../src/pg-schema";
 import {inferStructureChanges} from "../src/infer";
 import {assessSchema} from "../src/assessment";
 
@@ -166,6 +167,24 @@ describe("typed SSOT existing-storage handoff contract", () => {
         const projected = value(projectSsotSchema(value(decodeSqlSsot(constructorEntity, sqlMapping, {entities: {}})), "app"));
         assert.equal(projected.tables[0]?.name, "constructor");
         assert.equal(projected.tables[0]?.primaryKey.name, "constructor_pkey");
+    });
+    it("uses the same PostgreSQL projector with a consumer-supplied physical type registry", async () => {
+        const system = value(await loadStorage(storage(64)));
+        const physicalTypes = {
+            characterChoice: {schema: "pg_catalog", name: "varchar", modifiers: []},
+            integerChoice: {schema: "pg_catalog", name: "int8", modifiers: []},
+            booleanChoice: {schema: "pg_catalog", name: "bool", modifiers: []},
+        };
+        const persistence = {entities: ["items"], representations: {custom: {text: "characterChoice", integer: "integerChoice", boolean: "booleanChoice"}}};
+        const direct = value(projectSchema(system.ssot, persistence, {schema: "app", representation: "custom", physicalTypes, postgresStorage: system.postgresStorage}));
+        assert.deepEqual(direct, value(projectSsotSchema(system, "app")));
+    });
+    it("preserves the original normalized storage shape when key overrides are absent", async () => {
+        const system = value(await loadStorage(storage(64)));
+        assert.deepEqual(system.postgresStorage, {entities: {items: {
+            columns: {id: {identity: "byDefault", typeModifiers: null}, slug: {identity: null, typeModifiers: [64]}},
+            primaryKey: {name: "legacy_items_pk"},
+        }}});
     });
 });
 

@@ -2,6 +2,7 @@ import {compareUtf16, problem, type ValidationResult} from "system-definition";
 import {pgIdentityKey} from "./pg-identity";
 import {POSTGRES_SUPPORT} from "./postgres-support";
 import {readSingleSqlStatement, type SqlSyntaxToken} from "./sql-resource";
+import {constraintTimingSql} from "./pg-sql";
 import {
     quotePgIdentifier,
     quotePgQualified as qualified,
@@ -89,7 +90,7 @@ export function constraintSql(object: Extract<PgObjectInfo, {kind: "constraint"}
     const tableName = qualified(object.identity.schema, table);
     const constraint = quotePgIdentifier(object.identity.name);
     if (!object.validated || !object.enforced || (object.initiallyDeferred && !object.deferrable)) return fail("migration.unsupportedSchemaFeature", {constraint: object.identity.name, reason: "These constraint attributes require explicit SQL"});
-    const timing = object.deferrable ? ` DEFERRABLE INITIALLY ${object.initiallyDeferred ? "DEFERRED" : "IMMEDIATE"}` : "";
+    const timing = constraintTimingSql(object.deferrable, object.initiallyDeferred);
     if (object.constraintKind === "primaryKey" || object.constraintKind === "unique") {
         return {ok: true, value: "ALTER TABLE " + tableName + " ADD CONSTRAINT " + constraint
             + (object.constraintKind === "primaryKey" ? " PRIMARY KEY (" : " UNIQUE (")

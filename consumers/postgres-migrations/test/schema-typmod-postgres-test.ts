@@ -10,6 +10,10 @@ import {generateCreate} from "../src/generate-create";
 import {generateStructureSql} from "../src/generate-structure";
 import {inferStructureChanges} from "../src/infer";
 import {normalizePgSchema} from "../src/normalize-schema";
+import {decodeSqlSsot} from "../src/sql-mapping";
+import {captureMigrationState, jsonBytes, readStateBytes} from "../src/migration-store";
+import {assessSchema} from "../src/assessment";
+import {snapshot as keySnapshot, mapping as keyMapping, storage as keyStorage} from "./fixtures/key-storage-fixture";
 
 // Use an explicitly supplied disposable database. Never load application .env files here.
 const connectionString = process.env.POSTGRES_HANDOFF_TEST_URL;
@@ -139,5 +143,46 @@ integration("existing-schema handoff: generated SQL preserves real database beha
                 });
             });
         }
+    }
+});
+
+integration("typed storage preserves real constraint timing", () => {
+    for (const generation of ["clean", "incremental"] as const) {
+        it(`enforces named deferred FKs and deferrable uniqueness after ${generation} creation`, async () => {
+            await withScratchSchema(async (session, namespace) => {
+                const system = value(decodeSqlSsot(keySnapshot, keyMapping, keyStorage(true)));
+                const state = value(await readStateBytes(jsonBytes(value(await captureMigrationState(system, namespace, "keys")))));
+                const target = state.schema;
+                const empty = {...target, objects: []};
+                const base = {from: {systemId: "keys", releaseId: "empty", releaseHash: "1".repeat(64)},
+                    to: {systemId: "keys", releaseId: "keys", releaseHash: "2".repeat(64)},
+                    fromSnapshotHash: "3".repeat(64), toSnapshotHash: "4".repeat(64), fromPersistenceHash: "5".repeat(64), toPersistenceHash: "6".repeat(64)};
+                const statements = generation === "clean" ? value(generateCreate(target)).statements
+                    : value(generateStructureSql(value(inferStructureChanges(base, empty, target, [])), empty, target));
+                for (const statement of statements) await session.query(statement.text, []);
+                assert.deepEqual(value(await assessSchema(state, namespace, session)), {equal: true, differences: []});
+                const items = `"${namespace}".items`, parents = `"${namespace}".parents`;
+                // The FK permits inserting the child before its parent in this transaction.
+                await session.query(`INSERT INTO ${items} (id, "parentId", slug) VALUES (1, 99, 'same')`, []);
+                await session.query(`INSERT INTO ${parents} (id) VALUES (99)`, []);
+                await session.query("SET CONSTRAINTS ALL IMMEDIATE", []);
+                await session.query("SAVEPOINT expected_unique_rejection", []);
+                await assert.rejects(session.query(`INSERT INTO ${items} (id, "parentId", slug) VALUES (2, 99, 'same')`, []), error =>
+                    typeof error === "object" && error !== null && "code" in error && error.code === "23505");
+                await session.query("ROLLBACK TO SAVEPOINT expected_unique_rejection", []);
+                await session.query(`SET CONSTRAINTS "${namespace}".legacy_slug_key DEFERRED`, []);
+                await session.query(`INSERT INTO ${items} (id, "parentId", slug) VALUES (2, 99, 'same')`, []);
+                await session.query(`UPDATE ${items} SET slug = 'distinct' WHERE id = 2`, []);
+                await session.query("SET CONSTRAINTS ALL IMMEDIATE", []);
+                await session.query("SAVEPOINT expected_fk_rejection", []);
+                await assert.rejects(session.query(`INSERT INTO ${items} (id, "parentId", slug) VALUES (3, 404, 'orphan')`, []), error =>
+                    typeof error === "object" && error !== null && "code" in error && error.code === "23503");
+                await session.query("ROLLBACK TO SAVEPOINT expected_fk_rejection", []);
+                await session.query(`ALTER TABLE ${items} ALTER CONSTRAINT legacy_parent_fk NOT DEFERRABLE`, []);
+                const drift = value(await assessSchema(state, namespace, session));
+                assert.equal(drift.equal, false);
+                assert.ok(drift.differences.some(difference => difference.path.includes("deferrable")));
+            });
+        });
     }
 });

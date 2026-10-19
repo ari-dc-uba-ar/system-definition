@@ -12,7 +12,8 @@ import type {PgObjectIdentity} from "./pg-identity";
 export type {PgObjectIdentity} from "./pg-identity";
 import {matchesPostgresSupport, POSTGRES_SUPPORT} from "./postgres-support";
 import {isPgNonEmptyText} from "./pg-text";
-import {quotePgIdentifier, quotePgQualified} from "./pg-sql";
+import {constraintTimingSql, isPgStoredIdentifier, quotePgIdentifier, quotePgQualified} from "./pg-sql";
+import {decodePostgresStorage, type PostgresStorageInfo} from "./postgres-storage";
 export {quotePgIdentifier, quotePgQualified} from "./pg-sql";
 
 export type PgTypeRepresentation = {
@@ -137,6 +138,7 @@ export type ResolvedSqlResource = {
 export type StorageContext = {
     representation: string;
     physicalTypes: Readonly<Record<string, PgTypeRepresentation>>;
+    postgresStorage?: PostgresStorageInfo;
     machineCodecs?: Readonly<Record<string, MachineCodecInfo>>;
     schema: string;
     environment: EnvironmentInfo;
@@ -156,9 +158,6 @@ export interface PgSession {
     close(): Promise<void>;
 }
 
-const encoder = new TextEncoder();
-const PG_IDENTIFIER_LIMIT = 63;
-
 function fail<T>(
     messageKey: string,
     details: Readonly<Record<string, string>> = {},
@@ -166,13 +165,9 @@ function fail<T>(
     return {ok: false, problems: [problem(null, messageKey, "blocking", details)]};
 }
 
-function identifierBytes(value: string): number {
-    return encoder.encode(value).byteLength;
-}
-
-function constraintName(table: string, suffix: string): ValidationResult<string> {
-    const value = table + "_" + suffix;
-    if (identifierBytes(value) > PG_IDENTIFIER_LIMIT) {
+function constraintName(table: string, suffix: string, explicit?: string | null): ValidationResult<string> {
+    const value = explicit ?? table + "_" + suffix;
+    if (!isPgStoredIdentifier(value)) {
         return fail("migration.unsupportedSchemaFeature", {
             object: value,
             reason: "PostgreSQL identifier exceeds 63 bytes",
@@ -217,7 +212,7 @@ function environmentProblem(environment: StorageContext["environment"]): Problem
     return null;
 }
 
-function resolvePhysicalTypes(
+export function resolvePhysicalTypes(
     snapshot: SystemSnapshotInfo,
     persistence: PersistenceInfo,
     storage: Pick<StorageContext, "representation" | "physicalTypes">,
@@ -272,7 +267,7 @@ function resolvePhysicalTypes(
 export function projectSchema(
     snapshot: SystemSnapshotInfo,
     persistence: PersistenceInfo,
-    storage: Pick<StorageContext, "schema" | "representation" | "physicalTypes"> & Partial<Pick<StorageContext, "environment">>,
+    storage: Pick<StorageContext, "schema" | "representation" | "physicalTypes"> & Partial<Pick<StorageContext, "environment" | "postgresStorage">>,
 ): ValidationResult<ProjectedPgSchemaInfo> {
     const mismatch = storage.environment ? environmentProblem(storage.environment) : null;
     if (mismatch !== null) return {ok: false, problems: [mismatch]};
@@ -282,6 +277,9 @@ export function projectSchema(
 
     const physicalTypes = resolvePhysicalTypes(snapshot, persistence, storage);
     if (!physicalTypes.ok) return physicalTypes;
+    const decodedStorage = storage.postgresStorage === undefined ? undefined : decodePostgresStorage(storage.postgresStorage, snapshot, physicalTypes.value);
+    if (decodedStorage !== undefined && !decodedStorage.ok) return decodedStorage;
+    const metadata = decodedStorage?.value;
 
     const selected = [...persistence.entities];
     if (new Set(selected).size !== selected.length) {
@@ -292,6 +290,7 @@ export function projectSchema(
     const objects: PgObjectInfo[] = [];
     const tables: PgTableProjection[] = [];
     const constraintNames = new Set<string>();
+    const relationNames = new Set(selected);
 
     for (const entityName of selected) {
         const entity = snapshot.entities[entityName];
@@ -301,6 +300,7 @@ export function projectSchema(
         if (!isPgNonEmptyText(entityName)) {
             return fail("migration.unsupportedFormat", {entity: entityName, reason: "invalid PostgreSQL table name"});
         }
+        const entityStorage = metadata !== undefined && Object.hasOwn(metadata.entities, entityName) ? metadata.entities[entityName] : undefined;
 
         objects.push({
             kind: "table",
@@ -325,7 +325,8 @@ export function projectSchema(
             if (!isPgNonEmptyText(fieldName)) {
                 return fail("migration.unsupportedFormat", {entity: entityName, field: fieldName, reason: "invalid PostgreSQL column name"});
             }
-            const typeCopy: PgTypeInfo = {...pgType, modifiers: [...pgType.modifiers]};
+            const attrs = entityStorage !== undefined && Object.hasOwn(entityStorage.columns, fieldName) ? entityStorage.columns[fieldName] : undefined;
+            const typeCopy: PgTypeInfo = {...pgType, modifiers: attrs?.typeModifiers?.map(String) ?? [...pgType.modifiers]};
             columns.push({name: fieldName, type: typeCopy, nullable: field.nullable});
             objects.push({
                 kind: "column",
@@ -333,7 +334,7 @@ export function projectSchema(
                 type: typeCopy,
                 nullable: field.nullable,
                 defaultExpression: null,
-                identityDefinition: null,
+                identityDefinition: attrs?.identity === "always" ? "a" : attrs?.identity === "byDefault" ? "d" : null,
                 generatedDefinition: null,
             });
         }
@@ -341,12 +342,13 @@ export function projectSchema(
         if (entity.pk.length === 0) {
             return fail("migration.unsupportedSchemaFeature", {entity: entityName, reason: "persistent entity requires a primary key"});
         }
-        const pkName = constraintName(entityName, "pkey");
+        const pkName = constraintName(entityName, "pkey", entityStorage?.primaryKey?.name);
         if (!pkName.ok) return pkName;
-        if (constraintNames.has(pkName.value)) {
+        if (constraintNames.has(pkName.value) || relationNames.has(pkName.value)) {
             return fail("migration.unsupportedSchemaFeature", {constraint: pkName.value, reason: "constraint name collision"});
         }
         constraintNames.add(pkName.value);
+        relationNames.add(pkName.value);
         const primaryKey: PgKeyProjection = {name: pkName.value, columns: [...entity.pk]};
         objects.push({
             kind: "constraint",
@@ -365,23 +367,26 @@ export function projectSchema(
         const uniqueKeys: PgKeyProjection[] = [];
         for (const ukName of Object.keys(entity.uks).sort(compareUtf16)) {
             const columns = entity.uks[ukName];
-            const name = constraintName(entityName, ukName + "_key");
+            const attrs = entityStorage?.uniqueKeys !== undefined && Object.hasOwn(entityStorage.uniqueKeys, ukName) ? entityStorage.uniqueKeys[ukName] : undefined;
+            const deferrable = attrs?.deferrable ?? false, initiallyDeferred = attrs?.initiallyDeferred ?? false;
+            const name = constraintName(entityName, ukName + "_key", attrs?.name);
             if (!name.ok) return name;
-            if (constraintNames.has(name.value)) {
+            if (constraintNames.has(name.value) || relationNames.has(name.value)) {
                 return fail("migration.unsupportedSchemaFeature", {constraint: name.value, reason: "constraint name collision"});
             }
             constraintNames.add(name.value);
+            relationNames.add(name.value);
             uniqueKeys.push({name: name.value, columns: [...columns]});
             objects.push({
                 kind: "constraint",
                 identity: constraintIdentity(storage.schema, entityName, name.value),
                 constraintKind: "unique",
-                definition: keyDefinition("UNIQUE", columns),
+                definition: keyDefinition("UNIQUE", columns) + constraintTimingSql(deferrable, initiallyDeferred),
                 columns: [...columns],
                 target: null,
                 pairs: [],
-                deferrable: false,
-                initiallyDeferred: false,
+                deferrable,
+                initiallyDeferred,
                 validated: true,
                 enforced: true,
             });
@@ -396,7 +401,9 @@ export function projectSchema(
             if (!selected.includes(fk.entity)) {
                 return fail("migration.invalidReference", {entity: entityName, fk: fkName, target: fk.entity, reason: "FK target is not selected for persistence"});
             }
-            const name = constraintName(entityName, fkName + "_fkey");
+            const attrs = entityStorage?.foreignKeys !== undefined && Object.hasOwn(entityStorage.foreignKeys, fkName) ? entityStorage.foreignKeys[fkName] : undefined;
+            const deferrable = attrs?.deferrable ?? false, initiallyDeferred = attrs?.initiallyDeferred ?? false;
+            const name = constraintName(entityName, fkName + "_fkey", attrs?.name);
             if (!name.ok) return name;
             if (constraintNames.has(name.value)) {
                 return fail("migration.unsupportedSchemaFeature", {constraint: name.value, reason: "constraint name collision"});
@@ -414,12 +421,12 @@ export function projectSchema(
                 kind: "constraint",
                 identity: constraintIdentity(storage.schema, entityName, name.value),
                 constraintKind: "foreignKey",
-                definition: fkDefinition(storage.schema, fk.entity, pairs),
+                definition: fkDefinition(storage.schema, fk.entity, pairs) + constraintTimingSql(deferrable, initiallyDeferred),
                 columns: pairs.map(one => one.source),
                 target: tableIdentity(storage.schema, fk.entity),
                 pairs: pairs.map(one => ({...one})),
-                deferrable: false,
-                initiallyDeferred: false,
+                deferrable,
+                initiallyDeferred,
                 validated: true,
                 enforced: true,
             });

@@ -1,35 +1,35 @@
 import {strict as assert} from "node:assert";
 import {describe, it} from "mocha";
-import {
-    captureSystemSnapshot, commonTypeDefs, commonTypeBehaviours, completeCoreField,
-    defineTypes, defineRecord, withRecords, defineEntity, defineEntities, sqlTypes,
-    type ValidationResult,
-} from "system-definition";
+import type {ValidationResult} from "system-definition";
 import {decodeSqlSsot, projectSsotSchema} from "../src/sql-mapping";
 import {captureMigrationState, jsonBytes, readStateBytes, stateReference} from "../src/migration-store";
 import {generateCreate} from "../src/generate-create";
+import type {PostgresKeyStorageDef, PostgresStorageDef} from "../src/postgres-storage";
+import {snapshot, mapping, storage} from "./fixtures/key-storage-fixture";
 
-const types = defineTypes({types: commonTypeDefs, behaviours: commonTypeBehaviours, completeField: completeCoreField});
-const context = withRecords(types, {
-    parent: defineRecord(types, {id: {type: "integer", nullable: false}}),
-    item: defineRecord(types, {id: {type: "integer", nullable: false}, parentId: {type: "integer", nullable: false}, slug: {type: "text", nullable: false}}),
-});
-const entities = defineEntities({
-    parents: defineEntity(context, {name: "parents", record: "parent", pk: ["id"], fks: {}, uks: {}, validators: []}),
-    items: defineEntity(context, {name: "items", record: "item", pk: ["id"], fks: {parent: {entity: "parents", fields: {parentId: "id"}}}, uks: {slug: ["slug"]}, validators: []}),
-});
 function value<T>(result: ValidationResult<T>): T {
     if (!result.ok) throw new Error(JSON.stringify(result.problems));
     return result.value;
 }
-const snapshot = value(captureSystemSnapshot(context, {systemId: "key-storage", entities, records: context.records}));
-const mapping = {text: sqlTypes.text, integer: sqlTypes.bigint, boolean: sqlTypes.boolean};
-const storage = (initiallyDeferred: boolean) => ({entities: {items: {
-    foreignKeys: {parent: {name: "legacy_parent_fk", deferrable: true, initiallyDeferred}},
-    uniqueKeys: {slug: {name: "legacy_slug_key", deferrable: true, initiallyDeferred: false}},
-}}});
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+type IsAssignable<A, B> = [A] extends [B] ? true : false;
+type Expect<T extends true> = T;
+type Def = NonNullable<PostgresStorageDef<typeof snapshot>["entities"]["items"]>;
+type KeyShape = {name?: string | null; deferrable?: boolean; initiallyDeferred?: boolean};
+type KeyToShape = Expect<IsAssignable<PostgresKeyStorageDef, KeyShape>>;
+type ShapeToKey = Expect<IsAssignable<KeyShape, PostgresKeyStorageDef>>;
+type FkNames = Expect<Equal<keyof NonNullable<Def["foreignKeys"]>, "parent">>;
+type UkNames = Expect<Equal<keyof NonNullable<Def["uniqueKeys"]>, "slug">>;
+type UnknownFk = Expect<Equal<IsAssignable<{missing: {name: string}}, NonNullable<Def["foreignKeys"]>>, false>>;
+type UnknownUk = Expect<Equal<IsAssignable<{missing: {name: string}}, NonNullable<Def["uniqueKeys"]>>, false>>;
+type NoFks = Expect<Equal<IsAssignable<{foreignKeys: {missing: {name: string}}}, NonNullable<PostgresStorageDef<typeof snapshot>["entities"]["parents"]>>, false>>;
+type InvalidTiming = Expect<Equal<IsAssignable<{deferrable: string}, PostgresKeyStorageDef>, false>>;
+const contracts: [KeyToShape, ShapeToKey, FkNames, UkNames, UnknownFk, UnknownUk, NoFks, InvalidTiming] = [true, true, true, true, true, true, true, true];
 
 describe("typed storage preserves existing key names and timing", () => {
+    it("types only the existing logical keys and reuses constraint timing attributes", () => {
+        assert.deepEqual(contracts, [true, true, true, true, true, true, true, true]);
+    });
     it("preserves a named initially deferred FK while deriving its target and column pairs from the SSOT", () => {
         const schema = value(projectSsotSchema(value(decodeSqlSsot(snapshot, mapping, {entities: {items: {foreignKeys: storage(true).entities.items.foreignKeys}}})), "app"));
         const fk = schema.objects.find(object => object.kind === "constraint" && object.constraintKind === "foreignKey");
@@ -79,5 +79,18 @@ describe("typed storage preserves existing key names and timing", () => {
         assert.ok(fk?.kind === "constraint");
         assert.equal(fk.deferrable, true);
         assert.equal(fk.initiallyDeferred, false);
+    });
+    it("retains generated names and non-deferrable defaults for omitted attributes", () => {
+        const system = value(decodeSqlSsot(snapshot, mapping, {entities: {items: {foreignKeys: {parent: {}}, uniqueKeys: {slug: {}}}}}));
+        const schema = value(projectSsotSchema(system, "app"));
+        const fk = schema.objects.find(object => object.kind === "constraint" && object.constraintKind === "foreignKey");
+        assert.ok(fk?.kind === "constraint");
+        assert.equal(fk.identity.name, "items_parent_fkey");
+        assert.equal(fk.deferrable, false);
+        assert.equal(fk.initiallyDeferred, false);
+        const key = schema.objects.find(object => object.kind === "constraint" && object.constraintKind === "unique");
+        assert.ok(key?.kind === "constraint");
+        assert.equal(key.identity.name, "items_slug_key");
+        assert.equal(key.deferrable, false);
     });
 });
