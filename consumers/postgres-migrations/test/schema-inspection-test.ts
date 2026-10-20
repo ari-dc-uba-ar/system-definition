@@ -3,6 +3,7 @@ import {describe, it} from "mocha";
 import type {PgObjectIdentity, PgObjectInfo, PgSchemaInfo, PgSession, SqlParameter} from "../src/pg-schema";
 import {inspectSchema} from "../src/inspect-schema";
 import {compareSchemas} from "../src/compare-schema";
+import {isInspectionControlSql} from "./fixtures/inspection-control-fixture";
 
 type CatalogRow = Readonly<Record<string, unknown>>;
 
@@ -151,6 +152,7 @@ function sessionWithRows(baseRows: readonly CatalogRow[], includeUnknown = false
     let pending = false;
     return {
         async query(text: string, values: readonly SqlParameter[]) {
+            if (isInspectionControlSql(text)) return {rows: [], rowCount: null};
             if (/^BEGIN$/i.test(text.trim())) return {rows: [], rowCount: null};
             if (/^ROLLBACK$/i.test(text.trim())) return {rows: [], rowCount: null};
             if (/^CREATE TABLE\s+"app"\."pending"/i.test(text.trim())) {

@@ -1,4 +1,5 @@
 import {strict as assert} from "node:assert";
+import {isInspectionControlSql} from "./fixtures/inspection-control-fixture";
 import {describe, it} from "mocha";
 import type {ReleaseRefInfo, ValidationResult} from "system-definition";
 import type {PgObjectInfo, PgSchemaInfo, PgSession, SqlParameter} from "../src/pg-schema";
@@ -122,6 +123,7 @@ class ScratchSession implements PgSession {
     async query(text: string, values: readonly SqlParameter[]): Promise<QueryResult> {
         this.calls.push({text, values});
         const sql = text.trim();
+        if (isInspectionControlSql(sql)) return {rows: [], rowCount: null};
         if (/^CREATE TABLE\s+"app"\./i.test(sql)) return {rows: [], rowCount: null};
         if (/^ALTER TABLE\s+"app"\..+ADD CONSTRAINT/i.test(sql)) return {rows: [], rowCount: null};
         if (/^CREATE SCHEMA IF NOT EXISTS\s+"sd_journal"/i.test(sql)

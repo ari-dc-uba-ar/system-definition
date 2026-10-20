@@ -150,6 +150,13 @@ postgres-migrations assess --ssot dist/system.js --database dist/database.js
 El consumidor proyecta el SSOT, inspecciona el schema configurado y compara
 representaciones normalizadas. La inspección obtiene schemas existentes y objetos
 en una única consulta, distinguiendo schemas vacíos de inexistentes.
+La consulta usa `search_path=pg_catalog` dentro de un savepoint propio para que las
+definiciones impresas no dependan de la visibilidad de relaciones en la sesión.
+El scope se revierte y libera incluso si el inventario falla; conserva los valores
+locales/de sesión y el trabajo no confirmado del llamador. Sin transacción explícita,
+el inspector abre y revierte una transacción READ ONLY. No confirma ni revierte la
+transacción del llamador. Como toda operación sobre una conexión transaccional, las
+consultas de ese PgSession deben serializarse durante la inspección.
 Reutiliza `projectSchema`, `inspectSchema`,
 `normalizePgSchema` y `compareSchemas`; no crea releases ni historial para comparar.
 Devuelve `{equal, differences}` con `path`, `change`, `before` (base actual) y

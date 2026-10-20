@@ -1,4 +1,5 @@
 import {compareUtf16, problem, type ValidationResult} from "system-definition";
+import {randomUUID} from "node:crypto";
 import type {
     PgObjectInfo,
     PgSchemaInfo,
@@ -460,6 +461,31 @@ ORDER BY n.nspname, inventory.object_kind, inventory.parent_name NULLS FIRST, in
 `;
 }
 
+/** Scope the printer context without committing/rolling back the caller's work or settings. */
+async function queryCatalog(session: PgSession, scope: InspectionScope): ReturnType<PgSession["query"]> {
+    const savepoint = "sd_inspect_" + randomUUID().replaceAll("-", "");
+    let ownTransaction = false;
+    try {
+        await session.query("SAVEPOINT " + savepoint, []);
+    } catch (error) {
+        // SAVEPOINT outside a transaction fails without opening/aborting a transaction.
+        // Other failures, including an already aborted caller transaction, stay failures.
+        if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "25P01") throw error;
+        await session.query("BEGIN READ ONLY", []);
+        ownTransaction = true;
+    }
+    try {
+        await session.query("SET LOCAL search_path = pg_catalog", []);
+        return await session.query(scopeSql(scope.schemas.length), [...scope.schemas] as SqlParameter[]);
+    } finally {
+        if (ownTransaction) await session.query("ROLLBACK", []);
+        else {
+            await session.query("ROLLBACK TO SAVEPOINT " + savepoint, []);
+            await session.query("RELEASE SAVEPOINT " + savepoint, []);
+        }
+    }
+}
+
 export async function inspectSchema(
     session: PgSession,
     scope: InspectionScope,
@@ -473,7 +499,7 @@ export async function inspectSchema(
 
     let queried: Awaited<ReturnType<PgSession["query"]>>;
     try {
-        queried = await session.query(scopeSql(scope.schemas.length), [...scope.schemas] as SqlParameter[]);
+        queried = await queryCatalog(session, scope);
     } catch (error) {
         return fail("migration.inspectionFailed", {
             reason: error instanceof Error ? error.message : String(error),

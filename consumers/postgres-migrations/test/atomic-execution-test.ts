@@ -1,4 +1,5 @@
 import {strict as assert} from "node:assert";
+import {isInspectionControlSql} from "./fixtures/inspection-control-fixture";
 import {describe, it} from "mocha";
 import type {
     MigrationPathInfo,
@@ -202,6 +203,7 @@ class AtomicSession implements PgSession {
     async query(text: string, values: readonly SqlParameter[]): Promise<QueryResult> {
         this.calls.push({text, values});
         const normalized = text.trim();
+        if (isInspectionControlSql(normalized)) return {rows: [], rowCount: null};
         if (/^BEGIN$/i.test(normalized)) {
             assert.equal(this.inTransaction, false);
             this.inTransaction = true;

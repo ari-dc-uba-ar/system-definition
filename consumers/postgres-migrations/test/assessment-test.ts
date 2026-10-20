@@ -1,4 +1,5 @@
 import {strict as assert} from "node:assert";
+import {isInspectionControlSql} from "./fixtures/inspection-control-fixture";
 import {describe, it} from "mocha";
 import {captureSystemSnapshot, commonTypeDefs, commonTypeBehaviours, completeCoreField, defineTypes,
     defineRecord, withRecords, defineEntity, defineEntities, sqlTypes} from "system-definition";
@@ -29,6 +30,7 @@ describe("read-only schema assessment", () => {
         const queries: string[] = [];
         const session: PgSession = {async query(sql) {
             queries.push(sql);
+            if (isInspectionControlSql(sql)) return {rows: [], rowCount: null};
             assert.match(sql, /^\s*(WITH|SELECT|SHOW)\b/);
             return {rows: [], rowCount: 0};
         }, async close() {throw new Error("Caller owns this session");}};
@@ -39,6 +41,6 @@ describe("read-only schema assessment", () => {
             assert.ok(result.value.differences.some(difference => difference.change === "add" && difference.path.includes("items")));
             assert.ok(result.value.differences.every(difference => difference.impact === "preserving"));
         }
-        assert.equal(queries.length, 1);
+        assert.equal(queries.filter(sql => !isInspectionControlSql(sql)).length, 1);
     });
 });

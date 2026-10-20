@@ -1,4 +1,5 @@
 import {strict as assert} from "node:assert";
+import {isInspectionControlSql} from "./fixtures/inspection-control-fixture";
 import {describe, it} from "mocha";
 import {completeMigrationCatalog, type PublishedMigrationInfo, type ReleaseRefInfo, type ValidationResult} from "system-definition";
 import {describeMigrationHistory, checkHistoryHeadDrift, readMigrationHistory, readMigrationStatus, type MigrationHistoryStateInfo} from "../src/migration-history";
@@ -29,6 +30,7 @@ const contract: DescriptionContract = true;
 
 function session(): PgSession {
     return {async query(sql) {
+        if (isInspectionControlSql(sql)) return {rows: [], rowCount: null};
         if (sql.includes("row_to_json(i)")) return {rows: [{installation: {
             installation_id: "test", system_id: "history", schemas: ["app"], journal_format_version: 1,
             baseline_system_id: A.systemId, baseline_release_id: A.releaseId, baseline_release_hash: A.releaseHash,

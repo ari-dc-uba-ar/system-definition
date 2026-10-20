@@ -162,6 +162,7 @@ integration("catalog inspection is independent of the caller search_path", () =>
                 assert.equal(unchanged.rows[0]?.search_path, path, "Inspection must preserve the caller's configuration");
                 const select = (object: PgObjectInfo) => kind === "index" ? object.kind === "index" && object.ownerConstraint === null
                     : object.kind === "constraint" && object.constraintKind === "foreignKey";
+                assert.deepEqual(visible.schema.objects.filter(select), qualified.schema.objects.filter(select), "Raw catalog descriptions must also be stable");
                 const expected = await normalizePgSchema({...qualified.schema, objects: qualified.schema.objects.filter(select)});
                 const actual = await normalizePgSchema({...visible.schema, objects: visible.schema.objects.filter(select)});
                 const compared = value(compareSchemas(expected, {...visible, schema: actual}));
@@ -169,6 +170,57 @@ integration("catalog inspection is independent of the caller search_path", () =>
             });
         });
     }
+
+    it("restores caller settings and preserves uncommitted work after a catalog query error", async () => {
+        await withScratchSchema(async (session, namespace) => {
+            await session.query(`CREATE TABLE "${namespace}".pending (id integer)`, []);
+            await session.query(`INSERT INTO "${namespace}".pending (id) VALUES (1)`, []);
+            const path = `${namespace}, pg_catalog`;
+            await session.query("SELECT pg_catalog.set_config('search_path', $1, true)", [path]);
+            const failed = await inspectSchema({
+                query: (text, values) => session.query(text.includes("WITH managed_schemas") ? "SELECT 1/0" : text, values),
+                close: session.close,
+            }, {schemas: [namespace], excluded: []});
+            assert.equal(failed.ok, false);
+            if (!failed.ok) assert.equal(failed.problems[0]?.messageKey, "migration.inspectionFailed");
+            assert.equal((await session.query("SHOW search_path", [])).rows[0]?.search_path, path);
+            assert.deepEqual((await session.query(`SELECT id FROM "${namespace}".pending`, [])).rows, [{id: 1}]);
+            await session.query(`INSERT INTO "${namespace}".pending (id) VALUES (2)`, []);
+        });
+    });
+
+    it("scopes standalone inspection and leaves no transaction or session configuration behind", async () => {
+        const client = new Client({connectionString});
+        await client.connect();
+        const session: PgSession = {
+            async query(text, values) {
+                const result = await client.query<Record<string, unknown>>(text, [...values]);
+                return {rows: result.rows, rowCount: result.rowCount};
+            },
+            async close() {throw new Error("The fixture owns this connection");},
+        };
+        try {
+            const original = (await session.query("SHOW search_path", [])).rows;
+            value(await inspectSchema(session, {schemas: ["public"], excluded: []}));
+            assert.deepEqual((await session.query("SHOW search_path", [])).rows, original);
+            await assert.rejects(session.query("SAVEPOINT should_be_idle", []), {code: "25P01"});
+            const failed = await inspectSchema({
+                query: (text, values) => session.query(text.includes("WITH managed_schemas") ? "SELECT 1/0" : text, values),
+                close: session.close,
+            }, {schemas: ["public"], excluded: []});
+            assert.equal(failed.ok, false);
+            assert.deepEqual((await session.query("SHOW search_path", [])).rows, original);
+            await assert.rejects(session.query("SAVEPOINT still_idle", []), {code: "25P01"});
+            await session.query("BEGIN", []);
+            await session.query("SET LOCAL search_path = pg_catalog", []);
+            value(await inspectSchema(session, {schemas: ["public"], excluded: []}));
+            assert.equal((await session.query("SHOW search_path", [])).rows[0]?.search_path, "pg_catalog");
+            await session.query("COMMIT", []);
+            assert.deepEqual((await session.query("SHOW search_path", [])).rows, original, "A pre-existing SET LOCAL must not become a session setting");
+        } finally {
+            try {await client.query("ROLLBACK");} finally {await client.end();}
+        }
+    });
 });
 
 integration("typed storage CHECK/index input round trip", () => {

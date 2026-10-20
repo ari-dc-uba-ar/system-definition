@@ -250,9 +250,10 @@ describe("additional PostgreSQL objects and managed metadata", function(){
         const actual = await inspectSchema(session, {schemas: ["app"], excluded: []});
         assert.equal(actual.ok, true);
         if (!actual.ok) return;
-        assert.equal(session.queries.length, 1);
-        assert.match(session.queries[0].text, /pg_get_viewdef/i);
-        assert.match(session.queries[0].text, /pg_get_functiondef/i);
+        const inventories = session.queries.filter(query => query.text.includes("WITH managed_schemas"));
+        assert.equal(inventories.length, 1);
+        assert.match(inventories[0].text, /pg_get_viewdef/i);
+        assert.match(inventories[0].text, /pg_get_functiondef/i);
 
         const view = actual.value.schema.objects.find(one => one.kind === "view");
         const routine = actual.value.schema.objects.find(one => one.kind === "routine");

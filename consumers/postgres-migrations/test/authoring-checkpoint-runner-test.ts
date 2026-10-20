@@ -1,5 +1,6 @@
 import {createHash} from "node:crypto";
 import {strict as assert} from "node:assert";
+import {isInspectionControlSql} from "./fixtures/inspection-control-fixture";
 import {describe, it} from "mocha";
 import {
     problem,
@@ -254,6 +255,7 @@ class CheckpointSession implements PgSession {
     async query(text: string, values: readonly SqlParameter[]): Promise<QueryResult> {
         this.calls.push({text, values});
         const normalized = text.trim();
+        if (isInspectionControlSql(normalized)) return {rows: [], rowCount: null};
         if (/^BEGIN$/i.test(normalized)) {
             this.inTransaction = true;
             return {rows: [], rowCount: null};
