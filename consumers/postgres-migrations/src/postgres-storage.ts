@@ -1,6 +1,7 @@
 import {childPath, exactOptionalKeys, isPlainObject, problem, toJsonValue, type SystemSnapshotInfo, type ValidationResult} from "system-definition";
 import type {PgObjectInfo, PgTypeRepresentation} from "./pg-schema";
 import {isPgStoredIdentifier} from "./pg-sql";
+import {isPgNonEmptyText} from "./pg-text";
 
 export type PostgresIdentityMode = "byDefault" | "always";
 export type PostgresColumnStorageDef = {
@@ -10,12 +11,17 @@ export type PostgresColumnStorageDef = {
 type ConstraintTiming = Pick<Extract<PgObjectInfo, {kind: "constraint"}>, "deferrable" | "initiallyDeferred">;
 export type PostgresKeyStorageDef = Partial<ConstraintTiming> & {name?: string | null};
 export type PostgresKeyStorageInfo = ConstraintTiming & {name: string | null};
+export type PostgresCheckStorageDef<TField extends string = string> =
+    Pick<Extract<PgObjectInfo, {kind: "constraint"}>, "definition"> & {columns: readonly TField[]};
+export type PostgresIndexStorageDef = Pick<Extract<PgObjectInfo, {kind: "index"}>, "definition">;
 export type PostgresStorageDef<TSnapshot extends Pick<SystemSnapshotInfo, "entities">> = {
     entities: {readonly [E in keyof TSnapshot["entities"]]?: {
         columns?: {readonly [F in keyof TSnapshot["entities"][E]["fields"]]?: PostgresColumnStorageDef};
         primaryKey?: {name: string} | null;
         foreignKeys?: keyof TSnapshot["entities"][E]["fks"] extends never ? never : {readonly [K in keyof TSnapshot["entities"][E]["fks"]]?: PostgresKeyStorageDef};
         uniqueKeys?: keyof TSnapshot["entities"][E]["uks"] extends never ? never : {readonly [K in keyof TSnapshot["entities"][E]["uks"]]?: PostgresKeyStorageDef};
+        checks?: Readonly<Record<string, PostgresCheckStorageDef<Extract<keyof TSnapshot["entities"][E]["fields"], string>>>>;
+        indexes?: Readonly<Record<string, PostgresIndexStorageDef>>;
     }};
 };
 export type PostgresColumnStorageInfo = {
@@ -28,6 +34,8 @@ export type PostgresStorageInfo = {
         primaryKey: {name: string} | null;
         foreignKeys?: Readonly<Record<string, PostgresKeyStorageInfo>>;
         uniqueKeys?: Readonly<Record<string, PostgresKeyStorageInfo>>;
+        checks?: Readonly<Record<string, PostgresCheckStorageDef>>;
+        indexes?: Readonly<Record<string, PostgresIndexStorageDef>>;
     }>>;
 };
 
@@ -103,6 +111,41 @@ function decodeKeys(value: unknown, known: Readonly<Record<string, unknown>>, pa
     return {ok: true, value: Object.fromEntries(keys)};
 }
 
+function decodeObjects<T>(value: unknown, path: string, decode: (raw: unknown, path: string) => ValidationResult<T>): ValidationResult<Readonly<Record<string, T>> | undefined> {
+    if (value === undefined) return {ok: true, value: undefined};
+    if (!isPlainObject(value)) return invalid(path, "Expected a PostgreSQL object map");
+    const entries: [string, T][] = [];
+    for (const [name, raw] of Object.entries(value)) {
+        const objectPath = childPath(path, name);
+        if (!isPgStoredIdentifier(name)) return invalid(objectPath, "Invalid PostgreSQL object name");
+        const decoded = decode(raw, objectPath);
+        if (!decoded.ok) return decoded;
+        entries.push([name, decoded.value]);
+    }
+    return {ok: true, value: Object.fromEntries(entries)};
+}
+
+function decodeCheck(value: unknown, fields: Readonly<Record<string, unknown>>, path: string): ValidationResult<PostgresCheckStorageDef> {
+    const attrs = objectKeys(value, ["definition", "columns"], path);
+    if (!attrs.ok) return attrs;
+    const {definition, columns} = attrs.value;
+    if (!isPgNonEmptyText(definition)) return invalid(childPath(path, "definition"), "Expected a CHECK definition");
+    if (!Array.isArray(columns)) return invalid(childPath(path, "columns"), "Expected field references");
+    const names: string[] = [];
+    for (const name of columns) {
+        if (typeof name !== "string" || !Object.hasOwn(fields, name) || names.includes(name)) return invalid(childPath(path, "columns"), "Unknown or repeated field reference");
+        names.push(name);
+    }
+    return {ok: true, value: {definition, columns: names}};
+}
+
+function decodeIndex(value: unknown, path: string): ValidationResult<PostgresIndexStorageDef> {
+    const attrs = objectKeys(value, ["definition"], path);
+    if (!attrs.ok) return attrs;
+    const definition = attrs.value.definition;
+    return isPgNonEmptyText(definition) ? {ok: true, value: {definition}} : invalid(childPath(path, "definition"), "Expected a CREATE INDEX definition");
+}
+
 export function decodePostgresStorage(value: unknown, snapshot: SystemSnapshotInfo, mapping: Readonly<Record<string, PgTypeRepresentation>>): ValidationResult<PostgresStorageInfo> {
     const copied = toJsonValue(value);
     if (!copied.ok) return copied;
@@ -114,7 +157,7 @@ export function decodePostgresStorage(value: unknown, snapshot: SystemSnapshotIn
         const path = childPath("$[\"postgresStorage\"][\"entities\"]", entityName);
         if (!Object.hasOwn(snapshot.entities, entityName)) return invalid(path, "Unknown entity");
         const entity = snapshot.entities[entityName];
-        const attrs = objectKeys(raw, ["columns", "primaryKey", "foreignKeys", "uniqueKeys"], path);
+        const attrs = objectKeys(raw, ["columns", "primaryKey", "foreignKeys", "uniqueKeys", "checks", "indexes"], path);
         if (!attrs.ok) return attrs;
         const columnsPath = childPath(path, "columns");
         const rawColumns = attrs.value.columns === undefined ? {} : attrs.value.columns;
@@ -136,9 +179,15 @@ export function decodePostgresStorage(value: unknown, snapshot: SystemSnapshotIn
         if (!foreignKeys.ok) return foreignKeys;
         const uniqueKeys = decodeKeys(attrs.value.uniqueKeys, entity.uks, childPath(path, "uniqueKeys"));
         if (!uniqueKeys.ok) return uniqueKeys;
+        const checks = decodeObjects(attrs.value.checks, childPath(path, "checks"), (raw, path) => decodeCheck(raw, entity.fields, path));
+        if (!checks.ok) return checks;
+        const indexes = decodeObjects(attrs.value.indexes, childPath(path, "indexes"), decodeIndex);
+        if (!indexes.ok) return indexes;
         entities.push([entityName, {columns: Object.fromEntries(columns), primaryKey: primaryKey.value,
             ...(foreignKeys.value === undefined ? {} : {foreignKeys: foreignKeys.value}),
-            ...(uniqueKeys.value === undefined ? {} : {uniqueKeys: uniqueKeys.value})}]);
+            ...(uniqueKeys.value === undefined ? {} : {uniqueKeys: uniqueKeys.value}),
+            ...(checks.value === undefined ? {} : {checks: checks.value}),
+            ...(indexes.value === undefined ? {} : {indexes: indexes.value})}]);
     }
     return {ok: true, value: {entities: Object.fromEntries(entities)}};
 }

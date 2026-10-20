@@ -4,6 +4,24 @@ import {decodeSqlSsot, projectSsotSchema} from "../src/sql-mapping";
 import {captureMigrationState, jsonBytes, readStateBytes, stateReference} from "../src/migration-store";
 import {generateCreate} from "../src/generate-create";
 import {snapshot, mapping, storage} from "./fixtures/key-storage-fixture";
+import type {PostgresStorageDef, PostgresCheckStorageDef, PostgresIndexStorageDef} from "../src/postgres-storage";
+
+type IsAssignable<A, B> = [A] extends [B] ? true : false;
+type Expect<T extends true> = T;
+type Def = NonNullable<PostgresStorageDef<typeof snapshot>["entities"]["items"]>;
+type Check = NonNullable<Def["checks"]>[string];
+type CheckShape = {definition: string; columns: readonly ("id" | "parentId" | "slug")[]};
+type Index = NonNullable<Def["indexes"]>[string];
+type IndexShape = {definition: string};
+const typeContracts: [
+    Expect<IsAssignable<Check, CheckShape>>, Expect<IsAssignable<CheckShape, Check>>,
+    Expect<IsAssignable<Index, IndexShape>>, Expect<IsAssignable<IndexShape, Index>>,
+    Expect<IsAssignable<PostgresCheckStorageDef<"slug">, {definition: string; columns: readonly "slug"[]}>>,
+    Expect<IsAssignable<{definition: string; columns: readonly "slug"[]}, PostgresCheckStorageDef<"slug">>>,
+    Expect<IsAssignable<PostgresIndexStorageDef, IndexShape>>, Expect<IsAssignable<IndexShape, PostgresIndexStorageDef>>,
+    Expect<IsAssignable<{definition: string; columns: readonly "missing"[]}, Check> extends false ? true : false>,
+    Expect<IsAssignable<{definition: number}, Index> extends false ? true : false>,
+] = [true, true, true, true, true, true, true, true, true, true];
 
 function value<T>(result: ValidationResult<T>): T {
     if (!result.ok) throw new Error(JSON.stringify(result.problems));
@@ -18,6 +36,7 @@ const metadata = (condition = "char_length(slug) > 0", predicate = "slug <> ''")
 
 describe("typed storage wires existing CHECK/index vocabulary into authoring", () => {
     it("projects recorded CHECK/index definitions with identities derived from the containing entity", () => {
+        assert.ok(typeContracts.every(Boolean));
         const projected = value(projectSsotSchema(value(decodeSqlSsot(snapshot, mapping, metadata())), "public"));
         const check = projected.objects.find(object => object.kind === "constraint" && object.constraintKind === "check");
         assert.ok(check?.kind === "constraint");
@@ -61,7 +80,36 @@ describe("typed storage wires existing CHECK/index vocabulary into authoring", (
             {...good, indexes: {legacy_nonblank_idx: {definition: "CREATE INDEX wrong_name ON public.items (slug)"}}},
             {...good, indexes: {legacy_nonblank_idx: {definition: "CREATE INDEX legacy_nonblank_idx ON public.parents (id)"}}},
             {...good, indexes: {legacy_nonblank_idx: {definition: "CREATE INDEX legacy_nonblank_idx ON public.items (slug); DROP TABLE public.parents"}}},
+            {...good, checks: {bad: {definition: "CHECK (true)", columns: ["slug", "slug"]}}},
+            {...good, checks: {bad: {definition: "CHECK (true); DROP TABLE public.parents", columns: []}}},
+            {...good, checks: {bad: {definition: "UNIQUE (slug)", columns: ["slug"]}}},
+            {...good, checks: {bad: {definition: "CHECK (true)", columns: [], validated: false}}},
+            {...good, indexes: {bad: {definition: "CREATE INDEX bad ON public.items (slug)", valid: false}}},
+            {...good, checks: {bad: {definition: "", columns: []}}},
+            {...good, indexes: {bad: {definition: ""}}},
+            {...good, indexes: {['x'.repeat(64)]: {definition: "CREATE INDEX bad ON public.items (slug)"}}},
         ];
         for (const entity of invalid) assert.equal(decodeSqlSsot(snapshot, mapping, {entities: {items: entity}}).ok, false);
+    });
+
+    it("uses the configured namespace for index binding and saved-state reloads", async () => {
+        const recorded = metadata();
+        recorded.entities.items.indexes.legacy_nonblank_idx.definition = "CREATE INDEX legacy_nonblank_idx ON app.items USING btree (slug) WHERE slug <> ''";
+        const system = value(decodeSqlSsot(snapshot, mapping, recorded, "app"));
+        const state = value(await captureMigrationState(system, "app", "objects"));
+        assert.deepEqual(value(await readStateBytes(jsonBytes(state))), state);
+        assert.equal(projectSsotSchema(system, "other").ok, false);
+        assert.equal(decodeSqlSsot(snapshot, mapping, recorded).ok, false);
+    });
+
+    it("does not add storage properties when the optional maps are absent", async () => {
+        const system = value(decodeSqlSsot(snapshot, mapping, storage(true)));
+        assert.deepEqual(system.postgresStorage?.entities.items, {
+            columns: {}, primaryKey: null,
+            foreignKeys: {parent: {name: "legacy_parent_fk", deferrable: true, initiallyDeferred: true}},
+            uniqueKeys: {slug: {name: "legacy_slug_key", deferrable: true, initiallyDeferred: false}},
+        });
+        const state = value(await captureMigrationState(system, "public", "old"));
+        assert.deepEqual(value(await readStateBytes(jsonBytes(state))), state);
     });
 });

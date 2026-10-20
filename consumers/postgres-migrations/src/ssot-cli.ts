@@ -20,9 +20,11 @@ export type SsotAuthoringOptions = SsotCommandOptions & (
 export type SsotApplyOptions = SsotCommandOptions & {id?: string};
 
 export async function loadMigrationInputs(options: Pick<SsotCommandOptions, "ssot" | "database">) {
-    const system = await loadSsot(options.ssot), settings = await loadDatabaseSettings(options.database);
+    const settings = await loadDatabaseSettings(options.database);
+    if (!settings.ok) return settings;
+    const system = await loadSsot(options.ssot, settings.value.database.schema);
     if (!system.ok) return system;
-    return settings.ok ? {ok: true as const, value: {system: system.value, settings: settings.value}} : settings;
+    return {ok: true as const, value: {system: system.value, settings: settings.value}};
 }
 
 async function generate(options: SsotCommandOptions & {sql?: SqlFiles}, inputs: Extract<Awaited<ReturnType<typeof loadMigrationInputs>>, {ok: true}>["value"]) {

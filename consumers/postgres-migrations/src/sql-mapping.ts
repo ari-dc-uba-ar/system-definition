@@ -17,7 +17,7 @@ function isSqlMapping(mapping: Readonly<Record<string, string>>): mapping is Rea
     return Object.values(mapping).every(type => Object.hasOwn(physicalTypes, type));
 }
 
-export function decodeSqlSsot(value: unknown, sqlMapping: unknown, postgresStorage?: unknown): ValidationResult<SqlSsotInfo> {
+export function decodeSqlSsot(value: unknown, sqlMapping: unknown, postgresStorage?: unknown, namespace = "public"): ValidationResult<SqlSsotInfo> {
     const ssot = decodeSystemSnapshot(value);
     if (!ssot.ok) return ssot;
     const persistence = decodePersistence({entities: Object.keys(ssot.value.entities), representations: {postgres: sqlMapping}}, ssot.value);
@@ -31,7 +31,7 @@ export function decodeSqlSsot(value: unknown, sqlMapping: unknown, postgresStora
     const storage = decodePostgresStorage(postgresStorage, ssot.value, types.value);
     if (!storage.ok) return storage;
     const withStorage = {...system, postgresStorage: storage.value};
-    const projection = projectSsotSchema(withStorage, "public");
+    const projection = projectSsotSchema(withStorage, namespace);
     return projection.ok ? {ok: true, value: withStorage} : projection;
 }
 

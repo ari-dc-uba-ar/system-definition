@@ -26,7 +26,7 @@ type MappingKeys = Expect<Equal<keyof SqlTypeMapping<typeof ssot>, "age">>;
 type RejectMissing = Expect<Equal<IsAssignable<{}, SqlTypeMapping<typeof ssot>>, false>>;
 type RejectUnknownSql = Expect<Equal<IsAssignable<{age: "imaginary"}, SqlTypeMapping<typeof ssot>>, false>>;
 type SqlChoices = Expect<Equal<SqlType, typeof sqlTypes[keyof typeof sqlTypes]>>;
-type DecoderContract = Expect<Equal<typeof decodeSqlSsot, (value: unknown, mapping: unknown, storage?: unknown) => ValidationResult<SqlSsotInfo>>>;
+type DecoderContract = Expect<Equal<typeof decodeSqlSsot, (value: unknown, mapping: unknown, storage?: unknown, namespace?: string) => ValidationResult<SqlSsotInfo>>>;
 type RejectUnrestrictedMapping = Expect<Equal<IsAssignable<{ssot: typeof ssot; persistence: PersistenceInfo}, SqlSsotInfo>, false>>;
 const contracts: [MappingKeys, RejectMissing, RejectUnknownSql, SqlChoices, DecoderContract, RejectUnrestrictedMapping] = [true, true, true, true, true, true];
 type GeneratorContract = Expect<Equal<typeof generateMigrationSql, (changes: readonly StructureChangeInfo[], current: PgSchemaInfo, target: SqlSsotInfo, schema: string, destinations?: readonly FieldRefInfo[]) => ValidationResult<readonly StructureSql[]>>>;

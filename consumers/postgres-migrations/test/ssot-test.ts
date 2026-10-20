@@ -10,7 +10,7 @@ import {decodeSqlSsot, type SqlSsotInfo} from "../src/sql-mapping";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Expect<T extends true> = T;
-type LoaderContract = Expect<Equal<typeof loadSsot, (file: string) => Promise<ValidationResult<SqlSsotInfo>>>>;
+type LoaderContract = Expect<Equal<typeof loadSsot, (file: string, namespace?: string) => Promise<ValidationResult<SqlSsotInfo>>>>;
 const contract: LoaderContract = true;
 
 const types = defineTypes({types: commonTypeDefs, behaviours: commonTypeBehaviours, completeField: completeCoreField});

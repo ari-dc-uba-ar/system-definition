@@ -14,6 +14,7 @@ import {matchesPostgresSupport, POSTGRES_SUPPORT} from "./postgres-support";
 import {isPgNonEmptyText} from "./pg-text";
 import {constraintTimingSql, isPgStoredIdentifier, quotePgIdentifier, quotePgQualified} from "./pg-sql";
 import {decodePostgresStorage, type PostgresStorageInfo} from "./postgres-storage";
+import {constraintSql, indexSql} from "./generate-create";
 export {quotePgIdentifier, quotePgQualified} from "./pg-sql";
 
 export type PgTypeRepresentation = {
@@ -430,6 +431,30 @@ export function projectSchema(
                 validated: true,
                 enforced: true,
             });
+        }
+
+        for (const [name, attrs] of Object.entries(entityStorage?.checks ?? {}).sort(([a], [b]) => compareUtf16(a, b))) {
+            if (constraintNames.has(name)) return fail("migration.unsupportedSchemaFeature", {constraint: name, reason: "constraint name collision"});
+            constraintNames.add(name);
+            const object: Extract<PgObjectInfo, {kind: "constraint"}> = {
+                kind: "constraint", identity: constraintIdentity(storage.schema, entityName, name),
+                constraintKind: "check", definition: attrs.definition, columns: [...attrs.columns],
+                target: null, pairs: [], deferrable: false, initiallyDeferred: false, validated: true, enforced: true,
+            };
+            const checked = constraintSql(object);
+            if (!checked.ok) return checked;
+            objects.push(object);
+        }
+        for (const [name, attrs] of Object.entries(entityStorage?.indexes ?? {}).sort(([a], [b]) => compareUtf16(a, b))) {
+            if (relationNames.has(name)) return fail("migration.unsupportedSchemaFeature", {index: name, reason: "relation name collision"});
+            relationNames.add(name);
+            const object: Extract<PgObjectInfo, {kind: "index"}> = {
+                kind: "index", identity: {schema: storage.schema, kind: "index", name, parentName: entityName, signature: []},
+                definition: attrs.definition, valid: true, ready: true, ownerConstraint: null,
+            };
+            const checked = indexSql(object);
+            if (!checked.ok) return checked;
+            objects.push(object);
         }
 
         tables.push({

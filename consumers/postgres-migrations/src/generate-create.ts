@@ -2,15 +2,16 @@ import {compareUtf16, problem, type ValidationResult} from "system-definition";
 import {pgIdentityKey} from "./pg-identity";
 import {POSTGRES_SUPPORT} from "./postgres-support";
 import {readSingleSqlStatement, type SqlSyntaxToken} from "./sql-resource";
-import {constraintTimingSql} from "./pg-sql";
-import {
+import {constraintTimingSql,
     quotePgIdentifier,
     quotePgQualified as qualified,
-    type PgObjectIdentity,
-    type PgObjectInfo,
-    type PgSchemaInfo,
-    type PgTypeInfo,
-    type SqlParameter,
+} from "./pg-sql";
+import type {
+    PgObjectIdentity,
+    PgObjectInfo,
+    PgSchemaInfo,
+    PgTypeInfo,
+    SqlParameter,
 } from "./pg-schema";
 
 export type CreateSqlPhase = "table" | "local-constraint" | "index" | "foreign-key";

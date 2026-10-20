@@ -21,7 +21,7 @@ export function stateReference(state: MigrationStateInfo): ReleaseRefInfo {
     return {systemId: state.ssot.systemId, releaseId: state.releaseId, releaseHash: sha256Hex(jsonBytes(state))};
 }
 export async function captureMigrationState(system: SqlSsotInfo, namespace: string, releaseId: string): Promise<ValidationResult<MigrationStateInfo>> {
-    const decoded = decodeSqlSsot(system.ssot, system.persistence.representations.postgres, system.postgresStorage);
+    const decoded = decodeSqlSsot(system.ssot, system.persistence.representations.postgres, system.postgresStorage, namespace);
     if (!decoded.ok) return decoded;
     const schema = projectSsotSchema(decoded.value, namespace);
     if (!schema.ok) return schema;
@@ -33,7 +33,7 @@ export async function readStateBytes(bytes: Uint8Array): Promise<ValidationResul
     if (!parsed.ok) return parsed;
     const raw = parsed.value;
     if (!isPlainObject(raw) || typeof raw.releaseId !== "string" || typeof raw.namespace !== "string" || !isPlainObject(raw.persistence) || !isPlainObject(raw.persistence.representations)) return invalidStore("Malformed saved migration state");
-    const system = decodeSqlSsot(raw.ssot, raw.persistence.representations.postgres, raw.postgresStorage);
+    const system = decodeSqlSsot(raw.ssot, raw.persistence.representations.postgres, raw.postgresStorage, raw.namespace);
     if (!system.ok) return system;
     const state = await captureMigrationState(system.value, raw.namespace, raw.releaseId);
     if (!state.ok) return state;

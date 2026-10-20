@@ -21,7 +21,20 @@ porque el decoder aún rechaza `checks`/`indexes`. No usan datos ni un servidor.
 El contrato público deberá restringir las columnas en tipos, con asignabilidad en
 ambos sentidos y casos negativos, además de los checks de runtime.
 
-Implementación pendiente de revisión por el programador según CLAUDE.md. Repetición:
+El programador aprobó el contrato y las cuatro pruebas. Implementación completada
+en el descriptor/proyector existentes, con tipos públicos derivados del vocabulario
+PgObjectInfo. Se reutilizan constraintSql/indexSql; sus imports de identificadores
+ahora vienen de pg-sql para evitar un ciclo de dependencias con el proyector.
+El namespace se transmite por decodeSqlSsot/loadSsot, estados y CLI con database.
+Se conservan las propiedades omitidas; no se agregan defaults nuevos a archivos viejos.
+
+Validación: seis pruebas de contrato (incluidos tipos bidireccionales y negativos,
+namespace distinto de public y compatibilidad sin mapas) y dos round trips reales
+de creación limpia/incremental con CHECK, índice parcial, archivo, enforcement y
+drift. Los **293 tests del consumidor pasan** contra PostgreSQL 18.6 aislado.
+El documento PLAN_HANDOFF_POSTGRES.md editado por el propietario no se modificó.
+
+Repetición de los tests de contrato:
 
 ```sh
 node node_modules/typescript/bin/tsc -p consumers/postgres-migrations

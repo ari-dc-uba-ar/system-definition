@@ -33,6 +33,8 @@ export const postgresStorage = {
             primaryKey: {name: 'legacy_items_pk'},
             foreignKeys: {parent: {name: 'legacy_parent_fk', deferrable: true, initiallyDeferred: true}},
             uniqueKeys: {slug: {name: 'legacy_slug_key', deferrable: true}},
+            checks: {legacy_nonblank: {definition: 'CHECK (char_length(slug) > 0)', columns: ['slug']}},
+            indexes: {legacy_slug_idx: {definition: 'CREATE INDEX legacy_slug_idx ON public.items (slug)'}},
         },
     },
 } satisfies PostgresStorageDef<typeof ssot>;
@@ -46,6 +48,14 @@ declaradas y pueden conservar su nombre físico y flags `deferrable` e
 `initiallyDeferred`. No redefinen columnas, pares ni destinos. Omitir atributos
 conserva nombres generados y claves no diferibles; `initiallyDeferred: true`
 requiere `deferrable: true`.
+Los mapas opcionales `checks` e `indexes` se identifican por nombre físico. Cada
+CHECK declara `definition` y `columns`, restringidas a campos existentes; cada
+índice independiente declara su SQL `definition`. Se proyectan CHECKs validados y
+enforced e índices válidos/ready sin constraint propietario. Sus definiciones se
+validan con los renderers existentes: un solo objeto y nombres/tabla/schema
+coincidentes, sin otro parser ni generador. Se conserva el SQL explícito, incluidos
+casts de tipos impresos por el catálogo; no se infiere equivalencia semántica de
+expresiones arbitrarias. No se reescriben namespaces silenciosamente.
 Las identidades requieren enteros no nulleables. Se rechazan claves desconocidas,
 referencias inválidas, nombres que PostgreSQL truncaría y colisiones de nombres.
 Los parámetros se validan según el tipo elegido en `sqlMapping`: longitud de
@@ -67,12 +77,19 @@ El consumidor carga ese módulo y usa el decoder existente del core:
 
 ```typescript
 import {loadSsot} from '@system-definition/postgres-migrations/ssot';
-const result = await loadSsot('dist/system.js');
+const result = await loadSsot('dist/system.js'); // namespace public por defecto
+// Para SQL explícito ligado a otro namespace:
+const other = await loadSsot('dist/system.js', 'application');
 ```
 
 ```sh
 postgres-migrations capture --ssot dist/system.js
 ```
+
+`decodeSqlSsot` acepta el namespace como cuarto argumento opcional. Los estados
+archivados y los comandos con `--database` reutilizan el schema configurado al
+validar las definiciones explícitas de índices. Omitir CHECKs/índices conserva los
+bytes anteriores del descriptor y sus hashes.
 
 La función devuelve `ValidationResult<SqlSsotInfo>`: `{ssot, persistence}` compone
 los contratos existentes `SystemSnapshotInfo` y `PersistenceInfo` del core.

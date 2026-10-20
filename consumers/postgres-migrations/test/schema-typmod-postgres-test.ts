@@ -146,6 +146,41 @@ integration("existing-schema handoff: generated SQL preserves real database beha
     }
 });
 
+integration("typed storage CHECK/index input round trip", () => {
+    for (const generation of ["clean", "incremental"] as const) {
+        it(`archives and enforces typed CHECK/index declarations after ${generation} creation`, async () => {
+            await withScratchSchema(async (session, namespace) => {
+                const metadata = {entities: {items: {
+                    ...keyStorage(true).entities.items,
+                    checks: {legacy_nonblank: {definition: "CHECK (char_length(slug) > 0)", columns: ["slug"]}},
+                    // Recorded catalog SQL includes the resolved literal type; the descriptor preserves it.
+                    indexes: {legacy_nonblank_idx: {definition: `CREATE INDEX legacy_nonblank_idx ON "${namespace}".items (slug) WHERE slug <> ''::text`}},
+                }}};
+                const system = value(decodeSqlSsot(keySnapshot, keyMapping, metadata, namespace));
+                const state = value(await readStateBytes(jsonBytes(value(await captureMigrationState(system, namespace, "objects")))));
+                const target = state.schema, empty = {...target, objects: []};
+                const base = {from: {systemId: "objects", releaseId: "empty", releaseHash: "1".repeat(64)},
+                    to: {systemId: "objects", releaseId: "objects", releaseHash: "2".repeat(64)},
+                    fromSnapshotHash: "3".repeat(64), toSnapshotHash: "4".repeat(64), fromPersistenceHash: "5".repeat(64), toPersistenceHash: "6".repeat(64)};
+                const statements = generation === "clean" ? value(generateCreate(target)).statements
+                    : value(generateStructureSql(value(inferStructureChanges(base, empty, target, [])), empty, target));
+                for (const statement of statements) await session.query(statement.text, []);
+                assert.deepEqual(value(await assessSchema(state, namespace, session)), {equal: true, differences: []});
+                await session.query(`INSERT INTO "${namespace}".parents (id) VALUES (1)`, []);
+                await session.query(`INSERT INTO "${namespace}".items (id, "parentId", slug) VALUES (1, 1, 'valid')`, []);
+                await session.query("SAVEPOINT expected_check_rejection", []);
+                await assert.rejects(session.query(`INSERT INTO "${namespace}".items (id, "parentId", slug) VALUES (2, 1, '')`, []), error =>
+                    typeof error === "object" && error !== null && "code" in error && error.code === "23514");
+                await session.query("ROLLBACK TO SAVEPOINT expected_check_rejection", []);
+                await session.query(`DROP INDEX "${namespace}".legacy_nonblank_idx`, []);
+                const drift = value(await assessSchema(state, namespace, session));
+                assert.equal(drift.equal, false);
+                assert.ok(drift.differences.some(difference => difference.path.includes("legacy_nonblank_idx")));
+            });
+        });
+    }
+});
+
 integration("typed storage preserves real constraint timing", () => {
     for (const generation of ["clean", "incremental"] as const) {
         it(`enforces named deferred FKs and deferrable uniqueness after ${generation} creation`, async () => {
