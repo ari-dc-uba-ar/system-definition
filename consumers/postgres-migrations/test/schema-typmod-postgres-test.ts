@@ -146,6 +146,31 @@ integration("existing-schema handoff: generated SQL preserves real database beha
     }
 });
 
+integration("catalog inspection is independent of the caller search_path", () => {
+    for (const kind of ["index", "foreignKey"] as const) {
+        it(`does not report ${kind} drift when only relation visibility changes`, async () => {
+            await withScratchSchema(async (session, namespace) => {
+                await session.query(`CREATE TABLE "${namespace}".parents (id bigint PRIMARY KEY)`, []);
+                await session.query(`CREATE TABLE "${namespace}".items (id bigint PRIMARY KEY, parent_id bigint REFERENCES "${namespace}".parents (id))`, []);
+                await session.query(`CREATE INDEX items_parent_idx ON "${namespace}".items (parent_id)`, []);
+                await session.query("SELECT pg_catalog.set_config('search_path', 'pg_catalog', true)", []);
+                const qualified = value(await inspectSchema(session, {schemas: [namespace], excluded: []}));
+                const path = `${namespace}, pg_catalog`;
+                await session.query("SELECT pg_catalog.set_config('search_path', $1, true)", [path]);
+                const visible = value(await inspectSchema(session, {schemas: [namespace], excluded: []}));
+                const unchanged = await session.query("SHOW search_path", []);
+                assert.equal(unchanged.rows[0]?.search_path, path, "Inspection must preserve the caller's configuration");
+                const select = (object: PgObjectInfo) => kind === "index" ? object.kind === "index" && object.ownerConstraint === null
+                    : object.kind === "constraint" && object.constraintKind === "foreignKey";
+                const expected = await normalizePgSchema({...qualified.schema, objects: qualified.schema.objects.filter(select)});
+                const actual = await normalizePgSchema({...visible.schema, objects: visible.schema.objects.filter(select)});
+                const compared = value(compareSchemas(expected, {...visible, schema: actual}));
+                assert.equal(compared.equal, true, JSON.stringify(compared.differences.slice(0, 1)));
+            });
+        });
+    }
+});
+
 integration("typed storage CHECK/index input round trip", () => {
     for (const generation of ["clean", "incremental"] as const) {
         it(`archives and enforces typed CHECK/index declarations after ${generation} creation`, async () => {
