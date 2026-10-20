@@ -216,7 +216,29 @@ de unicidad, permiten corregir una duplicación al diferir la UK, rechazan una F
 inválida y detectan deriva cuando cambia el timing. Se revirtieron las transacciones
 y se eliminaron base/rol de scratch.
 
-ssot2026 compiló backend y frontend y pasó sus **tres pruebas de loader/CLI** contra
-la biblioteca actual en un contenedor desechable. Se usaron dependencias ya
-instaladas y salida temporal, sin editar ese repositorio ni conectar su base. El
-checkout local no tenía jose instalado; esa limitación no se corrigió alterándolo.
+
+## Revisión 2026-10-20: preservar texto vacío al decodificar registros de máquina
+
+El codec de registros actualmente convierte `""` a null,
+incluso cuando el comportamiento del tipo admite el string vacío. Eso impide el
+round-trip de valores legítimos almacenados por otras aplicaciones.
+
+Propuesta compatible con consumidores actuales: opción `emptyStringIsNull: false`
+en las opciones existentes de lectura. El default conserva el comportamiento
+actual. El walk compartido sigue siendo el único recorrido/conversión; no se
+agrega un codec paralelo ni condiciones para Meta/Django/PostgreSQL 16.
+
+Tres pruebas en `test/empty-string-preservation-test.ts` compilan y fallan por los
+motivos esperados: el texto obligatorio vacío se rechaza, el texto nullable vacío
+se convierte a null, y un entero vacío se acepta como null en lugar de pasar por
+su comportamiento y rechazarlo. Las pruebas usan únicamente los tipos comunes del
+core. No leen bases ni datos de producción. Repetición:
+
+```sh
+node node_modules/typescript/bin/tsc
+node --enable-source-maps node_modules/mocha/bin/mocha.js --exit dist/test/empty-string-preservation-test.js
+```
+
+Resultado: **0 correctas, 3 fallidas**. Implementación pendiente de revisión de las
+expectativas por el programador, según CLAUDE.md. Las pruebas de defaults y parseo
+humano existentes deben seguir correctas cuando se implemente el opt-in.

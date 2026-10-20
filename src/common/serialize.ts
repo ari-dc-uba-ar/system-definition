@@ -20,6 +20,9 @@ export type ParseOptions = {
     /* a half-filled form has no reason to report the mandatory fields still missing: the
        caller says whether this text is meant to be complete */
     requireMandatory?: boolean
+    /* Forms keep their historical blank-is-null default. Machine readers can opt in to
+       preserving an empty string and let the declared type decide whether it is valid. */
+    emptyStringIsNull?: boolean
 }
 
 /* The walk over the fields of a record, shared by the machine conversion and the human one:
@@ -32,6 +35,7 @@ export function walkTextRecord<TContext extends SystemTypeContext, TRecordDef ex
     convertOne: (typeName: string, raw: string) => ParseResult<unknown>,
 ): {problems: Problem[], values: Record<string, unknown>} {
     const requireMandatory = options.requireMandatory ?? true;
+    const emptyStringIsNull = options.emptyStringIsNull ?? true;
     const problems: Problem[] = [];
     const values: Record<string, unknown> = {};
     /* completed and not read raw, because the default of nullable lives in completeCoreField
@@ -40,9 +44,8 @@ export function walkTextRecord<TContext extends SystemTypeContext, TRecordDef ex
     const fields = completeRecord(context, recordDef);
     for (const [name, field] of Object.entries(fields)) {
         const raw = text[name] ?? null;
-        /* an empty input is the absence of a value and not the empty string: a generic form
-           has no other way of saying null */
-        if (raw === null || raw === '') {
+        /* Empty input is absence by default; explicit machine mode preserves it. */
+        if (raw === null || (raw === '' && emptyStringIsNull)) {
             if (!field.nullable && requireMandatory) {
                 problems.push(problem(name, 'field.required', 'blocking'));
             }
