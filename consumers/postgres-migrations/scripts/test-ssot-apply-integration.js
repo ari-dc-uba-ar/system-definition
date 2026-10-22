@@ -49,6 +49,21 @@ async function main() {
         assert.equal(value(run("apply")).installation.current.releaseHash, installed.installation.current.releaseHash);
         assert.deepEqual(value(run("status")).migrations.map(migration => migration.applied), [true]);
 
+        const originalCatalog = await readFile(join(store, "catalog.json"), "utf8");
+        const presentation = snapshot();
+        presentation.entities.items.fields.id.visible = false;
+        presentation.entities.items.fields.name.label = "Display name";
+        presentation.entities.items.fields.name.description = "Presentation-only change";
+        await writeFile(systemFile, `exports.ssot=${JSON.stringify(presentation)}; exports.sqlMapping=${JSON.stringify({text: sqlTypes.text, integer: sqlTypes.integer, boolean: sqlTypes.boolean})};`);
+        for (let repeat = 0; repeat < 2; repeat++) {
+            const unchanged = value(run("apply"));
+            assert.equal(unchanged.migrations.length, 1);
+            assert.equal(unchanged.installation.current.releaseHash, installed.installation.current.releaseHash);
+            assert.equal(await readFile(join(store, "catalog.json"), "utf8"), originalCatalog);
+        }
+        assert.equal((await owner.query('SELECT count(*)::integer AS count FROM app_migrations.migration_history', [])).rows[0].count, 1);
+        assert.deepEqual((await app.query('SELECT id, name FROM app.items', [])).rows, [{id: 1, name: "original"}]);
+
         await owner.query('ALTER TABLE app.items ADD COLUMN rogue text', []);
         assert.equal(run("apply", [], 3).problems[0].messageKey, "migration.schemaDrift");
         await owner.query('ALTER TABLE app.items DROP COLUMN rogue', []);

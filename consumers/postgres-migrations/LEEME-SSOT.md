@@ -555,3 +555,15 @@ para SQL manual/DDL y capas completas para capturas de datos. Se eliminaron el
 loop inalcanzable de filas manuales, los wrappers sin consumidores y los helpers
 reemplazados por pasos persistidos. El compilador rechaza locales y parámetros
 sin uso; los checks de tipos siguen siendo aserciones exportadas.
+
+## Cambios de presentación y migraciones vacías
+
+`apply` genera automáticamente una migración sólo cuando cambia el esquema SQL
+proyectado. Cambiar etiquetas, descripciones o visibilidad no agrega entradas al
+catálogo ni avanza el historial. Los hashes completos siguen protegiendo los
+archivos históricos; no se recalculan ni se reemplazan snapshots ya publicados.
+
+Los borradores explícitos y las migraciones de datos siguen su flujo habitual.
+`generate` rechaza una migración sin operaciones ni verificaciones, salvo la
+provisión inicial. Un cambio de validación que no modifica el esquema SQL debe
+acompañarse de una migración de datos o verificación explícita cuando corresponda.

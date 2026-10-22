@@ -7,8 +7,9 @@ import {loadDatabaseSettings} from "./database-settings";
 import {parseJsonBytes} from "./artifact";
 import {inferSsotMigration, generateSsotMigration, readMigrationDraft, type SsotAuthoringRuntime} from "./ssot-authoring";
 import {decodeAddSqlContract} from "./authoring-cli";
-import {captureMigrationState, initializeMigrationStore, invalidStore, readCatalogState, readStoredCatalog, stateReference} from "./migration-store";
+import {captureMigrationState, initializeMigrationStore, invalidStore, readCatalogState, readStoredCatalog} from "./migration-store";
 import {applyMigrations} from "./apply-migrations";
+import {compareSchemas} from "./compare-schema";
 
 export type SsotCommandOptions = {ssot: string; database: string; directory: string; draft: string; baseline?: string};
 type SqlFiles = {file: string; contract: string};
@@ -72,7 +73,10 @@ export async function dispatchSsotApply(options: SsotApplyOptions): Promise<Vali
     if (existing !== undefined && !existing.ok) return existing;
     const existingId = existing?.value.id;
     const unpublished = existingId !== undefined && !catalog.value.migrations.some(migration => migration.migration.id === existingId);
-    if (unpublished || stateReference(last.value).releaseHash !== stateReference(desired.value).releaseHash) {
+    // Snapshot hashes protect saved history; SQL schema differences trigger automatic DDL.
+    const comparison = compareSchemas(last.value.schema, {schema: desired.value.schema, unknown: [], excluded: []});
+    if (!comparison.ok) return comparison;
+    if (unpublished || !comparison.value.equal) {
         if (!unpublished) {
             const id = options.id ?? (catalog.value.migrations.length === 0 && catalog.value.releases[0].releaseId === "empty" ? "initial" : String(catalog.value.migrations.length + 1).padStart(4, "0") + "_update_schema");
             const inferred = await inferSsotMigration(system, settings, root, id, options.draft, options.baseline);

@@ -114,6 +114,9 @@ export async function generateSsotMigration(system: SqlSsotInfo, settings: Datab
         compiled.migration = {...compiled.migration, steps: [...compiled.migration.steps, {id: "app-permissions", run}]};
         compiled.operations = [...compiled.operations, {id: "app-permissions", stepIds: ["app-permissions"], changeIds: [], dataMigrationIds: []}];
     }
+    if (compiled.initial === undefined && compiled.migration.steps.length === 0 && compiled.migration.before.length === 0 && compiled.migration.after.length === 0) {
+        return invalidStore("No schema changes or authored migration operations to save");
+    }
     const prefix = String(catalog.value.migrations.length + 1).padStart(4, "0") + "_";
     const sqlName = (compiled.migration.id.startsWith(prefix) ? compiled.migration.id : prefix + compiled.migration.id) + ".sql";
     const published = await saveMigrationArtifact(migrationDirectory(root, {migration: compiled.migration, migrationHash: "0".repeat(64)}), compiled, files, sqlName);

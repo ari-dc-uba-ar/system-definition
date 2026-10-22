@@ -76,6 +76,22 @@ describe("SSOT migration authoring without a project adapter", () => {
         assert.equal((await verifyMigrationFiles(migrationDirectory(root, published), published)).ok, false);
         assert.equal((await readCatalogState(root, catalog, 1)).ok, false);
     }));
+    it("does not publish a presentation-only snapshot as an empty migration", () => temporary(async root => {
+        const draft = join(root, "draft.json");
+        value(await inferSsotMigration(system, settings, root, "initial", draft));
+        value(await generateSsotMigration(system, settings, root, draft));
+        const before = await readFile(join(root, "catalog.json"), "utf8");
+        const changed = value(decodeSqlSsot({...snapshot, entities: {...snapshot.entities,
+            items: {...snapshot.entities.items, fields: {...snapshot.entities.items.fields,
+                id: {...snapshot.entities.items.fields.id, visible: false, label: "Identifier", description: "Presentation only"}}}}}, mapping));
+        const inferred = value(await inferSsotMigration(changed, settings, root, "presentation", draft));
+        assert.equal(inferred.changes.length, 0);
+        const generated = await generateSsotMigration(changed, settings, root, draft);
+        assert.equal(generated.ok, false);
+        if (!generated.ok) assert.equal(generated.problems[0].details.reason, "No schema changes or authored migration operations to save");
+        assert.equal(await readFile(join(root, "catalog.json"), "utf8"), before);
+        assert.deepEqual(await readdir(join(root, "entries")), ["0001_initial"]);
+    }));
     it("authors standalone data SQL as an ordered migration with an unchanged schema", () => temporary(async root => {
         const draft = join(root, "draft.json");
         value(await inferSsotMigration(system, settings, root, "initial", draft));
